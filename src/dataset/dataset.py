@@ -1,0 +1,136 @@
+import torch
+from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
+
+import numpy as np
+
+from ..dataset.processors.factory import DatasetLoaderFactory
+from ..schema import DatasetConfig
+from ..logger import logger
+
+
+class EmotionalDataset(Dataset):
+    """
+    PyTorch dataset for emotional speech classification.
+    Supports both stacked and multi-channel feature formats.
+    """
+
+    def __init__(
+        self, data: np.ndarray, labels: np.ndarray, mean=None, std=None
+    ):
+        self.data = torch.from_numpy(data).float()
+        self.labels = torch.from_numpy(labels).float()
+
+        # --- normalization parameters ---
+        self.mean = None if mean is None else torch.from_numpy(mean).float()
+
+        self.std = None if std is None else torch.from_numpy(std).float()
+
+        # Prevent division by zero
+        if self.std is not None:
+            self.std = torch.clamp(self.std, min=1e-8)
+
+        # Detect feature format
+        if self.data.dim() == 3:
+            self.format = "stacked"
+
+        elif self.data.dim() == 4:
+            self.format = "multi_channel"
+
+        else:
+            raise ValueError(f"Unsupported data dimension: {self.data.dim()}")
+
+        logger.debug(
+            f"Dataset format: {self.format}, data shape: {self.data.shape}"
+        )
+
+    def __len__(self):
+        """
+        Returns dataset size.
+        """
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """
+        Returns one sample and its label.
+        """
+
+        x = self.data[idx]
+        y = self.labels[idx]
+
+        # Apply normalization
+        if self.mean is not None and self.std is not None:
+            x = (x - self.mean[:, None]) / self.std[:, None]
+
+        return x, y
+
+
+class ConflictEmotionalDataset:
+    """
+    Wrapper class for loading, splitting,
+    normalizing, and preparing emotional datasets.
+    """
+
+    def __init__(self, config: DatasetConfig):
+
+        # Create dataset loader
+        loader = DatasetLoaderFactory.create(config)
+
+        # Load raw features and metadata
+        data, metadata = loader.load()
+
+        data = np.stack(data)
+
+        labels = np.asarray([item["label"] for item in metadata])
+
+        actor_ids = np.asarray([item["actor_id"] for item in metadata])
+
+        # Split dataset by actor IDs
+        unique_actors = np.unique(actor_ids)
+
+        train_actors, test_actors = train_test_split(
+            unique_actors, test_size=config.test_size, random_state=42
+        )
+
+        train_mask = np.isin(actor_ids, train_actors)
+        test_mask = np.isin(actor_ids, test_actors)
+
+        train_data = data[train_mask]
+        test_data = data[test_mask]
+
+        # --------- NORMALIZATION (TRAIN ONLY) ---------
+
+        # Compute normalization statistics
+        # over frequency and time dimensions
+        mean = train_data.mean(axis=(0, 2))
+        std = train_data.std(axis=(0, 2)) + 1e-8
+
+        # Create PyTorch datasets
+        self.train_dataset = EmotionalDataset(
+            train_data, labels[train_mask], mean, std
+        )
+
+        self.test_dataset = EmotionalDataset(
+            test_data, labels[test_mask], mean, std
+        )
+
+    def get_sample_weights(self) -> np.ndarray:
+        """
+        Computes sample weights for handling
+        class imbalance in the training dataset.
+        """
+
+        # Count samples for each class
+        label_counts = np.bincount(self.train_dataset.labels.long().numpy())
+
+        total_samples = len(self.train_dataset)
+
+        # Inverse-frequency class weights
+        class_weights = total_samples / (len(label_counts) * label_counts)
+
+        # Assign weight to each sample
+        sample_weights = class_weights[
+            self.train_dataset.labels.long().numpy()
+        ]
+
+        return sample_weights

@@ -1,0 +1,119 @@
+data_path: \data\raw
+model_save_path: \checkpoints
+
+experiment:
+  name: sfl_audio_exp
+  transport: queue
+  seed: &seed 42
+
+training:
+  num_rounds: 89
+  seed: *seed
+  eval_every: 4
+  fed_every: 10
+
+base_dataset: &base_data
+  target_sample_rate: 8000
+  feature_names: ['mfcc', 'rms', 'zcr']
+
+clients:
+  - client_id: 0
+    dataset:
+      <<: *base_data
+      name: CREMA-D
+      root: \data\raw\CREMA-D
+      reduced: False
+      reduced_size: 2000
+      test_size: 0.2
+    model:
+      lr: 0.001
+      optimizer: adam
+    runtime:
+      local_steps: 35
+      batch_size: 8
+      seed: *seed
+    noise:
+      type: gauss
+      std: 1e-10
+
+  - client_id: 1
+    dataset: 
+      <<: *base_data
+      name: RAVDESS
+      root: \data\raw\RAVDESS
+      reduced: False
+      reduced_size: 1400
+      test_size: 0.2
+    model:
+      lr: 0.001
+      optimizer: adam
+    runtime:
+      local_steps: 35
+      batch_size: 8
+      seed: *seed
+    noise:
+      type: gauss
+      std: 1e-10
+
+  - client_id: 2
+    dataset:
+      <<: *base_data
+      name: SAVEE
+      root: \data\raw\SAVEE
+      reduced: False
+      reduced_size: 1500
+      test_size: 0.2
+    model:
+      lr: 0.02
+      optimizer: adam
+    runtime:
+      local_steps: 35
+      batch_size: 8
+      seed: *seed
+    noise:
+      type: gauss
+      std: 1e-10
+
+split_server:
+  model:
+    pos_weight: 3
+    optimizer: adam
+    lr: 0.0005
+    device: cuda
+  seed: *seed
+  split_uplink_channel: split_uplink
+  split_downlink_channel: split_downlink
+
+fed_server:
+  strategy: fedavg
+  seed: *seed
+  device: cuda
+  aggregation_freq: 1
+  min_clients: 2
+  federated_uplink_channel: federated_uplink
+  federated_downlink_channel: federated_downlink
+
+channels:
+  split_uplink:
+    transport: queue
+    name: split_uplink
+    maxsize: 32
+    timeout: 300
+
+  split_downlink:
+    transport: queue
+    name: split_downlink
+    maxsize: 32
+    timeout: 300
+
+  federated_uplink:
+    transport: queue
+    name: federated_uplink
+    maxsize: 8
+    timeout: 300
+  
+  federated_downlink:
+    transport: queue
+    name: federated_downlink
+    maxsize: 8
+    timeout: 300
