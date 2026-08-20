@@ -67,6 +67,7 @@ class ServerModelScope(str, Enum):
 
 class ExperimentProfile(str, Enum):
     smoke = "smoke"
+    unit = "unit"
 
 
 class FeatureType(str, Enum):

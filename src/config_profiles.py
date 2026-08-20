@@ -60,6 +60,17 @@ PROFILE_REGISTRY = ExperimentProfileRegistry(
                     "barrier_timeout_sec": 30.0,
                 }
             },
-        )
+        ),
+        ExperimentProfileDefinition(
+            name="unit",
+            version="1",
+            config={
+                "training": {
+                    "num_rounds": 1,
+                    "eval_every": 1,
+                    "barrier_timeout_sec": 10.0,
+                }
+            },
+        ),
     ]
 )

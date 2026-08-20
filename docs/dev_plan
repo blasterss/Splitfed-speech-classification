@@ -583,8 +583,8 @@ protocol, accumulation/FedAvg semantics, data normalization, artifact metadata
 
 ### Этап 1. Research control plane и simulation harness
 
-**Задачи:** расширить typed/versioned registry профилей; добавить `unit`,
-`debug`, `fault_injection`, `heterogeneous`,
+**Задачи:** расширить typed/versioned registry профилей; добавить `debug`,
+`fault_injection`, `heterogeneous`,
 `benchmark`, `repro`, `privacy` и `distributed`; реализовать synthetic data и
 virtual clients с deterministic/wall-clock modes, throughput, latency,
 availability, dropout и backpressure. Сохранять simulator parameters и trace

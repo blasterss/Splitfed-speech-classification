@@ -188,9 +188,10 @@ Important configuration caveats:
 The repository also contains a forward-looking research plan for additional
 launch profiles, simulation, isolated client containers and throughput-aware
 client scheduling. The built-in profile registry validates unique names and
-exposes typed, versioned definitions, but only the `smoke`
-configuration-default profile is currently available; the other planned
-profiles and capabilities are not part of the current runtime.
+exposes typed, versioned definitions. The `smoke` and `unit` profiles currently
+provide bounded training defaults without inventing dataset roots, clients or
+topology; the other planned profiles and capabilities are not part of the
+current runtime.
 The controller creates only mode-owned roles and channels. Centralized mode
 trains one complete `SpeechRecognitionModel` over the combined client dataset
 views without transport channels or servers. Federated mode trains and

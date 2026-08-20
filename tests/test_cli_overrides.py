@@ -6,6 +6,7 @@ from src.config_profiles import (
     ExperimentProfileRegistry,
 )
 from src.main import apply_cli_overrides, resolve_raw_config
+from src.schema import ExperimentProfile
 
 
 def test_cli_overrides_parse_typed_values_and_list_paths():
@@ -106,3 +107,34 @@ def test_profile_registry_rejects_duplicate_names():
 
     with pytest.raises(ValueError, match="Duplicate experiment profile"):
         ExperimentProfileRegistry([duplicate, duplicate])
+
+
+def test_profile_registry_matches_schema_profile_names():
+    schema_profiles = {profile.value for profile in ExperimentProfile}
+
+    assert set(PROFILE_REGISTRY) == schema_profiles
+
+
+def test_unit_profile_only_supplies_bounded_training_defaults():
+    raw_config = {
+        "experiment": {"name": "unit-test", "transport": "queue", "seed": 7},
+        "training": {"mode": "centralized", "fed_every": 1},
+    }
+
+    resolved, provenance = resolve_raw_config(
+        raw_config, profile_name="unit", overrides=[]
+    )
+
+    assert resolved["training"] == {
+        "mode": "centralized",
+        "num_rounds": 1,
+        "eval_every": 1,
+        "fed_every": 1,
+        "barrier_timeout_sec": 10.0,
+    }
+    assert "clients" not in resolved
+    assert provenance["profile"] == {
+        "name": "unit",
+        "version": "1",
+        "source": "cli",
+    }

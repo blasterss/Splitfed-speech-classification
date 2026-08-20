@@ -125,8 +125,10 @@ existing fields (including numeric list indices such as
 `clients.0.runtime.batch_size`). Unknown paths are rejected before process
 creation, and applied overrides are recorded in `run_metadata.yaml`.
 
-The typed built-in profile registry currently exposes `--profile smoke`, which
-provides versioned training defaults and rejects duplicate registered names.
+The typed built-in profile registry currently exposes `--profile smoke` and
+`--profile unit`. Both provide versioned, bounded training defaults; neither
+invents dataset roots, clients or topology. Duplicate registered names are
+rejected.
 Resolution precedence is `profile < YAML < --set`; it intentionally does not
 invent dataset roots or force a topology. Configure reduced datasets, CPU
 devices and the desired clients in the YAML used for a smoke run.
@@ -335,8 +337,8 @@ after kill and raise if a child still remains alive.
 Most planned research infrastructure in `docs/dev_plan` is not implemented
 yet: there are no per-client Docker runtimes, ClientLoadController, scheduler
 policy registry or heterogeneous-client simulator in the current runtime. A
-typed profile registry exposes a single versioned `smoke` default profile; the
-remaining named profiles are still planned. The mode matrix is executable
+typed profile registry exposes versioned `smoke` and `unit` default profiles;
+the remaining named profiles are still planned. The mode matrix is executable
 through `python -m src.experiments.mode_matrix`: centralized uses one complete
 model and combined dataset view without channels, federated-only uses complete
 client classifiers, split/shared uses one shared server model,
