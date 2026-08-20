@@ -20,10 +20,8 @@ from ...utils.state import deserialize_state_dict, serialize_state_dict
 from ...utils.training import set_seed
 from ...utils.training_stats import _RoundStats
 from .operations import _handle_eval_single, _handle_train_batch
-from .optimization import (
-    build_personalized_models,
-    step_accumulated_gradients,
-)
+from .optimization import step_accumulated_gradients
+from .personalized_worker import _split_server_worker_personalized
 from .protocol import (
     _batch_is_ready,
     _evict_stale_batches,
@@ -172,141 +170,6 @@ class SplitServer:
                 model_state_dict=state_dict,
             )
             logger.info("SplitServer model saved to '%s'", save_path)
-
-
-def _split_server_worker_personalized(
-    config: SplitServerConfig,
-    client_channels: dict[str, dict[str, Channel]],
-    stop_event,
-    result_queue: mp.Queue,
-    failure_queue=None,
-) -> None:
-    """Serve each client with an isolated model and optimizer."""
-    ignore_parent_interrupts()
-    set_seed(config.seed)
-    device = torch.device(config.model.device)
-    client_ids = list(client_channels)
-    models, optimizers = build_personalized_models(client_ids, config, device)
-    criterion = nn.BCEWithLogitsLoss(
-        pos_weight=torch.tensor(config.model.pos_weight, device=device)
-    ).to(device)
-    accumulated_batches = {client_id: 0 for client_id in client_ids}
-    completed_steps = {client_id: set() for client_id in client_ids}
-    stats = {client_id: _RoundStats() for client_id in client_ids}
-    replay_guard = ReplayGuard()
-    current_client_id = None
-    current_round = None
-    current_step = None
-
-    logger.info(
-        "Personalized SplitServer worker ready, serving clients: %s",
-        client_ids,
-    )
-    try:
-        while not stop_event.is_set():
-            served_any = False
-            for client_id in client_ids:
-                msg = client_channels[client_id]["uplink"].recv_nowait()
-                if msg is None:
-                    continue
-                current_client_id = client_id
-                current_round = msg.round
-                current_step = msg.step
-                if not _validate_message(msg, client_id):
-                    raise ValueError(
-                        f"Invalid split message from client {client_id}"
-                    )
-                replay_guard.accept(msg.request_id)
-                served_any = True
-                correlation = (msg.type, msg.round, msg.step)
-                if correlation in completed_steps[client_id]:
-                    raise ValueError(
-                        f"Duplicate split message from client {client_id} "
-                        f"for key {correlation}"
-                    )
-                completed_steps[client_id].add(correlation)
-
-                if msg.type == "train_step":
-                    loss = _handle_train_batch(
-                        {client_id: msg},
-                        models[client_id],
-                        criterion,
-                        device,
-                        client_channels,
-                    )
-                    if loss is not None:
-                        stats[client_id].update(loss)
-                        accumulated_batches[client_id] += 1
-                    if (
-                        accumulated_batches[client_id]
-                        == config.model.gradient_accumulation_steps
-                    ):
-                        step_accumulated_gradients(
-                            models[client_id].parameters(),
-                            optimizers[client_id],
-                            accumulated_batches[client_id],
-                        )
-                        accumulated_batches[client_id] = 0
-                elif msg.type == "eval_step":
-                    _handle_eval_single(
-                        msg,
-                        client_id,
-                        models[client_id],
-                        device,
-                        client_channels,
-                        [],
-                        [],
-                    )
-                elif msg.type == "round_end":
-                    if accumulated_batches[client_id]:
-                        step_accumulated_gradients(
-                            models[client_id].parameters(),
-                            optimizers[client_id],
-                            accumulated_batches[client_id],
-                        )
-                        accumulated_batches[client_id] = 0
-                    logger.info(
-                        "Personalized SplitServer metrics for client %s",
-                        client_id,
-                    )
-                    stats[client_id].log_and_reset(msg.round)
-
-            if not served_any:
-                stop_event.wait(timeout=0.001)
-    except BaseException as exc:
-        publish_failure(
-            failure_queue,
-            FailureRecord.from_exception(
-                component="split_server",
-                client_id=current_client_id,
-                round=current_round,
-                step=current_step,
-                exception=exc,
-            ),
-        )
-        stop_event.set()
-        raise
-    finally:
-        for client_id in client_ids:
-            if accumulated_batches[client_id]:
-                step_accumulated_gradients(
-                    models[client_id].parameters(),
-                    optimizers[client_id],
-                    accumulated_batches[client_id],
-                )
-        state = {
-            client_id: {
-                key: value.cpu()
-                for key, value in models[client_id].state_dict().items()
-            }
-            for client_id in client_ids
-        }
-        try:
-            result_queue.put_nowait(serialize_state_dict(state))
-        except queue.Full:
-            logger.warning(
-                "Personalized SplitServer result queue was already full"
-            )
 
 
 def _split_server_worker_batch(
