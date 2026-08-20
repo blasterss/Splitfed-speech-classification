@@ -200,8 +200,8 @@ workflow are still missing.
   dataset-size weights for floating tensors. Non-floating buffers come from the
   largest accepted dataset. `aggregation_freq` must match
   `training.fed_every`, the single client/server synchronization cadence.
-- The controller uses fixed channel constants rather than the channel names
-  stored in server configuration.
+- Server channel references are validated against the controller's four
+  canonical logical roles before setup.
 
 ## Architecture and process boundaries
 

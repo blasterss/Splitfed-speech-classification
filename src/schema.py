@@ -562,6 +562,14 @@ class ConfigSchema(StrictConfigModel):
                     self.split_server.split_downlink_channel,
                 }
             )
+            if (
+                self.split_server.split_uplink_channel != "split_uplink"
+                or self.split_server.split_downlink_channel != "split_downlink"
+            ):
+                raise ValueError(
+                    "split_server channel references must match canonical "
+                    "split_uplink/split_downlink roles"
+                )
         if self.fed_server:
             required_channels.update(
                 {"federated_uplink", "federated_downlink"}
@@ -572,6 +580,15 @@ class ConfigSchema(StrictConfigModel):
                     self.fed_server.federated_downlink_channel,
                 }
             )
+            if (
+                self.fed_server.federated_uplink_channel != "federated_uplink"
+                or self.fed_server.federated_downlink_channel
+                != "federated_downlink"
+            ):
+                raise ValueError(
+                    "fed_server channel references must match canonical "
+                    "federated_uplink/federated_downlink roles"
+                )
 
         configured_channels = set(self.channels)
         if configured_channels != required_channels:

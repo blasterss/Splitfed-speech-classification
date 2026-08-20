@@ -134,6 +134,24 @@ def test_config_rejects_missing_server_channel_reference(tmp_path):
         ConfigSchema(**raw)
 
 
+def test_config_rejects_swapped_split_channel_roles(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["split_server"]["split_uplink_channel"] = "split_downlink"
+    raw["split_server"]["split_downlink_channel"] = "split_uplink"
+
+    with pytest.raises(ValidationError, match="canonical"):
+        ConfigSchema(**raw)
+
+
+def test_config_rejects_swapped_federated_channel_roles(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["fed_server"]["federated_uplink_channel"] = "federated_downlink"
+    raw["fed_server"]["federated_downlink_channel"] = "federated_uplink"
+
+    with pytest.raises(ValidationError, match="canonical"):
+        ConfigSchema(**raw)
+
+
 @pytest.mark.parametrize(
     ("path", "unknown_key"),
     [

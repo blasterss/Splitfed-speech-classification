@@ -165,8 +165,8 @@ Important configuration caveats:
   `weighted_fedavg` weights floating tensors by dataset size. Non-floating
   buffers come from the largest accepted dataset. `aggregation_freq` must equal
   `training.fed_every`, which is the single synchronization cadence;
-- channel names stored inside server configuration are not used by the
-  controller, which relies on fixed names;
+- server channel references must match the four canonical logical roles used by
+  the controller;
 - client IDs must be unique; referenced server channels and feasible client
   quorum are validated before controller setup.
 
