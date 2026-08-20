@@ -19,6 +19,10 @@ from ...utils.process import ignore_parent_interrupts
 from ...utils.state import deserialize_state_dict, serialize_state_dict
 from ...utils.training import set_seed
 from ...utils.training_stats import _RoundStats
+from .optimization import (
+    build_personalized_models,
+    step_accumulated_gradients,
+)
 from .protocol import (
     _batch_is_ready,
     _evict_stale_batches,
@@ -169,25 +173,6 @@ class SplitServer:
             logger.info("SplitServer model saved to '%s'", save_path)
 
 
-def _build_personalized_models(
-    client_ids: list,
-    config: SplitServerConfig,
-    device: torch.device,
-) -> tuple[dict, dict]:
-    """Create independently initialized model and optimizer ownership."""
-    models = {}
-    optimizers = {}
-    for client_id in client_ids:
-        set_seed(config.seed)
-        model = ServerSideModel(model_type="cnn_birnn").to(device)
-        models[client_id] = model
-        optimizers[client_id] = optim.Adam(
-            model.parameters(), lr=config.model.learning_rate
-        )
-        optimizers[client_id].zero_grad()
-    return models, optimizers
-
-
 def _split_server_worker_personalized(
     config: SplitServerConfig,
     client_channels: dict[str, dict[str, Channel]],
@@ -200,7 +185,7 @@ def _split_server_worker_personalized(
     set_seed(config.seed)
     device = torch.device(config.model.device)
     client_ids = list(client_channels)
-    models, optimizers = _build_personalized_models(client_ids, config, device)
+    models, optimizers = build_personalized_models(client_ids, config, device)
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor(config.model.pos_weight, device=device)
     ).to(device)
@@ -255,7 +240,7 @@ def _split_server_worker_personalized(
                         accumulated_batches[client_id]
                         == config.model.gradient_accumulation_steps
                     ):
-                        _step_accumulated_gradients(
+                        step_accumulated_gradients(
                             models[client_id].parameters(),
                             optimizers[client_id],
                             accumulated_batches[client_id],
@@ -273,7 +258,7 @@ def _split_server_worker_personalized(
                     )
                 elif msg.type == "round_end":
                     if accumulated_batches[client_id]:
-                        _step_accumulated_gradients(
+                        step_accumulated_gradients(
                             models[client_id].parameters(),
                             optimizers[client_id],
                             accumulated_batches[client_id],
@@ -303,7 +288,7 @@ def _split_server_worker_personalized(
     finally:
         for client_id in client_ids:
             if accumulated_batches[client_id]:
-                _step_accumulated_gradients(
+                step_accumulated_gradients(
                     models[client_id].parameters(),
                     optimizers[client_id],
                     accumulated_batches[client_id],
@@ -459,7 +444,7 @@ def _split_server_worker_batch(
                             accumulated_batches
                             == config.model.gradient_accumulation_steps
                         ):
-                            _step_accumulated_gradients(
+                            step_accumulated_gradients(
                                 model.parameters(),
                                 optimizer,
                                 accumulated_batches,
@@ -475,7 +460,7 @@ def _split_server_worker_batch(
                 )
                 if round_is_complete and not round_has_pending:
                     if accumulated_batches:
-                        _step_accumulated_gradients(
+                        step_accumulated_gradients(
                             model.parameters(),
                             optimizer,
                             accumulated_batches,
@@ -686,22 +671,6 @@ def _forward_sequential(
             grads[client_id] = H.grad.detach().cpu()
 
     return grads, total_loss
-
-
-def _step_accumulated_gradients(
-    parameters,
-    optimizer: optim.Optimizer,
-    batch_count: int,
-) -> None:
-    if batch_count <= 0:
-        raise ValueError("batch_count must be positive")
-
-    for parameter in parameters:
-        if parameter.grad is not None:
-            parameter.grad.div_(batch_count)
-
-    optimizer.step()
-    optimizer.zero_grad()
 
 
 def _handle_eval_single(
