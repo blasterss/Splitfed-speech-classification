@@ -159,6 +159,7 @@ workflow are still missing.
 
 ## Configuration invariants
 
+- Unknown fields are rejected in root and nested configuration models.
 - The root field is `models_save_path` (plural), not `model_save_path`.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.

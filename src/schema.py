@@ -9,7 +9,13 @@ from enum import Enum
 from typing import List, Optional, Dict, Union
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 # ============================================================
@@ -54,7 +60,11 @@ class FeatureType(str, Enum):
 # ============================================================
 
 
-class ChannelConfig(BaseModel):
+class StrictConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChannelConfig(StrictConfigModel):
     """
     Base configuration for a communication channel between system components.
     Used as an abstraction for both local and network-based interaction.
@@ -120,7 +130,7 @@ class GRPCChannelConfig(ChannelConfig):
 # ============================================================
 
 
-class ClientModelConfig(BaseModel):
+class ClientModelConfig(StrictConfigModel):
     """Configuration for the client-side model."""
 
     # input_dim: int = Field(
@@ -149,7 +159,7 @@ class ClientModelConfig(BaseModel):
     )
 
 
-class ClientRuntimeConfig(BaseModel):
+class ClientRuntimeConfig(StrictConfigModel):
     """Runtime and local training parameters for a client."""
 
     local_steps: int = Field(
@@ -168,7 +178,7 @@ class ClientRuntimeConfig(BaseModel):
     )
 
 
-class NoiseConfig(BaseModel):
+class NoiseConfig(StrictConfigModel):
     """Noise injection configuration (for secure / robust SFL)."""
 
     type: str = Field(description="Noise type (gauss, laplace, etc.).")
@@ -176,7 +186,7 @@ class NoiseConfig(BaseModel):
     std: float = Field(gt=0, description="Standard deviation of the noise.")
 
 
-class DatasetConfig(BaseModel):
+class DatasetConfig(StrictConfigModel):
     """
     Configuration for the dataset used by a client.
     """
@@ -232,7 +242,7 @@ class DatasetConfig(BaseModel):
         return str(path.absolute())
 
 
-class ClientConfig(BaseModel):
+class ClientConfig(StrictConfigModel):
     """Full configuration for a federated learning client."""
 
     client_id: int = Field(ge=0, description="Unique client identifier.")
@@ -257,7 +267,7 @@ class ClientConfig(BaseModel):
 # ============================================================
 
 
-class SplitServerModelConfig(BaseModel):
+class SplitServerModelConfig(StrictConfigModel):
     """Configuration for the server-side split model."""
 
     pos_weight: float = Field(
@@ -289,7 +299,7 @@ class SplitServerModelConfig(BaseModel):
     )
 
 
-class SplitServerConfig(BaseModel):
+class SplitServerConfig(StrictConfigModel):
     """Configuration for the split-learning server."""
 
     model: SplitServerModelConfig = Field(
@@ -314,7 +324,7 @@ class SplitServerConfig(BaseModel):
 # ============================================================
 
 
-class FedServerConfig(BaseModel):
+class FedServerConfig(StrictConfigModel):
     """Configuration for the federated aggregation server."""
 
     strategy: AggregationStrategy = Field(
@@ -353,7 +363,7 @@ class FedServerConfig(BaseModel):
 # ============================================================
 
 
-class TrainingConfig(BaseModel):
+class TrainingConfig(StrictConfigModel):
     """Global training process parameters."""
 
     num_rounds: int = Field(
@@ -377,7 +387,7 @@ class TrainingConfig(BaseModel):
     )
 
 
-class ExperimentConfig(BaseModel):
+class ExperimentConfig(StrictConfigModel):
     """Experiment metadata and execution mode."""
 
     name: str = Field(description="Experiment name.")
@@ -397,7 +407,7 @@ class ExperimentConfig(BaseModel):
 # ============================================================
 
 
-class ConfigSchema(BaseModel):
+class ConfigSchema(StrictConfigModel):
     """
     Root configuration schema for a Split Federated Learning experiment.
     """

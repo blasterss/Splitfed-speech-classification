@@ -144,6 +144,7 @@ there. The example expects the downloaded datasets in `../datasets`.
 
 Important configuration caveats:
 
+- unknown fields are rejected at every configuration level;
 - `training.fed_every` currently controls federated synchronization;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
@@ -321,7 +322,6 @@ tests.
 ### 1. Make startup deterministic
 
 - normalise package imports and add a stable module/console entry point;
-- reject unknown configuration fields;
 - validate CUDA availability;
 - create artifact directories centrally;
 - save the resolved configuration and environment metadata per run.

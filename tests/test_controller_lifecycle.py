@@ -134,6 +134,25 @@ def test_config_rejects_missing_server_channel_reference(tmp_path):
         ConfigSchema(**raw)
 
 
+@pytest.mark.parametrize(
+    ("path", "unknown_key"),
+    [
+        ((), "unknown_root_option"),
+        (("training",), "fed_evey"),
+        (("clients", 0, "runtime"), "batch_sze"),
+    ],
+)
+def test_config_rejects_unknown_fields(tmp_path, path, unknown_key):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    target = raw
+    for part in path:
+        target = target[part]
+    target[unknown_key] = 1
+
+    with pytest.raises(ValidationError, match=unknown_key):
+        ConfigSchema(**raw)
+
+
 class FakeProcess:
     def __init__(self, name, exitcode):
         self.name = name

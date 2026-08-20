@@ -13,14 +13,11 @@ training:
   fed_every: 10
   barrier_timeout_sec: 300
 
-base_dataset: &base_data
-  target_sample_rate: 8000
-  feature_names: ['mfcc', 'rms', 'zcr']
-
 clients:
   - client_id: 0
-    dataset:
-      <<: *base_data
+    dataset: &base_data
+      target_sample_rate: 8000
+      feature_names: ['mfcc', 'rms', 'zcr']
       name: CREMA-D
       root: ../datasets/CREMA-D/raw
       reduced: False
