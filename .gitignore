@@ -4,9 +4,8 @@ __pycache__
 .ruff_cache/
 .mypy_cache/
 
-
+artifacts/
 config.yaml
 data/
-experiments/
 logs
 media
