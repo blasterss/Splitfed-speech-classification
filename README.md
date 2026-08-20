@@ -26,11 +26,16 @@ The repository currently provides:
 - a client-side residual 1D CNN;
 - a server-side CNN with either global pooling or a bidirectional RNN;
 - local multiprocessing channels based on `multiprocessing.Queue`;
+- explicit `centralized`, `federated`, `split/shared`,
+  `split/personalized` and `splitfed` execution topologies;
 - synchronous split-learning forward/backward steps;
 - explicit per-client round completion for unequal local loader lengths;
 - validated split message identity/correlation and duplicate-step rejection;
-- weighted FedAvg for the client-side model;
+- configured uniform or dataset-weighted FedAvg for the client-side model;
 - bounded partial-quorum FedAvg windows with correlated late-client catch-up;
+- strict configuration, a versioned smoke profile and typed CLI overrides;
+- experiment-scoped resolved config, provenance, dataset manifests, metrics and
+  atomic ownership-aware model checkpoints;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
 
@@ -47,28 +52,24 @@ working features**:
 ## Architecture
 
 ```text
-Client process
-  audio features
-      -> ClientSideModel
-      -> intermediate activations + labels
-      -> SplitServer
-
-SplitServer process
-  activations from all clients for the same (round, step)
-      -> ServerSideModel
-      -> BCEWithLogitsLoss
-      -> activation gradients returned to each client
-
-Federated server process
-  client-side state_dict + local dataset size
-      -> weighted FedAvg
-      -> global client-side state_dict returned to every client
-
 TrainingController
-  creates queues, barriers and processes
-  starts clients and servers
-  supervises child exit codes and coordinates shutdown
+  centralized         -> one complete model, no channels or servers
+  federated           -> complete client model x N <-> FedServer
+  split/shared        -> client partition x N <-> one SplitServer model
+  split/personalized  -> client partition x N <-> isolated server model x N
+  splitfed            -> split/shared + client-partition FedAvg
+
+SplitServer
+  validated activations + labels -> server model -> correlated gradients
+
+FedServer
+  validated client states + dataset weights -> configured FedAvg ->
+  correlated global client state
 ```
+
+The controller creates only the processes and logical channels owned by the
+selected mode. It supervises child/server exit codes and coordinates bounded
+cancellation and shutdown.
 
 All components currently run on one Unix host. Queue transport simulates
 distributed participants but does not provide network isolation.
@@ -383,10 +384,10 @@ tests.
 - Server gradient accumulation is configurable and remainder gradients are
   flushed at the end of each completed round. Client activation gradients use
   the full batch loss; only accumulated server parameter gradients are averaged.
-- FedAvg does not treat floating parameters and integer BatchNorm counters
-  separately.
-- BatchNorm statistics from non-IID clients are averaged without an explicit
-  policy.
+- FedAvg averages floating tensors and copies non-floating buffers from the
+  accepted client with the largest dataset. This prevents accidental averaging
+  of integer counters, but it is not a researched BatchNorm policy for non-IID
+  clients; FedBN and server-local alternatives remain unimplemented.
 - Optimiser and RNG state are not restored with model checkpoints; schema v1
   currently provides model ownership and tensor validation, not resume
   equivalence.
@@ -440,58 +441,34 @@ tests.
 - The audio segmenter calls the audio loader with an incompatible signature.
 - Message byte serialization and `GrpcChannel` are stubs.
 - There is no CI workflow, resume-equivalence suite or CUDA test matrix yet.
-  Synthetic CPU spawn, reduced real-data smoke and checkpoint contract
-  round-trips are covered.
+  Synthetic CPU spawn and checkpoint contract round-trips are automated.
+  Reduced real-data and RTX 5060/CUDA 12.8 runs have been executed manually,
+  but are not reproducible CI gates.
 
-## Recommended improvement plan
+## Remaining improvement plan
 
-### 1. Make startup deterministic
+Completed startup validation, protocol correlation/deadlines/replay checks,
+partial quorum, configurable accumulation, data-split controls, artifact
+metadata and mode baselines are intentionally omitted here. The remaining
+work, in delivery order, is:
 
-- normalise package imports and add a stable module/console entry point;
-- validate CUDA availability;
-- create artifact directories centrally;
-- save the resolved configuration and environment metadata per run.
-
-### 2. Introduce process supervision
-
-- use one shared cancellation event and a structured error channel;
-- monitor all client and server exit codes concurrently;
-- unify bounded joins, queue waits and server cancellation;
-- propagate child failures to the command exit code.
-
-### 3. Formalise the training protocol
-
-- define typed payloads and request IDs;
-- validate sender, message type, round, step, tensor shape and dtype;
-- send explicit error responses for rejected or timed-out batches;
-- define how clients with different dataset sizes participate in a round;
-- separate training, evaluation and control states.
-
-### 4. Correct optimisation and FedAvg
-
-- implement the configured aggregation strategy and minimum-client policy;
-- handle non-floating buffers explicitly;
-- decide between local and global BatchNorm statistics;
-- aggregate evaluation metrics in the controller or a dedicated evaluator.
-
-### 5. Strengthen data and privacy experiments
-
-- use masked normalisation or fixed-duration segmentation;
-- validate class and actor coverage;
-- use configuration seeds and run multiple seeds;
-- either use the weighted sampler or remove it;
-- disable perturbation during evaluation;
-- add clipping, calibrated noise and privacy accounting if DP is claimed;
-- measure reconstruction, membership and attribute leakage;
-- compare centralised, federated, split and SplitFed baselines.
-
-### 6. Add verification
-
-- unit tests for schemas, parsers, padding, models and FedAvg;
-- message contract and timeout tests;
-- a controller-level reduced real-data smoke and a separate CUDA smoke test;
-- resume-equivalence and deterministic-gradient tests;
-- Ruff, Black, mypy and pytest in CI.
+1. Add the typed policy registry, deterministic heterogeneous simulator and
+   remaining named research profiles.
+2. Persist a structured first-failure report and unify queue, quorum, barrier
+   and shutdown deadlines under one cancellation protocol.
+3. Add the non-root Compose reference topology with isolated clients, probes,
+   limits, scoped mounts and graceful failure handling.
+4. Implement `ClientLoadController` telemetry, leases, fairness debt,
+   quarantine and replayable cohort policies.
+5. Bound dataset memory use, freeze input manifests and decide a typed
+   class-balance sampling policy.
+6. Extend checkpoints with optimizer/RNG/round/config/manifest state and prove
+   resume equivalence.
+7. Persist process resource/transport telemetry and aggregate per-client,
+   per-dataset and worst-client metrics.
+8. Add multi-seed and leave-one-dataset-out experiments plus CI/static gates.
+9. Only after P0 stability, implement and test privacy accounting/leakage
+   baselines and the protobuf/gRPC/TLS deployment path.
 
 ## Experimental roadmap
 

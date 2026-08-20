@@ -47,6 +47,9 @@ directory can make valid repository-relative paths fail.
 - `src/utils/`: YAML helpers, training utilities, statistics, and feature
   aggregation utilities.
 - `configs/config.example.yaml`: portable CPU example configuration.
+- `configs/config.real.yaml`: repository-local real-data research configuration
+  for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,
+  CPU clients and CUDA split/federated servers.
 - `configs/logger.yaml`: logging configuration.
 - `notebooks/`: exploratory work; Ruff excludes notebooks.
 - `uv.lock`: resolved dependency set; update it with `uv lock` when project
@@ -162,6 +165,18 @@ Use a reduced dataset, few rounds, and CPU for the first smoke test. Do not
 start a full training run until every client has loaded successfully and a
 one-round run completes.
 
+Run the validated ownership matrix from one base configuration with:
+
+```bash
+uv run python -m src.experiments.mode_matrix \
+  --config-file configs/config.real.yaml --rounds 1 \
+  --artifact-root artifacts/mode_matrix
+```
+
+Repeat `--mode` to select any subset of `centralized`, `federated`,
+`split-shared`, `split-personalized` and `splitfed`. The summary records wall
+time and outcome; it does not yet sample per-process CPU/RSS/GPU utilization.
+
 ## Change workflow
 
 1. Read the owning module and its nearest caller or test before editing.
@@ -196,8 +211,9 @@ The repository has focused tests for schemas/configuration, dataset parsers,
 padding, models/FedAvg, queue transport and controller lifecycle. It also has a
 synthetic CPU `spawn` cycle covering unequal client steps, split training,
 FedAvg, evaluation, clean process exit and state handoff. Run them with
-`uv run pytest`. A real-data multi-process smoke test, CUDA matrix and CI
-workflow are still missing.
+`uv run pytest`. Reduced real-data and RTX 5060/CUDA 12.8 mode runs have been
+completed manually; an automated real-data/CUDA matrix and CI workflow are
+still missing.
 
 ## Configuration invariants
 
@@ -226,9 +242,10 @@ workflow are still missing.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.
 - `dataset.split_seed` controls the actor-disjoint split and defaults to `42`.
-- Every client needs all four fixed channel names:
-  `split_uplink`, `split_downlink`, `federated_uplink`, and
-  `federated_downlink`.
+- Channel definitions use four canonical logical names: `split_uplink`,
+  `split_downlink`, `federated_uplink`, and `federated_downlink`. A selected
+  mode must define its owned pair(s), and the controller does not instantiate
+  unused pairs.
 - Dataset roots must exist before `ConfigSchema` validation.
 - Client, split-server, and federated-server device choices must match the
   installed runtime; syntax, CUDA availability and indexed device bounds are
@@ -261,14 +278,17 @@ workflow are still missing.
 `src.main` creates `ConfigSchema`, seeds the process, constructs
 `TrainingController`, calls `setup()`, and starts training.
 
-`TrainingController.setup()` creates a multiprocessing manager, one set of
-queue channels per client, a `SplitServer`, and a `FedServer`.
+`TrainingController.setup()` creates a multiprocessing manager and only the
+channels and server roles owned by the selected mode. Centralized mode creates
+one complete-model trainer without transport; federated creates only
+`FedServer`; split creates only `SplitServer`; SplitFed creates both.
 
-`TrainingController.start_training()` starts both servers, creates ready and
-evaluation barriers, then starts one client process per client configuration.
-Clients send intermediate activations and labels to the split server. The split
-server returns activation gradients. Clients send client model state and sample
-counts to the federated server, which returns the aggregated state.
+`TrainingController.start_training()` starts the selected roles, creates ready
+and evaluation barriers for distributed modes, then starts one client process
+per client configuration. Split clients send intermediate activations and
+labels to the split server, which returns activation gradients. Federated
+clients send validated model state and sample counts to the federated server,
+which returns the configured aggregate.
 Clients also send a typed `round_end` control message after their last local
 batch so that peers with longer loaders are not blocked on an inactive client.
 The split server validates channel sender identity, round/step correlation,

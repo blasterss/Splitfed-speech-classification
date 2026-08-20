@@ -9,6 +9,7 @@ description = "Research prototype for SplitFed binary classification of emotiona
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }
+keywords = ["emotion-classification", "federated-learning", "split-learning"]
 authors = [
     { name = "Trubnikov Anatoly", email = "anatolijtrubnikov@yandex.ru" },
 ]
@@ -19,7 +20,10 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: POSIX",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
@@ -38,8 +42,8 @@ dependencies = [
 [project.scripts]
 secureasr = "src.main:main"
 
-# PyTorch is optional in package metadata because its wheel must be selected for
-# the host CUDA configuration. See README.md before installing this extra.
+# PyTorch is required by the training runtime but remains an explicit package
+# extra so its platform/CUDA wheel source is selected deliberately. See README.
 [project.optional-dependencies]
 train = ["torch==2.7.1"]
 dev = [
