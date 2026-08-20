@@ -3,8 +3,8 @@ import pytest
 from src.schema import ConfigSchema
 from src.splitfed.controller import (
     TrainingController,
-    _raise_for_failed_servers,
     _raise_for_failed_processes,
+    _raise_for_failed_servers,
     _shutdown_processes,
     _wait_for_training_processes,
 )
