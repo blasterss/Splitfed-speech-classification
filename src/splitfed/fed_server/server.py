@@ -1,4 +1,3 @@
-import copy
 import queue
 import time
 from pathlib import Path
@@ -15,6 +14,7 @@ from ...utils.failures import FailureRecord, publish_failure
 from ...utils.process import ignore_parent_interrupts
 from ...utils.state import deserialize_state_dict, serialize_state_dict
 from ...utils.training import set_seed
+from .aggregation import aggregate_metrics, aggregate_states
 from .protocol import (
     quorum_decision,
     state_schema,
@@ -182,44 +182,12 @@ class FedServer:
             Aggregated global state_dict
         """
 
-        if not client_params_list or len(client_params_list) != len(
-            client_sizes
-        ):
-            raise ValueError(
-                "FedAvg requires matching non-empty parameter and size lists"
-            )
-        if any(size <= 0 for size in client_sizes):
-            raise ValueError("FedAvg client sample counts must be positive")
-
-        if strategy is AggregationStrategy.fedavg:
-            weights = [1.0 / len(client_params_list)] * len(client_params_list)
-        elif strategy is AggregationStrategy.weighted_fedavg:
-            total_samples = sum(client_sizes)
-            weights = [size / total_samples for size in client_sizes]
-        else:
-            raise ValueError(f"Unsupported aggregation strategy: {strategy}")
-
-        aggregation_device = torch.device(device)
-        new_params = copy.deepcopy(client_params_list[0])
-        largest_client = max(
-            range(len(client_sizes)), key=client_sizes.__getitem__
+        return aggregate_states(
+            client_params_list,
+            client_sizes,
+            strategy,
+            device,
         )
-
-        for key in new_params.keys():
-            value = client_params_list[0][key]
-
-            if torch.is_tensor(value) and (
-                torch.is_floating_point(value) or torch.is_complex(value)
-            ):
-                new_params[key] = sum(
-                    client_params_list[i][key].to(aggregation_device)
-                    * weights[i]
-                    for i in range(len(client_params_list))
-                ).cpu()
-            else:
-                new_params[key] = client_params_list[largest_client][key]
-
-        return new_params
 
     @staticmethod
     def aggregate_metrics(
@@ -229,18 +197,7 @@ class FedServer:
         Computes weighted average of evaluation metrics across clients.
         """
 
-        total_num = sum(num for num, _ in eval_metrics)
-
-        if total_num == 0:
-            return {}
-
-        all_keys = {k for _, m in eval_metrics for k in m}
-
-        return {
-            key: sum(m[key] * num for num, m in eval_metrics if key in m)
-            / total_num
-            for key in all_keys
-        }
+        return aggregate_metrics(eval_metrics)
 
 
 def _fed_server_worker(
@@ -384,7 +341,7 @@ def _fed_server_worker(
                 sizes_list = [sizes[cid] for cid in participant_ids]
 
                 try:
-                    latest_params = FedServer.aggregate(
+                    latest_params = aggregate_states(
                         params_list,
                         sizes_list,
                         config.strategy,
