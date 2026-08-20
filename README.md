@@ -246,6 +246,22 @@ Start with reduced datasets and a small number of rounds. A full CUDA run should
 only be attempted after all clients load successfully and a one-round smoke test
 has completed.
 
+Run every implemented ownership topology from one validated base configuration
+with:
+
+```bash
+uv run python -m src.experiments.mode_matrix \
+  --config-file configs/config.real.yaml --rounds 1 \
+  --artifact-root artifacts/mode_matrix
+```
+
+Use repeatable `--mode` values to select a subset. The runner writes elapsed
+wall time and pass/fail status to `mode_matrix_summary.yaml`; it is a smoke and
+diagnostic runner, not a benchmark harness. In SplitFed, evaluation at an
+aggregation round occurs before FedAvg so that the client encoder and shared
+server model are a trained, compatible pair. The global client encoder is then
+installed for the next round.
+
 Expected generated artifacts include:
 
 - rotating logs under `logs/` when logging configuration is loaded;
