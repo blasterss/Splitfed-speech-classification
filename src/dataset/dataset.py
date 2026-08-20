@@ -15,7 +15,12 @@ class EmotionalDataset(Dataset):
     """
 
     def __init__(
-        self, data: np.ndarray, labels: np.ndarray, mean=None, std=None
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        mean=None,
+        std=None,
+        valid_frames: np.ndarray | None = None,
     ):
         self.data = torch.from_numpy(data).float()
         self.labels = torch.from_numpy(labels).float()
@@ -24,6 +29,11 @@ class EmotionalDataset(Dataset):
         self.mean = None if mean is None else torch.from_numpy(mean).float()
 
         self.std = None if std is None else torch.from_numpy(std).float()
+        self.valid_frames = (
+            None
+            if valid_frames is None
+            else torch.from_numpy(valid_frames).long()
+        )
 
         # Prevent division by zero
         if self.std is not None:
@@ -60,6 +70,9 @@ class EmotionalDataset(Dataset):
         # Apply normalization
         if self.mean is not None and self.std is not None:
             x = (x - self.mean[:, None]) / self.std[:, None]
+        if self.valid_frames is not None:
+            x = x.clone()
+            x[..., self.valid_frames[idx] :] = 0
 
         return x, y
 
@@ -96,6 +109,12 @@ class ConflictEmotionalDataset:
             )
 
         actor_ids = np.asarray([item["actor_id"] for item in metadata])
+        valid_frames = np.asarray(
+            [item.get("valid_frames", data.shape[-1]) for item in metadata],
+            dtype=np.int64,
+        )
+        if np.any(valid_frames <= 0) or np.any(valid_frames > data.shape[-1]):
+            raise ValueError("Dataset metadata contains invalid valid_frames")
 
         # Split dataset by actor IDs
         unique_actors = np.unique(actor_ids)
@@ -119,6 +138,8 @@ class ConflictEmotionalDataset:
         test_data = data[test_mask]
         train_labels = labels[train_mask]
         test_labels = labels[test_mask]
+        train_valid_frames = valid_frames[train_mask]
+        test_valid_frames = valid_frames[test_mask]
         if set(np.unique(train_labels)) != {0, 1}:
             raise ValueError(
                 "Training split must contain both binary classes 0 and 1"
@@ -130,17 +151,18 @@ class ConflictEmotionalDataset:
 
         # --------- NORMALIZATION (TRAIN ONLY) ---------
 
-        # Compute normalization statistics
-        # over frequency and time dimensions
-        mean = train_data.mean(axis=(0, 2))
-        std = train_data.std(axis=(0, 2)) + 1e-8
+        mean, std = _masked_normalization_stats(train_data, train_valid_frames)
 
         # Create PyTorch datasets
         self.train_dataset = EmotionalDataset(
-            train_data, train_labels, mean, std
+            train_data, train_labels, mean, std, train_valid_frames
         )
 
-        self.test_dataset = EmotionalDataset(test_data, test_labels, mean, std)
+        self.test_dataset = EmotionalDataset(
+            test_data, test_labels, mean, std, test_valid_frames
+        )
+        self.train_valid_frames = tuple(train_valid_frames.tolist())
+        self.test_valid_frames = tuple(test_valid_frames.tolist())
 
         logger.info("Dataset coverage: %s", self.coverage)
 
@@ -173,3 +195,23 @@ def _coverage(labels: np.ndarray, actors: np.ndarray) -> dict:
         "class_0": int((labels == 0).sum()),
         "class_1": int((labels == 1).sum()),
     }
+
+
+def _masked_normalization_stats(
+    data: np.ndarray, valid_frames: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute per-feature train statistics without padded time frames."""
+    if data.ndim != 3:
+        raise ValueError(
+            "Mask-aware normalization currently requires stacked [N, F, T] "
+            "features"
+        )
+    mask = np.arange(data.shape[-1])[None, :] < valid_frames[:, None]
+    counts = mask.sum()
+    if counts <= 0:
+        raise ValueError("No valid training frames for normalization")
+    expanded_mask = mask[:, None, :]
+    mean = (data * expanded_mask).sum(axis=(0, 2)) / counts
+    centered = (data - mean[None, :, None]) * expanded_mask
+    variance = (centered**2).sum(axis=(0, 2)) / counts
+    return mean, np.sqrt(variance) + 1e-8

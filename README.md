@@ -325,7 +325,9 @@ tests.
 ### Data pipeline
 
 - Feature extraction loads each client dataset fully into memory.
-- Padding zeros participate in normalisation statistics.
+- Stacked features record valid frame counts before padding. Train-only
+  normalization ignores padded frames and restores padded positions to zero
+  after normalization.
 - Actor-disjoint splits record per-split actor/sample/class coverage and reject
   training partitions that do not contain both binary classes.
 - Per-file feature extraction errors are skipped and can hide systematic data

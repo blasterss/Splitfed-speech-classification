@@ -238,7 +238,8 @@ that start method explicitly.
 ## Known implementation hazards
 
 - Feature extraction currently loads complete client datasets into memory.
-- Padding zeros can affect normalization statistics.
+- Stacked feature metadata records valid frame counts; train-only mask-aware
+  normalization excludes padding and keeps normalized padded frames at zero.
 - Actor-disjoint splits expose actor/sample/class counts and reject a training
   split missing either binary class. One-class test splits remain supported.
 - Client training currently shuffles without class-balanced sampling.

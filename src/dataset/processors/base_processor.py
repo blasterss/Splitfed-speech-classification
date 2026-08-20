@@ -1,16 +1,14 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
-from typing import Tuple, List, Dict, Any
 import numpy as np
-
 from tqdm import tqdm
 
+from ...logger import logger
+from ...schema import DatasetConfig
 from ..feature_extraction import FeatureExtraction
 from ..feature_utils import FeatureUtils
-
-from ...schema import DatasetConfig
-from ...logger import logger
 
 
 class BaseDatasetLoader(ABC):
@@ -47,7 +45,7 @@ class BaseDatasetLoader(ABC):
 
     def load(
         self, feature_mode: str = "stacked"
-    ) -> Tuple[List[np.ndarray], List[Dict[str, Any]]]:
+    ) -> tuple[list[np.ndarray], list[dict[str, Any]]]:
 
         logger.info(f"Loading data from {self.root}...")
 
@@ -89,6 +87,7 @@ class BaseDatasetLoader(ABC):
                         "actor_id": actor_id,
                         "sex": sex,
                         "dataset": str(self.config.name),
+                        "valid_frames": int(features.shape[-1]),
                     }
                 )
 
@@ -117,7 +116,9 @@ class BaseDatasetLoader(ABC):
 
                 logger.info("Multi-channel features:")
 
-                for name, shape in zip(self.config.feature_names, shapes):
+                for name, shape in zip(
+                    self.config.feature_names, shapes, strict=True
+                ):
                     logger.info(f"  {name}: {shape}")
 
             else:
@@ -126,7 +127,7 @@ class BaseDatasetLoader(ABC):
         return padded_data, metadata
 
     @staticmethod
-    def _pad_stacked(features: List[np.ndarray]) -> List[np.ndarray]:
+    def _pad_stacked(features: list[np.ndarray]) -> list[np.ndarray]:
         """
         Padding for stacked format [F, T]
         """
@@ -152,7 +153,7 @@ class BaseDatasetLoader(ABC):
         return padded
 
     @staticmethod
-    def _pad_multichannel(features: List[np.ndarray]) -> List[np.ndarray]:
+    def _pad_multichannel(features: list[np.ndarray]) -> list[np.ndarray]:
         """
         Padding for multi-channel format [C, H, T]
         """
