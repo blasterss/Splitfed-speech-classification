@@ -132,9 +132,15 @@ Split responses and federated responses to accepted updates echo request IDs.
 Queue send stamps a hop deadline using the positive channel timeout; send,
 receive and payload validators reject expired envelopes. It is not yet one
 end-to-end deadline spanning split batching or federated quorum waiting. With
-partial federated quorum, a client whose update was not accepted receives no
-correlated response for that request and must fail through the bounded
-lifecycle rather than loading it.
+partial federated quorum, accepted clients receive the aggregate immediately;
+a validated client arriving later in that same completed round receives a
+correlated catch-up response. Older-round catch-up is not implemented.
+
+Each split and federated worker has a FIFO replay guard covering the most recent
+10,000 accepted request IDs. Replays in that window fail the worker before
+payload processing and propagate into controller cancellation. The cache is
+in-process and resets on restart; durable cross-restart replay protection is
+not implemented.
 
 Create local configuration and output directories:
 

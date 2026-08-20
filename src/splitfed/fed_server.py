@@ -9,6 +9,7 @@ import torch.multiprocessing as mp
 from ..logger import logger
 from ..schema import AggregationStrategy, FedServerConfig
 from ..transport.base import Channel, Message
+from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
@@ -251,6 +252,7 @@ def _fed_server_worker(
     last_completed_round = 0
     expected_schema = None
     round_started_at: float | None = None
+    replay_guard = ReplayGuard()
 
     try:
         while not stop_event.is_set():
@@ -267,6 +269,7 @@ def _fed_server_worker(
                     continue
 
                 served_any = True
+                replay_guard.accept(msg.request_id)
 
                 if msg.round <= last_completed_round:
                     _validate_client_update(

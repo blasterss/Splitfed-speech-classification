@@ -219,3 +219,32 @@ def test_worker_aggregates_partial_quorum_and_catches_up_late_client():
     )
     saved_state = deserialize_state_dict(result_queue.value)
     assert torch.equal(saved_state["weight"], torch.tensor([7.5]))
+
+
+def test_worker_rejects_replayed_federated_request():
+    stop_event = FakeStopEvent()
+    broadcasts = []
+    update = _update(sender="client-0")
+    channels = {
+        "client-0": {
+            "uplink": SequenceUplink([update, update]),
+            "downlink": FakeDownlink(broadcasts, stop_event),
+        }
+    }
+    config = SimpleNamespace(
+        seed=42,
+        min_clients=1,
+        quorum_timeout_sec=0,
+        strategy=AggregationStrategy.fedavg,
+    )
+
+    with pytest.raises(ValueError, match="Replay"):
+        _fed_server_worker(
+            config,
+            channels,
+            1,
+            stop_event,
+            FakeResultQueue(),
+        )
+
+    assert len(broadcasts) == 1

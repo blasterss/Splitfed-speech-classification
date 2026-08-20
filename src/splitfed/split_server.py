@@ -12,6 +12,7 @@ from ..logger import logger
 from ..model.server_side_model import ServerSideModel
 from ..schema import ServerModelScope, SplitServerConfig
 from ..transport.base import Channel, Message
+from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
@@ -188,6 +189,7 @@ def _split_server_worker_personalized(
     accumulated_batches = {client_id: 0 for client_id in client_ids}
     completed_steps = {client_id: set() for client_id in client_ids}
     stats = {client_id: _RoundStats() for client_id in client_ids}
+    replay_guard = ReplayGuard()
 
     logger.info(
         "Personalized SplitServer worker ready, serving clients: %s",
@@ -204,6 +206,7 @@ def _split_server_worker_personalized(
                     raise ValueError(
                         f"Invalid split message from client {client_id}"
                     )
+                replay_guard.accept(msg.request_id)
                 served_any = True
                 correlation = (msg.type, msg.round, msg.step)
                 if correlation in completed_steps[client_id]:
@@ -306,6 +309,7 @@ def _split_server_worker_batch(
 
     current_round = 1
     stats = _RoundStats()
+    replay_guard = ReplayGuard()
 
     all_eval_probs = []
     all_eval_labels = []
@@ -326,6 +330,8 @@ def _split_server_worker_batch(
                     raise ValueError(
                         f"Invalid split message from client {client_id}"
                     )
+
+                replay_guard.accept(msg.request_id)
 
                 served_any = True
 

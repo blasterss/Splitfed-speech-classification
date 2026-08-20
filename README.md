@@ -255,6 +255,9 @@ type, round and step. `QueueChannel.send()` stamps an unset hop deadline from
 the positive channel timeout; expired messages are rejected at send and receive
 boundaries and again before client/server payload use. This is not yet a single
 end-to-end RPC deadline across split batching or federated quorum waiting.
+Split and federated workers reject request IDs repeated within a bounded FIFO
+window of 10,000 accepted messages. This in-process cache is reset on worker
+restart and is not durable broker-level replay protection.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes
