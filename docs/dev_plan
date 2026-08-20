@@ -615,24 +615,7 @@ cancellation завершают весь run за ограниченное вр�
 deadline-budget exhaustion, server/client fault injection and repeated
 idempotent teardown.
 
-### Этап 3. Container runtime foundation
-
-**Задачи:** добавить multi-stage Dockerfile(s), pinned dependency build,
-non-root images, Compose reference topology, per-client environment contract,
-health/readiness probes, resource limits, scoped mounts, graceful shutdown и
-container log/metric labels. Сначала контейнеризировать synthetic smoke path,
-затем real dataset path.
-
-**Зависит от:** этапов 1-2.
-
-**Готово, когда:** controller, servers и минимум два client containers
-проходят smoke run по isolated network, а остановка/ошибка контейнера
-завершает run и освобождает ресурсы.
-
-**Тесты:** image build, non-root check, health probes, network isolation,
-volume permissions, resource-limit behavior, container failure injection.
-
-### Этап 4. ClientLoadController и policy experiments
+### Этап 3. ClientLoadController и policy experiments
 
 **Задачи:** реализовать telemetry ingestion, heartbeat, eligibility,
 quarantine, leases, `RoundPlan`, policy registry и baseline policies
@@ -640,7 +623,9 @@ quarantine, leases, `RoundPlan`, policy registry и baseline policies
 `data_balanced`, `availability_aware`. Ввести fairness debt, minimum
 participation и per-dataset coverage constraints.
 
-**Зависит от:** этапов 1-3 и текущего validated partial quorum.
+**Зависит от:** этапов 1-2 и текущего validated partial quorum. Первая
+реализация и её исследования выполняются на локальном `spawn` backend и не
+зависят от контейнерной runtime-модели.
 
 **Готово, когда:** heterogeneous simulation с разными dataset sizes и
 скоростями не deadlock-ится, selection decisions воспроизводимы, а scheduler
@@ -650,7 +635,7 @@ participation и per-dataset coverage constraints.
 rotation, slow/dropout client, quorum, scheduler restart/resume, comparison
 of policy metrics against all-client baseline.
 
-### Этап 5. Data pipeline: bounded loading и sampling
+### Этап 4. Data pipeline: bounded loading и sampling
 
 **Задачи:** реализовать lazy/chunked loading, configurable extraction error
 budget и явную class-balance policy: подключить typed sampler либо документированно
@@ -666,7 +651,7 @@ budget и явную class-balance policy: подключить typed sampler л
 **Тесты:** frozen-manifest replay/mismatch, configured extraction error budget,
 sampler policy golden case и memory-bounded fixture.
 
-### Этап 6. Checkpoint resume, metrics и resource telemetry
+### Этап 5. Checkpoint resume, metrics и resource telemetry
 
 **Задачи:** расширить checkpoint до model/optimizer/RNG/round/config/manifest
 state, добавить atomic run-state transition и resume. Агрегировать per-client,
@@ -684,7 +669,7 @@ allocated/reserved memory и NVML utilization/memory samples, если NVML до
 подменяются нулём. Sampling должен иметь bounded frequency/retention и не
 содержать tensors, audio или secrets.
 
-**Зависит от:** этапов 1, 4-5.
+**Зависит от:** этапов 1, 3-4.
 
 **Готово, когда:** run можно остановить на round boundary и продолжить с теми
 же моделями, RNG policy и результатами; промежуточные метрики не смешиваются
@@ -695,7 +680,7 @@ allocated/reserved memory и NVML utilization/memory samples, если NVML до
 rejection, interrupted-versus-uninterrupted equivalence и bounded telemetry
 retention.
 
-### Этап 7. Privacy and security research layer
+### Этап 6. Privacy and security research layer
 
 **Задачи:** описать threat model и adversary locations; добавить activation
 clipping, calibrated Gaussian/Laplace mechanism, accountant (epsilon/delta),
@@ -705,7 +690,7 @@ network deployment добавить authentication, TLS, authorization, replay
 protection и secure secret handling.
 
 **Зависит от:** текущего validated queue protocol, этапов 1-5 и измеримых
-baseline artifacts из этапа 6.
+baseline artifacts из этапа 5.
 
 **Готово, когда:** для каждой privacy конфигурации есть заявленный threat
 model, параметры clipping/noise, accounting report и leakage comparison.
@@ -714,7 +699,7 @@ model, параметры clipping/noise, accounting report и leakage compariso
 **Тесты:** clipping bounds, accountant fixtures, train/eval behavior,
 serialization security, replay/invalid-auth tests, leakage benchmark smoke.
 
-### Этап 8. gRPC и распределённый запуск
+### Этап 7. gRPC и распределённый запуск
 
 **Задачи:** выбрать protobuf schema, реализовать Message serialization,
 client/server RPC services, deadlines, reconnect policy, TLS/mTLS, health
@@ -731,7 +716,7 @@ checks и deployment configuration. Не смешивать queue и gRPC semant
 **Тесты:** protobuf compatibility, loopback RPC, TLS, unavailable peer,
 reconnect, payload size/compression, multi-process integration.
 
-### Этап 9. Research experiments, CI и release gate
+### Этап 8. Research experiments, CI и release gate
 
 **Задачи:** использовать реализованные centralized, federated, split/shared,
 split/personalized и SplitFed режимы для leave-one-dataset-out и multi-seed
@@ -740,12 +725,33 @@ latency, communication bytes, peak memory, throughput и privacy leakage.
 Добавить CI с Ruff, Black, mypy, pytest и smoke test; подготовить release
 checklist и обновить README/REPOSITORY_GUIDE.
 
-**Зависит от:** этапов 4-8 в зависимости от выбранного transport scope.
+**Зависит от:** этапов 3-7 в зависимости от выбранного transport scope.
 
 **Готово, когда:** опубликованный experiment report воспроизводится из
 resolved config и содержит class/actor counts, per-dataset metrics,
 confidence intervals или разброс по seed, system metrics и explicit
 limitations.
+
+### Этап 9. Container runtime foundation
+
+Это заключительный инженерный этап после стабилизации исследовательских
+контрактов, simulator, lifecycle, scheduling, data и artifact paths.
+
+**Задачи:** добавить multi-stage Dockerfile(s), pinned dependency build,
+non-root images, Compose reference topology, per-client environment contract,
+health/readiness probes, resource limits, scoped mounts, graceful shutdown и
+container log/metric labels. Сначала контейнеризировать synthetic smoke path,
+затем real dataset path.
+
+**Зависит от:** этапов 1-8. Контейнеры не являются prerequisite для локальных
+исследовательских policy/simulation experiments.
+
+**Готово, когда:** controller, servers и минимум два client containers
+проходят smoke run по isolated network, а остановка/ошибка контейнера
+завершает run и освобождает ресурсы.
+
+**Тесты:** image build, non-root check, health probes, network isolation,
+volume permissions, resource-limit behavior, container failure injection.
 
 ## 6. Приоритеты и порядок поставки
 
@@ -755,7 +761,6 @@ limitations.
   policies;
 - deterministic `unit`/`fault_injection`/heterogeneous simulator;
 - structured first-failure report и единый cancellation deadline budget;
-- containerized CPU smoke topology with health checks and resource limits;
 - ClientLoadController baseline with deadline, quorum and fairness guardrails;
 - frozen input manifest для точного повторения dataset selection.
 
@@ -773,6 +778,7 @@ limitations.
 - formal DP accounting and leakage studies;
 - gRPC, TLS/mTLS and authentication;
 - Kubernetes/operator deployment, registry and external secret manager;
+- containerized CPU smoke topology with health checks and resource limits;
 - streaming capture and segmentation;
 - performance tuning, compression and CUDA matrix.
 
@@ -828,17 +834,17 @@ limitations.
 1. `feat: add typed policy registry and research profiles`;
 2. `feat: add deterministic heterogeneous simulator`;
 3. `feat: persist structured failure reports`;
-4. `feat: add container runtime foundation`;
-5. `feat: add client load controller telemetry and leases`;
-6. `feat: add replayable scheduler policies`;
-7. `fix: bound dataset loading and freeze input manifests`;
-8. `feat: persist per-process resource telemetry`;
-9. `feat: add optimizer and rng checkpoint resume`;
-10. `test: prove resume equivalence`;
-11. `feat: aggregate per-dataset and worst-client metrics`;
-12. `feat: add privacy accounting and leakage benchmarks`;
-13. `feat: implement grpc transport`;
-14. `test: add multi-seed baselines and continuous integration`.
+4. `feat: add client load controller telemetry and leases`;
+5. `feat: add replayable scheduler policies`;
+6. `fix: bound dataset loading and freeze input manifests`;
+7. `feat: persist per-process resource telemetry`;
+8. `feat: add optimizer and rng checkpoint resume`;
+9. `test: prove resume equivalence`;
+10. `feat: aggregate per-dataset and worst-client metrics`;
+11. `feat: add privacy accounting and leakage benchmarks`;
+12. `feat: implement grpc transport`;
+13. `test: add multi-seed baselines and continuous integration`;
+14. `feat: add container runtime foundation`.
 
 Каждый commit должен иметь focused test и не объединять lifecycle, numerical
 correctness, data semantics и packaging без прямой зависимости.
