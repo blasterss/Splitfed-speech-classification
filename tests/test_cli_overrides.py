@@ -1,5 +1,10 @@
 import pytest
 
+from src.config_profiles import (
+    PROFILE_REGISTRY,
+    ExperimentProfileDefinition,
+    ExperimentProfileRegistry,
+)
 from src.main import apply_cli_overrides, resolve_raw_config
 
 
@@ -86,3 +91,18 @@ def test_yaml_can_select_registered_profile():
         "version": "1",
         "source": "yaml",
     }
+
+
+def test_profile_registry_exposes_typed_versioned_definitions():
+    profile = PROFILE_REGISTRY["smoke"]
+
+    assert isinstance(profile, ExperimentProfileDefinition)
+    assert profile.name == "smoke"
+    assert profile.version == "1"
+
+
+def test_profile_registry_rejects_duplicate_names():
+    duplicate = ExperimentProfileDefinition("unit", "1", {})
+
+    with pytest.raises(ValueError, match="Duplicate experiment profile"):
+        ExperimentProfileRegistry([duplicate, duplicate])

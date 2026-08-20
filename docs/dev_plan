@@ -583,8 +583,8 @@ protocol, accumulation/FedAvg semantics, data normalization, artifact metadata
 
 ### Этап 1. Research control plane и simulation harness
 
-**Задачи:** вынести встроенный profile registry в typed/versioned policy
-registry; добавить `unit`, `debug`, `fault_injection`, `heterogeneous`,
+**Задачи:** расширить typed/versioned registry профилей; добавить `unit`,
+`debug`, `fault_injection`, `heterogeneous`,
 `benchmark`, `repro`, `privacy` и `distributed`; реализовать synthetic data и
 virtual clients с deterministic/wall-clock modes, throughput, latency,
 availability, dropout и backpressure. Сохранять simulator parameters и trace
@@ -751,7 +751,8 @@ limitations.
 
 ### P0: исправить до любых длинных экспериментов
 
-- typed policy registry и остальные research profiles;
+- остальные research profiles и typed registries для scheduler/transport
+  policies;
 - deterministic `unit`/`fault_injection`/heterogeneous simulator;
 - structured first-failure report и единый cancellation deadline budget;
 - containerized CPU smoke topology with health checks and resource limits;

@@ -12,6 +12,7 @@ import torch
 import torch.multiprocessing as mp
 import yaml
 
+from .config_profiles import PROFILE_REGISTRY
 from .logger import logger
 from .schema import ConfigSchema
 from .splitfed.controller import TrainingController
@@ -19,19 +20,6 @@ from .transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
 from .utils.artifacts import ArtifactPaths
 from .utils.common import read_yaml, save_yaml
 from .utils.training import set_seed
-
-PROFILE_REGISTRY = {
-    "smoke": {
-        "version": "1",
-        "config": {
-            "training": {
-                "num_rounds": 1,
-                "eval_every": 1,
-                "barrier_timeout_sec": 30.0,
-            }
-        },
-    }
-}
 
 
 def main():
@@ -318,11 +306,11 @@ def resolve_raw_config(
             raise ValueError(
                 f"Unknown experiment profile {selected_profile!r}"
             ) from exc
-        merged = _deep_merge(profile["config"], raw_config)
+        merged = _deep_merge(profile.config_copy(), raw_config)
         merged.setdefault("experiment", {})["profile"] = selected_profile
         profile_provenance = {
             "name": selected_profile,
-            "version": profile["version"],
+            "version": profile.version,
             "source": "cli" if profile_name is not None else "yaml",
         }
 

@@ -33,7 +33,8 @@ The repository currently provides:
 - validated split message identity/correlation and duplicate-step rejection;
 - configured uniform or dataset-weighted FedAvg for the client-side model;
 - bounded partial-quorum FedAvg windows with correlated late-client catch-up;
-- strict configuration, a versioned smoke profile and typed CLI overrides;
+- strict configuration, a typed registry with a versioned smoke profile and
+  typed CLI overrides;
 - experiment-scoped resolved config, provenance, dataset manifests, metrics and
   atomic ownership-aware model checkpoints;
 - optional Gaussian or Laplace perturbation of intermediate activations;
@@ -186,9 +187,10 @@ Important configuration caveats:
 
 The repository also contains a forward-looking research plan for additional
 launch profiles, simulation, isolated client containers and throughput-aware
-client scheduling. Only the versioned `smoke` configuration-default profile is
-currently available; the other planned profiles and capabilities are not part
-of the current runtime.
+client scheduling. The built-in profile registry validates unique names and
+exposes typed, versioned definitions, but only the `smoke`
+configuration-default profile is currently available; the other planned
+profiles and capabilities are not part of the current runtime.
 The controller creates only mode-owned roles and channels. Centralized mode
 trains one complete `SpeechRecognitionModel` over the combined client dataset
 views without transport channels or servers. Federated mode trains and

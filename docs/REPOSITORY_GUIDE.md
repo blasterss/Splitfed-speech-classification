@@ -125,7 +125,8 @@ existing fields (including numeric list indices such as
 `clients.0.runtime.batch_size`). Unknown paths are rejected before process
 creation, and applied overrides are recorded in `run_metadata.yaml`.
 
-The built-in `--profile smoke` profile provides versioned training defaults.
+The typed built-in profile registry currently exposes `--profile smoke`, which
+provides versioned training defaults and rejects duplicate registered names.
 Resolution precedence is `profile < YAML < --set`; it intentionally does not
 invent dataset roots or force a topology. Configure reduced datasets, CPU
 devices and the desired clients in the YAML used for a smoke run.
@@ -332,19 +333,19 @@ after kill and raise if a child still remains alive.
   supported training path.
 
 Most planned research infrastructure in `docs/dev_plan` is not implemented
-yet: there are no per-client Docker runtimes, ClientLoadController, named
+yet: there are no per-client Docker runtimes, ClientLoadController, scheduler
 policy registry or heterogeneous-client simulator in the current runtime. A
-single versioned `smoke` default profile is available; the remaining named
-profiles are still planned. The mode matrix is executable through
-`python -m src.experiments.mode_matrix`: centralized uses one complete model
-and combined dataset view without channels, federated-only uses complete client
-classifiers, split/shared uses one shared server model, split/personalized owns
-one server model and optimizer per client, and SplitFed combines split training
-with client-partition FedAvg. The matrix derives only the roles and channels
-owned by each topology, validates every derived configuration and writes a
-pass/fail and wall-time summary. SplitFed evaluates the compatible pre-FedAvg
-encoder/server pair on aggregation rounds; the aggregated encoder takes effect
-for the following round.
+typed profile registry exposes a single versioned `smoke` default profile; the
+remaining named profiles are still planned. The mode matrix is executable
+through `python -m src.experiments.mode_matrix`: centralized uses one complete
+model and combined dataset view without channels, federated-only uses complete
+client classifiers, split/shared uses one shared server model,
+split/personalized owns one server model and optimizer per client, and SplitFed
+combines split training with client-partition FedAvg. The matrix derives only
+the roles and channels owned by each topology, validates every derived
+configuration and writes a pass/fail and wall-time summary. SplitFed evaluates
+the compatible pre-FedAvg encoder/server pair on aggregation rounds; the
+aggregated encoder takes effect for the following round.
 
 Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
 model correctness, data semantics, and packaging changes into one patch.
