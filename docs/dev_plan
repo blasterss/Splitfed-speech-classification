@@ -673,11 +673,23 @@ state, добавить atomic run-state transition и resume. Агрегиро�
 per-dataset и worst-client metrics. Записывать по PID peak/interval CPU, RSS,
 I/O, communication bytes и, при доступном NVML, GPU memory/utilization.
 
+Помимо training/evaluation metrics каждый run должен сохранять отдельный
+bounded artifact `telemetry/process_resources.yaml` или эквивалентный
+versioned формат. Для каждого controller/client/split-server/fed-server процесса
+он содержит logical role, client ID при наличии, PID, start/finish timestamps,
+exit status, sampling interval, wall/CPU time, peak и sampled RSS, read/write
+bytes, transport bytes/messages и CUDA device. GPU-запись содержит peak
+allocated/reserved memory и NVML utilization/memory samples, если NVML доступен.
+Недоступные platform counters записываются как `null` вместе с причиной, а не
+подменяются нулём. Sampling должен иметь bounded frequency/retention и не
+содержать tensors, audio или secrets.
+
 **Зависит от:** этапов 1, 4-5.
 
 **Готово, когда:** run можно остановить на round boundary и продолжить с теми
 же моделями, RNG policy и результатами; промежуточные метрики не смешиваются
-между run IDs.
+между run IDs; для каждого созданного процесса есть итоговая resource summary,
+включая процессы, завершившиеся с ошибкой или по cancellation.
 
 **Тесты:** optimizer/RNG round-trip, corrupt run state, cross-mode resume
 rejection, interrupted-versus-uninterrupted equivalence и bounded telemetry
@@ -776,7 +788,7 @@ limitations.
 | Load controller | telemetry/lease/fairness tests | decisions объяснимы и replayable |
 | Data loading | bounded-memory fixture | объём памяти не растёт с полным corpus |
 | Checkpoint | save/load/resume | resume эквивалентен uninterrupted run |
-| Telemetry | per-process CPU/RSS/GPU/bytes | bounded samples сохранены в artifacts |
+| Telemetry | normal/failure run с per-process CPU/RSS/I/O/GPU/transport counters | versioned bounded artifact содержит каждую role; unavailable counters явны |
 | Privacy | accountant + leakage fixture | claim соответствует измерениям |
 | gRPC | loopback multi-process | тот же contract и cancellation |
 | Quality gate | CI on Python 3.10-3.12 | все обязательные jobs зелёные |
