@@ -42,12 +42,18 @@ class NoOpClient:
 class RecordingClient(NoOpClient):
     trained_rounds = []
     evaluated_rounds = []
+    events = []
 
     def train_one_round(self, round):
         self.trained_rounds.append(round)
+        self.events.append(("train", round))
+
+    def federative_aggregate(self, round):
+        self.events.append(("aggregate", round))
 
     def evaluate(self, round):
         self.evaluated_rounds.append(round)
+        self.events.append(("evaluate", round))
         return {}
 
 
@@ -117,6 +123,7 @@ def test_client_barrier_waits_use_configured_timeout(monkeypatch):
 def test_client_evaluates_on_cadence_and_final_round(monkeypatch):
     RecordingClient.trained_rounds = []
     RecordingClient.evaluated_rounds = []
+    RecordingClient.events = []
     stop_event = FakeStopEvent()
     ready_barrier = FakeBarrier()
     eval_barrier = FakeBarrier()
@@ -145,6 +152,49 @@ def test_client_evaluates_on_cadence_and_final_round(monkeypatch):
     assert RecordingClient.trained_rounds == [1, 2, 3]
     assert RecordingClient.evaluated_rounds == [2, 3]
     assert eval_barrier.wait_timeouts == [0.25] * 4
+
+
+@pytest.mark.parametrize(
+    "mode,expected_events",
+    [
+        (
+            TrainingMode.splitfed,
+            [("train", 1), ("evaluate", 1), ("aggregate", 1)],
+        ),
+        (
+            TrainingMode.federated,
+            [("train", 1), ("aggregate", 1), ("evaluate", 1)],
+        ),
+    ],
+)
+def test_evaluation_uses_mode_compatible_model_pair(
+    monkeypatch, mode, expected_events
+):
+    RecordingClient.events = []
+    stop_event = FakeStopEvent()
+    monkeypatch.setattr("src.splitfed.client.Client", RecordingClient)
+    cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=1,
+        eval_every=1,
+        fed_every=1,
+        mode=mode,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        object(),
+        object(),
+        stop_event,
+        FakeBarrier(),
+        FakeBarrier(),
+    )
+
+    assert RecordingClient.events == expected_events
 
 
 def test_spawned_barrier_waiter_exits_after_cancellation():

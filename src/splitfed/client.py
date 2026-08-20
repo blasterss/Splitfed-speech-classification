@@ -576,16 +576,34 @@ def _client_worker(
             last_round = round_idx
             client.train_one_round(round_idx)
 
-            if (
+            should_aggregate = (
                 training_cfg.mode
                 in (TrainingMode.federated, TrainingMode.splitfed)
                 and round_idx % training_cfg.fed_every == 0
-            ):
-                client.federative_aggregate(round_idx)
-            if _should_evaluate(
+            )
+            should_evaluate = _should_evaluate(
                 round_idx,
                 training_cfg.num_rounds,
                 training_cfg.eval_every,
+            )
+
+            # In SplitFed the shared server model was trained against each
+            # client's pre-aggregation encoder. Evaluate that compatible pair
+            # before replacing the encoders with their FedAvg result. Plain
+            # federated mode has no split server and evaluates the global
+            # model after aggregation as usual.
+            if should_evaluate and training_cfg.mode is TrainingMode.splitfed:
+                _evaluate_at_barrier(
+                    client,
+                    round_idx,
+                    eval_barrier,
+                    training_cfg.barrier_timeout_sec,
+                )
+            if should_aggregate:
+                client.federative_aggregate(round_idx)
+            if (
+                should_evaluate
+                and training_cfg.mode is not TrainingMode.splitfed
             ):
                 _evaluate_at_barrier(
                     client,
