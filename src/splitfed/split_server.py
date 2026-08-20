@@ -1,22 +1,20 @@
 import queue
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.multiprocessing as mp
+import time
+from collections import defaultdict
 from pathlib import Path
 
-from ..utils.training_stats import _RoundStats
+import torch
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.optim as optim
 
-from ..model.server_side_model import ServerSideModel
-from ..transport.base import Channel, Message
-from ..utils.training import set_seed
-from ..utils.state import deserialize_state_dict, serialize_state_dict
-from ..schema import SplitServerConfig
 from ..logger import logger
-
-from typing import Dict, Optional
-from collections import defaultdict
-import time
+from ..model.server_side_model import ServerSideModel
+from ..schema import ServerModelScope, SplitServerConfig
+from ..transport.base import Channel, Message
+from ..utils.state import deserialize_state_dict, serialize_state_dict
+from ..utils.training import set_seed
+from ..utils.training_stats import _RoundStats
 
 logger = logger.getChild("SplitServer")
 
@@ -40,7 +38,7 @@ class SplitServer:
     def __init__(
         self,
         config: SplitServerConfig,
-        client_channels: Dict[str, Dict[str, Channel]],
+        client_channels: dict[str, dict[str, Channel]],
         stop_event=None,
     ):
         self.config = config
@@ -48,15 +46,20 @@ class SplitServer:
 
         self._stop_event = stop_event if stop_event is not None else mp.Event()
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
-        self._process: Optional[mp.Process] = None
+        self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
 
     def start(self) -> None:
         """Spawn the server worker process."""
         self._stop_event.clear()
+        worker = (
+            _split_server_worker_personalized
+            if self.config.model_scope is ServerModelScope.personalized
+            else _split_server_worker_batch
+        )
         self._process = mp.Process(
-            target=_split_server_worker_batch,
+            target=worker,
             args=(
                 self.config,
                 self.client_channels,
@@ -82,7 +85,8 @@ class SplitServer:
             self._process.join(timeout=30)
             if self._process.is_alive():
                 logger.warning(
-                    "SplitServer worker did not exit within 30 s — terminating."
+                    "SplitServer worker did not exit within 30 s — "
+                    "terminating."
                 )
                 self._process.terminate()
                 self._process.join(timeout=5)
@@ -111,21 +115,161 @@ class SplitServer:
             return deserialize_state_dict(self._result_queue.get_nowait())
         except queue.Empty:
             raise RuntimeError(
-                "No state_dict available. Either stop() has not been called yet "
+                "No state_dict available. Either stop() has not been called "
+                "yet "
                 "or the worker exited abnormally."
-            )
+            ) from None
 
     def save(self, path: str) -> None:
         """Retrieve the trained weights and save them to disk."""
-        save_path = Path(path) / "split_server.pt"
         state_dict = self.get_state_dict()
-        torch.save(state_dict, save_path)
-        logger.info("SplitServer model saved to '%s'", save_path)
+        if self.config.model_scope is ServerModelScope.personalized:
+            for client_id, client_state in state_dict.items():
+                save_path = Path(path) / f"split_server_client_{client_id}.pt"
+                torch.save(client_state, save_path)
+                logger.info(
+                    "Personalized SplitServer model saved to '%s'", save_path
+                )
+        else:
+            save_path = Path(path) / "split_server.pt"
+            torch.save(state_dict, save_path)
+            logger.info("SplitServer model saved to '%s'", save_path)
+
+
+def _build_personalized_models(
+    client_ids: list,
+    config: SplitServerConfig,
+    device: torch.device,
+) -> tuple[dict, dict]:
+    """Create independently initialized model and optimizer ownership."""
+    models = {}
+    optimizers = {}
+    for client_id in client_ids:
+        set_seed(config.seed)
+        model = ServerSideModel(model_type="cnn_birnn").to(device)
+        models[client_id] = model
+        optimizers[client_id] = optim.Adam(
+            model.parameters(), lr=config.model.learning_rate
+        )
+        optimizers[client_id].zero_grad()
+    return models, optimizers
+
+
+def _split_server_worker_personalized(
+    config: SplitServerConfig,
+    client_channels: dict[str, dict[str, Channel]],
+    stop_event,
+    result_queue: mp.Queue,
+) -> None:
+    """Serve each client with an isolated model and optimizer."""
+    set_seed(config.seed)
+    device = torch.device(config.model.device)
+    client_ids = list(client_channels)
+    models, optimizers = _build_personalized_models(client_ids, config, device)
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(config.model.pos_weight, device=device)
+    ).to(device)
+    accumulated_batches = {client_id: 0 for client_id in client_ids}
+    completed_steps = {client_id: set() for client_id in client_ids}
+    stats = {client_id: _RoundStats() for client_id in client_ids}
+
+    logger.info(
+        "Personalized SplitServer worker ready, serving clients: %s",
+        client_ids,
+    )
+    try:
+        while not stop_event.is_set():
+            served_any = False
+            for client_id in client_ids:
+                msg = client_channels[client_id]["uplink"].recv_nowait()
+                if msg is None:
+                    continue
+                if not _validate_message(msg, client_id):
+                    raise ValueError(
+                        f"Invalid split message from client {client_id}"
+                    )
+                served_any = True
+                correlation = (msg.type, msg.round, msg.step)
+                if correlation in completed_steps[client_id]:
+                    raise ValueError(
+                        f"Duplicate split message from client {client_id} "
+                        f"for key {correlation}"
+                    )
+                completed_steps[client_id].add(correlation)
+
+                if msg.type == "train_step":
+                    loss = _handle_train_batch(
+                        {client_id: msg},
+                        models[client_id],
+                        criterion,
+                        device,
+                        client_channels,
+                    )
+                    if loss is not None:
+                        stats[client_id].update(loss)
+                        accumulated_batches[client_id] += 1
+                    if (
+                        accumulated_batches[client_id]
+                        == config.model.gradient_accumulation_steps
+                    ):
+                        _step_accumulated_gradients(
+                            models[client_id].parameters(),
+                            optimizers[client_id],
+                            accumulated_batches[client_id],
+                        )
+                        accumulated_batches[client_id] = 0
+                elif msg.type == "eval_step":
+                    _handle_eval_single(
+                        msg,
+                        client_id,
+                        models[client_id],
+                        device,
+                        client_channels,
+                        [],
+                        [],
+                    )
+                elif msg.type == "round_end":
+                    if accumulated_batches[client_id]:
+                        _step_accumulated_gradients(
+                            models[client_id].parameters(),
+                            optimizers[client_id],
+                            accumulated_batches[client_id],
+                        )
+                        accumulated_batches[client_id] = 0
+                    logger.info(
+                        "Personalized SplitServer metrics for client %s",
+                        client_id,
+                    )
+                    stats[client_id].log_and_reset(msg.round)
+
+            if not served_any:
+                stop_event.wait(timeout=0.001)
+    finally:
+        for client_id in client_ids:
+            if accumulated_batches[client_id]:
+                _step_accumulated_gradients(
+                    models[client_id].parameters(),
+                    optimizers[client_id],
+                    accumulated_batches[client_id],
+                )
+        state = {
+            client_id: {
+                key: value.cpu()
+                for key, value in models[client_id].state_dict().items()
+            }
+            for client_id in client_ids
+        }
+        try:
+            result_queue.put_nowait(serialize_state_dict(state))
+        except queue.Full:
+            logger.warning(
+                "Personalized SplitServer result queue was already full"
+            )
 
 
 def _split_server_worker_batch(
     config: SplitServerConfig,
-    client_channels: Dict[str, Dict[str, Channel]],
+    client_channels: dict[str, dict[str, Channel]],
     stop_event,
     result_queue: mp.Queue,
 ) -> None:
@@ -138,8 +282,8 @@ def _split_server_worker_batch(
     optimizer = optim.Adam(model.parameters(), lr=config.model.learning_rate)
 
     client_ids = list(client_channels.keys())
-    pending_batches: Dict[tuple, Dict[str, Message]] = defaultdict(dict)
-    pending_timestamps: Dict[tuple, float] = {}
+    pending_batches: dict[tuple, dict[str, Message]] = defaultdict(dict)
+    pending_timestamps: dict[tuple, float] = {}
     completed_rounds = defaultdict(set)
 
     logger.info("SplitServer worker ready, serving clients: %s", client_ids)
@@ -189,7 +333,8 @@ def _split_server_worker_batch(
                 elif msg.type == "train_step":
                     if client_id in completed_rounds[msg.round]:
                         raise ValueError(
-                            f"Train step after round_end from client {client_id}"
+                            "Train step after round_end from client "
+                            f"{client_id}"
                         )
                     key = (msg.round, msg.step)
 
@@ -210,7 +355,8 @@ def _split_server_worker_batch(
 
                 else:
                     logger.warning(
-                        "SplitServer: unknown msg type '%s' from %s - discarding.",
+                        "SplitServer: unknown msg type '%s' from %s - "
+                        "discarding.",
                         msg.type,
                         client_id,
                     )
@@ -287,11 +433,13 @@ def _split_server_worker_batch(
         try:
             result_queue.put_nowait(serialize_state_dict(state_dict))
             logger.info(
-                "SplitServer worker exiting — state_dict pushed to result queue"
+                "SplitServer worker exiting — state_dict pushed to "
+                "result queue"
             )
         except queue.Full:
             logger.warning(
-                "SplitServer result queue was already full — state_dict NOT pushed."
+                "SplitServer result queue was already full — state_dict "
+                "NOT pushed."
             )
 
 
@@ -306,7 +454,8 @@ def _validate_message(msg: Message, client_id: str) -> bool:
 
     if msg.type not in ("train_step", "eval_step", "round_end"):
         logger.warning(
-            "SplitServer: unknown message type '%s' from client %s — discarding.",
+            "SplitServer: unknown message type '%s' from client %s — "
+            "discarding.",
             msg.type,
             client_id,
         )
@@ -314,7 +463,8 @@ def _validate_message(msg: Message, client_id: str) -> bool:
 
     if msg.round <= 0 or msg.step <= 0:
         logger.warning(
-            "SplitServer: invalid correlation from client %s (round=%d step=%d)",
+            "SplitServer: invalid correlation from client %s "
+            "(round=%d step=%d)",
             client_id,
             msg.round,
             msg.step,
@@ -323,7 +473,8 @@ def _validate_message(msg: Message, client_id: str) -> bool:
 
     if not isinstance(msg.payload, dict):
         logger.warning(
-            "SplitServer: payload is not a dict (client %s, type %s) — discarding.",
+            "SplitServer: payload is not a dict (client %s, type %s) — "
+            "discarding.",
             client_id,
             msg.type,
         )
@@ -334,14 +485,16 @@ def _validate_message(msg: Message, client_id: str) -> bool:
 
     if "activations" not in msg.payload:
         logger.warning(
-            "SplitServer: missing 'activations' in payload (client %s) — discarding.",
+            "SplitServer: missing 'activations' in payload (client %s) — "
+            "discarding.",
             client_id,
         )
         return False
 
     if "labels" not in msg.payload:
         logger.warning(
-            "SplitServer: missing 'labels' in payload (client %s) — discarding.",
+            "SplitServer: missing 'labels' in payload (client %s) — "
+            "discarding.",
             client_id,
         )
         return False
@@ -349,7 +502,8 @@ def _validate_message(msg: Message, client_id: str) -> bool:
     act = msg.payload["activations"]
     if not isinstance(act, torch.Tensor) or act.dim() < 1:
         logger.warning(
-            "SplitServer: 'activations' is not a valid tensor (client %s) — discarding.",
+            "SplitServer: 'activations' is not a valid tensor "
+            "(client %s) — discarding.",
             client_id,
         )
         return False
@@ -370,7 +524,7 @@ def _validate_message(msg: Message, client_id: str) -> bool:
 
 
 def _batch_is_ready(
-    batch: Dict[str, Message],
+    batch: dict[str, Message],
     client_ids: set,
     completed_clients: set,
 ) -> bool:
@@ -379,7 +533,7 @@ def _batch_is_ready(
 
 
 def _store_pending_batch(
-    pending_batches: Dict[tuple, Dict[str, Message]],
+    pending_batches: dict[tuple, dict[str, Message]],
     message: Message,
     client_id: str,
 ) -> None:
@@ -392,8 +546,8 @@ def _store_pending_batch(
 
 
 def _resolve_batch_type(
-    batch_msgs: Dict[str, Message], key: tuple
-) -> Optional[str]:
+    batch_msgs: dict[str, Message], key: tuple
+) -> str | None:
     types = {msg.type for msg in batch_msgs.values()}
     if len(types) == 1:
         return types.pop()
@@ -406,9 +560,9 @@ def _resolve_batch_type(
 
 
 def _evict_stale_batches(
-    pending_batches: Dict[tuple, Dict[str, Message]],
-    pending_timestamps: Dict[tuple, float],
-    client_channels: Dict[str, Dict[str, Channel]],
+    pending_batches: dict[tuple, dict[str, Message]],
+    pending_timestamps: dict[tuple, float],
+    client_channels: dict[str, dict[str, Channel]],
     timeout_seconds: float,
 ) -> None:
     now = time.monotonic()
@@ -441,11 +595,11 @@ def _evict_stale_batches(
 
 
 def _handle_train_batch(
-    batch_msgs: Dict[str, Message],
+    batch_msgs: dict[str, Message],
     model: ServerSideModel,
     criterion: nn.Module,
     device: torch.device,
-    client_channels: Dict[str, Dict[str, Channel]],
+    client_channels: dict[str, dict[str, Channel]],
     parallel: bool = True,
 ) -> None:
     """
@@ -492,14 +646,14 @@ def _handle_train_batch(
 
 
 def _forward_parallel(
-    batch_msgs: Dict[str, Message],
+    batch_msgs: dict[str, Message],
     model: ServerSideModel,
     criterion: nn.Module,
     device: torch.device,
-) -> Optional[Dict[str, torch.Tensor]]:
+) -> dict[str, torch.Tensor] | None:
     """
-    Concatenates activations from all clients → single forward → single backward.
-    The gradient tensor is then split back according to each client's original size.
+    Concatenates activations for one forward/backward pass. The gradient tensor
+    is split back according to each client's original batch size.
     """
     activations_list, labels_list, sizes, client_order = [], [], [], []
 
@@ -522,7 +676,8 @@ def _forward_parallel(
 
     if outputs.shape != Y_true.shape:
         logger.error(
-            "SplitServer [parallel]: shape mismatch %s vs %s — aborting batch.",
+            "SplitServer [parallel]: shape mismatch %s vs %s — "
+            "aborting batch.",
             outputs.shape,
             Y_true.shape,
         )
@@ -543,23 +698,24 @@ def _forward_parallel(
     grad_splits = torch.split(grad_H, sizes, dim=0)
 
     return {
-        cid: grad.cpu() for cid, grad in zip(client_order, grad_splits)
+        cid: grad.cpu()
+        for cid, grad in zip(client_order, grad_splits, strict=True)
     }, loss_value
 
 
 def _forward_sequential(
-    batch_msgs: Dict[str, Message],
+    batch_msgs: dict[str, Message],
     model: ServerSideModel,
     criterion: nn.Module,
     device: torch.device,
     n_clients: int,
-) -> Optional[Dict[str, torch.Tensor]]:
+) -> dict[str, torch.Tensor] | None:
     """
     Sequential forward/backward for each client individually.
     Gradients accumulate in model parameters — optimizer.step() is called
     once externally after this function returns.
     """
-    grads: Dict[str, torch.Tensor] = {}
+    grads: dict[str, torch.Tensor] = {}
     total_loss = 0.0
 
     for client_id, msg in batch_msgs.items():
@@ -623,7 +779,7 @@ def _handle_eval_single(
     client_id: str,
     model: nn.Module,
     device: torch.device,
-    client_channels: Dict[str, Dict[str, Channel]],
+    client_channels: dict[str, dict[str, Channel]],
     all_eval_probs: list,
     all_eval_labels: list,
 ) -> None:

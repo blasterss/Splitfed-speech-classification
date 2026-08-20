@@ -160,14 +160,6 @@ class TrainingController:
                 "Centralized execution is not implemented yet"
             )
         if (
-            self.cfg.training.mode is TrainingMode.split
-            and self.cfg.split_server.model_scope.value == "personalized"
-        ):
-            raise NotImplementedError(
-                "Personalized split execution is not implemented yet"
-            )
-
-        if (
             self.cfg.training.mode
             in (TrainingMode.split, TrainingMode.splitfed)
             and self.split_server is None

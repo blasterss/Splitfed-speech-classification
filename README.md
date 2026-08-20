@@ -149,9 +149,11 @@ Important configuration caveats:
 - unknown fields are rejected at every configuration level;
 - `training.mode` is typed as `centralized`, `federated`, `split` or
   `splitfed`; mode-specific server/channel topology is validated. Execution is
-  implemented for `federated`, `split/shared` and `splitfed`;
+  implemented for `federated`, `split/shared`, `split/personalized` and
+  `splitfed`;
 - `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
-  `shared`, while personalized split execution is not implemented yet;
+  `shared`. Personalized split keeps one server model, optimizer, metrics stream
+  and checkpoint per client;
 - `training.fed_every` currently controls federated synchronization;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
@@ -172,8 +174,8 @@ scheduling. Those capabilities are planned, not part of the current runtime.
 The controller creates only mode-owned roles and channels. Federated mode trains
 and aggregates a complete `SpeechRecognitionModel`; split/shared uses only the
 client partition and one shared SplitServer; SplitFed adds client-partition
-FedAvg. Centralized and split/personalized execution remain staged work and fail
-explicitly if started.
+FedAvg. Centralized execution remains staged work and fails explicitly if
+started.
 
 ## Running
 
