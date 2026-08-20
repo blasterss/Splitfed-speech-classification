@@ -15,6 +15,7 @@ import yaml
 from .logger import logger
 from .schema import ConfigSchema
 from .splitfed.controller import TrainingController
+from .transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
 from .utils.common import read_yaml, save_yaml
 from .utils.training import set_seed
 
@@ -318,6 +319,12 @@ def _save_run_metadata(
             },
             "seed_tree": seed_tree,
             "configuration": configuration,
+            "protocols": {
+                "message": {
+                    "name": MESSAGE_PROTOCOL,
+                    "version": MESSAGE_PROTOCOL_VERSION,
+                }
+            },
         },
     )
 

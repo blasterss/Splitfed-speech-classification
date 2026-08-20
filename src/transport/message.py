@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
 from enum import Enum
+from typing import Any
+
+MESSAGE_PROTOCOL = "secureasr.queue"
+MESSAGE_PROTOCOL_VERSION = 1
 
 
 class MessageType(str, Enum):
@@ -28,11 +31,20 @@ class Message:
     sender: str
     round: int
     step: int
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
+    protocol: str = MESSAGE_PROTOCOL
+    protocol_version: int = MESSAGE_PROTOCOL_VERSION
 
     def __post_init__(self) -> None:
         if not isinstance(self.type, MessageType):
             self.type = MessageType(self.type)
+        if self.protocol != MESSAGE_PROTOCOL:
+            raise ValueError(f"Unsupported message protocol {self.protocol!r}")
+        if self.protocol_version != MESSAGE_PROTOCOL_VERSION:
+            raise ValueError(
+                "Unsupported message protocol version "
+                f"{self.protocol_version!r}"
+            )
 
     # ------------------------------------------------------------------
     # Serialization (stubs for future gRPC transport)

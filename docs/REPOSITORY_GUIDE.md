@@ -126,6 +126,11 @@ the current Git revision and a SHA-256 of `uv.lock` in `run_metadata.yaml`.
 Unavailable checkout or lock information is recorded as null rather than
 preventing checkpoint persistence.
 
+Every local queue `Message` validates `secureasr.queue` protocol version 1,
+which is also persisted in run metadata. The current envelope still lacks
+request IDs and explicit deadlines; do not describe round/step matching as a
+complete distributed correlation contract.
+
 Create local configuration and output directories:
 
 ```bash

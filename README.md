@@ -242,8 +242,12 @@ Expected generated artifacts include:
 - the validated `resolved_config.yaml` beside model checkpoints.
 - `run_metadata.yaml` with environment provenance, the configured seed tree,
   selected profile name/version, applied CLI overrides, canonical resolved
-  config SHA-256, Git revision and `uv.lock` SHA-256. Git/lock values are null
-  when the corresponding source is unavailable.
+  config SHA-256, Git revision, `uv.lock` SHA-256 and message protocol identity.
+  Git/lock values are null when the corresponding source is unavailable.
+
+Queue messages carry and validate protocol identity `secureasr.queue` version
+1 at envelope construction. Request IDs and deadline fields are not yet part of
+that envelope; round/step matching remains the current correlation mechanism.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes
