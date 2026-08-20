@@ -3,8 +3,11 @@
 ## 1. Цель и границы
 
 SecureASR следует довести до воспроизводимой исследовательской платформы для
-сравнения централизованного обучения, Federated Learning, Split Learning и
-SplitFed. Целевой результат не должен называться production ASR, системой
+сравнения централизованного обучения, обычного Federated Learning, Split
+Learning и SplitFed. Split Learning должен поддерживать два режима серверной
+модели: одну общую модель для всех клиентов и отдельную персональную модель
+для каждого клиента. Целевой результат не должен называться production ASR,
+системой
 понимания конфликтов или криптографически защищённой системой: текущая задача
 остаётся бинарной классификацией эмоциональной речи, где `ANG` является
 положительным классом.
@@ -15,6 +18,10 @@ SplitFed. Целевой результат не должен называтьс
 CLI/config
     -> validated ExperimentContext
     -> TrainingController
+        -> TrainingModeController
+            -> federated-only path
+            -> split-only path (shared or personalized server model)
+            -> SplitFed path
         -> ClientLoadController
           -> client containers (one isolated runtime per client)
             audio files -> features -> client model
@@ -26,6 +33,36 @@ CLI/config
         -> MessageBroker/TransportGateway
         -> checkpoints, metrics, manifest, logs
 ```
+
+### 3.0. Режимы обучения
+
+Режим обучения должен быть явным параметром конфигурации, например
+`training.mode`:
+
+- `federated`: клиент полностью выполняет forward/backward локально, сервер
+  получает только validated client updates и выполняет aggregation;
+- `split`: клиент отправляет intermediate activations и получает gradients;
+  client model и server model обучаются совместно, без FedAvg client model;
+- `splitfed`: split-learning pipeline дополнен federated aggregation client
+  models;
+- `centralized`: optional control baseline с единой моделью и объединённым
+  dataset view.
+
+Для `training.mode: split` обязательна настройка
+`split.server_model_scope`:
+
+- `shared`: один `ServerSideModel` и один optimizer обслуживают всех клиентов;
+  это текущая synchronous split topology;
+- `personalized`: отдельная `ServerSideModel` и optimizer на каждого клиента,
+  собственный checkpoint и собственные metrics; server weights не смешиваются
+  между клиентами;
+- `hybrid` (после baseline): shared trunk с персональными heads, с явным
+  ownership и checkpoint policy.
+
+Каждый режим должен иметь собственные contracts для lifecycle, protocol,
+checkpoint и evaluation. Нельзя имитировать FL-only или split-only режим
+неиспользованием части текущих channels: mode controller должен явно создавать
+только нужные роли, сообщения и synchronization barriers.
 
 Главные критерии завершённой версии:
 
@@ -255,7 +292,8 @@ built-in defaults
 experiment:        # name, run_id, profile, seed, tags
 runtime:           # backend, start_method, devices, run_dir, limits
 topology:          # process/container mode, service endpoints, replicas
-training:          # rounds, local steps, eval/fed cadence, accumulation
+training:          # mode, rounds, local steps, eval/fed cadence, accumulation
+split:             # server_model_scope, server model and optimizer policy
 data:              # datasets, split, features, cache, manifest policy
 transport:         # queue/grpc/broker, deadlines, compression, payload caps
 scheduler:         # load policy, quorum, fairness, leases, retry budget
@@ -376,6 +414,56 @@ round с явным quorum decision, либо отменить его; беск�
 недопустимо. Разные длины loaders должны обрабатываться через `local_steps`,
 циклический loader или явный `round_done`, а не через неявное ожидание
 одинакового числа batch.
+
+### 4.3.1. Federated-only round
+
+```text
+round_start
+  -> ClientModel trains locally on private batches
+  -> CLIENT_UPDATE(client_id, round, plan_id)
+  -> FedServer validates state_dict and dataset metadata
+  -> aggregation policy selects quorum and weights updates
+  -> GLOBAL_UPDATE(round, model_version)
+  -> clients load validated global client model
+  -> round_end/checkpoint/eval
+```
+
+В этом режиме SplitServer и activation channels не создаются. Scheduler может
+выбирать cohort и per-client compute budget, но aggregation получает только
+updates, разрешённые текущим `RoundPlan`.
+
+### 4.3.2. Split-only round
+
+```text
+round_start
+  -> client forward -> ACTIVATIONS(client_id, round, step)
+  -> shared or personalized SplitServer
+  -> server forward/backward -> GRADIENTS(client_id, round, step)
+  -> client backward and optimizer.step()
+  -> round_end/checkpoint/eval
+```
+
+При `server_model_scope: shared` сообщения всех eligible клиентов поступают в
+один серверный optimizer, а участие и batch weighting должны быть явно
+определены. При `server_model_scope: personalized` каждое сообщение
+маршрутизируется по `client_id` в отдельную модель/optimizer; ни параметры,
+ни optimizer state, ни BatchNorm buffers разных клиентов не агрегируются.
+Персональный режим должен иметь отдельные server checkpoints и поддерживать
+клиентов с различными local steps без ожидания несуществующего peer batch.
+
+### 4.3.3. Model ownership matrix
+
+| Mode | Client model | Server model | Aggregation |
+| --- | --- | --- | --- |
+| `centralized` | one training view | one model | none |
+| `federated` | one per client | none | client models |
+| `split/shared` | one per client | one shared model | none |
+| `split/personalized` | one per client | one per client | none |
+| `splitfed` | one per client | one shared model initially | client models |
+
+Checkpoint names, optimizer ownership, metrics scope and resume validation
+должны следовать этой matrix. A checkpoint from `split/shared` нельзя
+загрузить в `split/personalized` без explicit migration step.
 
 ### 4.4. Message lifecycle
 
@@ -620,6 +708,24 @@ state, и реализовать выбранную policy.
 zero/negative sample size, min-client quorum, aggregation frequency, optimizer
 round-trip.
 
+### Этап 5.5. Unified training modes
+
+**Задачи:** ввести `TrainingModeController` и явные mode contracts для
+`centralized`, `federated`, `split` и `splitfed`. Реализовать federated-only
+path без SplitServer; split-only path с `shared` и `personalized`
+`ServerSideModel`; разделить ownership моделей, channels, optimizers,
+checkpoints, metrics и resume validation.
+
+**Зависит от:** этапов 1-5.
+
+**Готово, когда:** все четыре режима запускаются на одном synthetic fixture,
+не создают лишние процессы/channels, дают независимые artifacts и явно
+отвергают несовместимые checkpoints или настройки.
+
+**Тесты:** mode matrix smoke tests, federated-only aggregation, split shared
+server update, split personalized isolation, no-cross-client state leakage,
+checkpoint round-trip per mode, mode/config incompatibility tests.
+
 ### Этап 6. Data pipeline и воспроизводимость
 
 **Задачи:** lazy/chunked loading, deterministic actor split from config seed,
@@ -688,7 +794,8 @@ reconnect, payload size/compression, multi-process integration.
 
 ### Этап 10. Research baselines, performance и release gate
 
-**Задачи:** реализовать централизованный, FL-only и split-only baselines;
+**Задачи:** реализовать централизованный, FL-only, split-only shared,
+split-only personalized и SplitFed baselines;
 сделать leave-one-dataset-out и multi-seed evaluation; измерять качество,
 latency, communication bytes, peak memory, throughput и privacy leakage.
 Добавить CI с Ruff, Black, mypy, pytest и smoke test; подготовить release
@@ -712,6 +819,7 @@ limitations.
 - отсутствие deadlock при разной длине клиентов;
 - message correlation/validation;
 - accumulation и FedAvg policy;
+- explicit training mode controller and mode matrix smoke tests;
 - containerized CPU smoke topology with health checks and resource limits;
 - ClientLoadController baseline with deadline, quorum and fairness guardrails;
 - noise off during evaluation;
@@ -752,6 +860,7 @@ limitations.
 | Scheduling | heterogeneous policy matrix | quorum, fairness и deadlines соблюдены |
 | Load controller | telemetry/lease/fairness tests | decisions объяснимы и replayable |
 | Split training | reference gradients | scaling и flush доказуемы |
+| Training modes | mode matrix smoke | лишние roles/channels не создаются |
 | FedAvg | synthetic state dicts | policy для каждого buffer типа |
 | Data | fixture + representative WAV | split/stats/manifest воспроизводимы |
 | Evaluation | imbalanced/one-class fixtures | метрики не дают warnings/NaN |
@@ -771,17 +880,19 @@ limitations.
 3. Один CPU synthetic run проходит от CLI до artifacts на Linux и через
    `spawn`.
 4. Любой child failure приводит к failed run и понятному report.
-5. Containerized smoke run проходит с изоляцией, probes, limits и graceful
+5. `centralized`, `federated`, `split/shared`, `split/personalized` и `splitfed`
+   имеют проверяемые mode contracts и независимые artifacts.
+6. Containerized smoke run проходит с изоляцией, probes, limits и graceful
   shutdown.
-6. Scheduler policy comparisons воспроизводимы и содержат worst-client,
+7. Scheduler policy comparisons воспроизводимы и содержат worst-client,
   fairness, throughput, latency и dataset-coverage metrics.
-7. Каждый run сохраняет profile, resolved config, policy versions, seed tree,
+8. Каждый run сохраняет profile, resolved config, policy versions, seed tree,
   simulator parameters и provenance.
-8. Нет заявления о DP, TLS или secure aggregation без реализованного
+9. Нет заявления о DP, TLS или secure aggregation без реализованного
    механизма и тестов.
-9. Исследовательский отчёт содержит baseline, per-client/per-dataset metrics,
+10. Исследовательский отчёт содержит baseline, per-client/per-dataset metrics,
    actor/class counts, seeds, manifest, ресурсы и ограничения.
-10. Все изменения разделены на атомарные commits по lifecycle, protocol,
+11. Все изменения разделены на атомарные commits по lifecycle, protocol,
    numerics, data, privacy, transport и tooling; generated data и checkpoints
    не попадают в Git.
 

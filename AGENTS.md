@@ -48,6 +48,9 @@ implementation sequence and target architecture.
   `src/dataset/` owns discovery, parsing, features, and actor splits;
   `src/model/` owns neural models; `src/splitfed/` owns clients and processes;
   `src/transport/` owns message/channel contracts.
+- The target research framework has explicit modes: `centralized`,
+  `federated`, `split` and `splitfed`. Split mode must support both one shared
+  server model and one personalized server model per client.
 - `TrainingController` owns process creation, channels, barriers, shared stop
   state, supervision, and cleanup. Client and server workers must propagate
   failures instead of silently logging them.
@@ -80,6 +83,13 @@ implementation sequence and target architecture.
 - Do not load an unvalidated federated payload directly into `load_state_dict`.
 - Make gradient accumulation, remainder flushing, client scaling, quorum, and
   aggregation frequency explicit. Do not restore hard-coded accumulation rules.
+- Keep mode ownership explicit: federated-only aggregates client models;
+  split/shared uses one server model without server aggregation;
+  split/personalized keeps server models and optimizer states isolated per
+  client; SplitFed combines split training with client-model aggregation.
+- Do not create unused roles or channels for a selected mode. Mode, server model
+  scope, checkpoint schema, optimizer ownership, and evaluation scope must be
+  validated together before spawning processes.
 - Decide and document a policy for non-floating buffers and BatchNorm statistics;
   do not average them accidentally across non-IID clients.
 - Evaluation must use `model.eval()`, `no_grad()`, and disabled training noise.

@@ -154,6 +154,8 @@ Important configuration caveats:
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
 scheduling. Those capabilities are planned, not part of the current runtime.
+The planned training-mode matrix also includes federated-only training and
+split-only training with either a shared or personalized server model.
 
 ## Running
 

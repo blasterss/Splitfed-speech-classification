@@ -220,7 +220,9 @@ that start method explicitly.
 The planned research infrastructure in `docs/dev_plan` is not implemented yet:
 there are no per-client Docker runtimes, ClientLoadController, named policy
 registry, launch profiles or heterogeneous-client simulator in the current
-runtime.
+runtime. The same applies to the planned training-mode matrix: federated-only,
+split-only shared-server and split-only personalized-server execution paths
+are design targets, not current entry points.
 
 Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
 model correctness, data semantics, and packaging changes into one patch.
