@@ -68,9 +68,25 @@ def main():
 
     logger.info("=== SETTING UP CONTROLLER ===")
     controller = TrainingController(config=config)
-    controller.setup()
+    _execute_training(
+        controller,
+        config,
+        configuration_provenance=config_provenance,
+    )
+
+
+def _execute_training(
+    controller: TrainingController,
+    config: ConfigSchema,
+    *,
+    configuration_provenance: dict | None = None,
+) -> None:
+    """Run one controller lifecycle and always release manager resources."""
+    setup_succeeded = False
 
     try:
+        controller.setup()
+        setup_succeeded = True
         controller.start_training()
     except KeyboardInterrupt:
         logger.info("Interrupted by user — shutting down")
@@ -78,45 +94,68 @@ def main():
         logger.exception("Training failed with unhandled exception")
         raise
     finally:
-        # Ensure server processes are always cleaned up
-        if controller.split_server is not None:
-            controller.split_server.stop()
-        if controller.fed_server is not None:
-            controller.fed_server.stop()
+        try:
+            if setup_succeeded:
+                _finalize_run(
+                    controller,
+                    config,
+                    configuration_provenance=configuration_provenance,
+                )
+        finally:
+            controller.teardown()
 
-        if config.models_save_path:
-            model_path = Path(config.models_save_path)
-            model_path.mkdir(parents=True, exist_ok=True)
 
-            experiment_name = config.experiment.name
-            model_path = model_path / experiment_name
-            model_path.mkdir(parents=True, exist_ok=True)
-            _save_resolved_config(config, model_path)
-            _save_run_metadata(
-                config,
-                model_path,
-                resolved_config_sha256=_config_sha256(config),
-                configuration_provenance=config_provenance,
+def _finalize_run(
+    controller: TrainingController,
+    config: ConfigSchema,
+    *,
+    configuration_provenance: dict | None,
+) -> None:
+    """Stop worker roles and persist available run artifacts."""
+    stop_errors = []
+    for server in (controller.split_server, controller.fed_server):
+        if server is None:
+            continue
+        try:
+            server.stop()
+        except BaseException as exc:
+            stop_errors.append(exc)
+            logger.error(
+                "Could not stop %s", type(server).__name__, exc_info=True
             )
-            if controller.split_server is not None:
-                try:
-                    controller.split_server.save(model_path)
-                except RuntimeError as e:
-                    logger.warning(
-                        "Could not save split-server weights: %s", e
-                    )
 
-            if controller.fed_server is not None:
-                try:
-                    controller.fed_server.save(model_path)
-                except RuntimeError as e:
-                    logger.warning("Could not save fed-server weights: %s", e)
+    if stop_errors:
+        raise stop_errors[0]
 
-            if controller.centralized_trainer is not None:
-                try:
-                    controller.centralized_trainer.save(model_path)
-                except RuntimeError as e:
-                    logger.warning("Could not save centralized weights: %s", e)
+    if not config.models_save_path:
+        return
+
+    model_path = Path(config.models_save_path) / config.experiment.name
+    model_path.mkdir(parents=True, exist_ok=True)
+    _save_resolved_config(config, model_path)
+    _save_run_metadata(
+        config,
+        model_path,
+        resolved_config_sha256=_config_sha256(config),
+        configuration_provenance=configuration_provenance,
+    )
+    if controller.split_server is not None:
+        try:
+            controller.split_server.save(model_path)
+        except RuntimeError as exc:
+            logger.warning("Could not save split-server weights: %s", exc)
+
+    if controller.fed_server is not None:
+        try:
+            controller.fed_server.save(model_path)
+        except RuntimeError as exc:
+            logger.warning("Could not save fed-server weights: %s", exc)
+
+    if controller.centralized_trainer is not None:
+        try:
+            controller.centralized_trainer.save(model_path)
+        except RuntimeError as exc:
+            logger.warning("Could not save centralized weights: %s", exc)
 
 
 def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:

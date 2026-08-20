@@ -192,7 +192,9 @@ one shared SplitServer; SplitFed adds client-partition FedAvg.
 
 `TrainingController` explicitly owns a multiprocessing `spawn` context for its
 manager, queues and child processes; callers do not need to set a global start
-method before using the controller API.
+method before using the controller API. The CLI always tears down the manager
+after stopping workers and persisting available artifacts, including setup,
+training and artifact failures.
 
 Centralized dataset views must use identical model, batch size, device, noise,
 feature ordering and target sample-rate settings. The first client entry owns
