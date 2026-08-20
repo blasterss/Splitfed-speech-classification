@@ -151,7 +151,12 @@ class Client:
             response = self.from_server.recv()
 
             grad = _extract_payload(
-                response, "gradients", self.client_id, round, step
+                response,
+                "gradients",
+                "gradients",
+                self.client_id,
+                round,
+                step,
             )
 
             if grad is None:
@@ -259,7 +264,12 @@ class Client:
             response = self.from_server.recv()
 
             logits = _extract_payload(
-                response, "logits", self.client_id, round, step
+                response,
+                "logits",
+                "logits",
+                self.client_id,
+                round,
+                step,
             )
 
             if logits is None:
@@ -324,6 +334,7 @@ class Client:
 def _extract_payload(
     response: Optional[Message],
     key: str,
+    expected_type: str,
     client_id: str,
     round: int,
     step: int,
@@ -338,6 +349,26 @@ def _extract_payload(
             client_id,
             round,
             step,
+        )
+        return None
+
+    if (
+        response.sender != "split_server"
+        or response.type != expected_type
+        or response.round != round
+        or response.step != step
+    ):
+        logger.error(
+            "Client %s: uncorrelated server response "
+            "(expected type=%s r=%d s=%d, got sender=%s type=%s r=%d s=%d).",
+            client_id,
+            expected_type,
+            round,
+            step,
+            response.sender,
+            response.type,
+            response.round,
+            response.step,
         )
         return None
 
