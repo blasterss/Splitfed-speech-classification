@@ -185,6 +185,10 @@ views without transport channels or servers. Federated mode trains and
 aggregates complete client models; split/shared uses the client partition and
 one shared SplitServer; SplitFed adds client-partition FedAvg.
 
+`TrainingController` explicitly owns a multiprocessing `spawn` context for its
+manager, queues and child processes; callers do not need to set a global start
+method before using the controller API.
+
 Centralized dataset views must use identical model, batch size, device, noise,
 feature ordering and target sample-rate settings. The first client entry owns
 that single runtime configuration; `local_steps` is not used because every

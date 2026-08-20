@@ -41,12 +41,16 @@ class SplitServer:
         config: SplitServerConfig,
         client_channels: dict[str, dict[str, Channel]],
         stop_event=None,
+        mp_context=None,
     ):
         self.config = config
         self.client_channels = client_channels
 
-        self._stop_event = stop_event if stop_event is not None else mp.Event()
-        self._result_queue: mp.Queue = mp.Queue(maxsize=1)
+        self._mp_context = mp_context or mp.get_context("spawn")
+        self._stop_event = (
+            stop_event if stop_event is not None else self._mp_context.Event()
+        )
+        self._result_queue: mp.Queue = self._mp_context.Queue(maxsize=1)
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
@@ -59,7 +63,7 @@ class SplitServer:
             if self.config.model_scope is ServerModelScope.personalized
             else _split_server_worker_batch
         )
-        self._process = mp.Process(
+        self._process = self._mp_context.Process(
             target=worker,
             args=(
                 self.config,

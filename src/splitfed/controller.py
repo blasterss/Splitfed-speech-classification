@@ -33,6 +33,7 @@ class TrainingController:
     def __init__(self, config: ConfigSchema):
         self.cfg = config
         self.client_cfgs = config.clients
+        self._mp_context = mp.get_context("spawn")
 
         self.split_server: SplitServer | None = None
         self.fed_server: FedServer | None = None
@@ -50,7 +51,7 @@ class TrainingController:
         """
         logger.info("=== TRAINING CONTROLLER SETUP ===")
 
-        self._manager = mp.Manager()
+        self._manager = self._mp_context.Manager()
         self._stop_event = self._manager.Event()
 
         logger.info("Initialising channels...")
@@ -61,7 +62,9 @@ class TrainingController:
 
         if self.cfg.training.mode is TrainingMode.centralized:
             self.centralized_trainer = CentralizedTrainer(
-                self.cfg, stop_event=self._stop_event
+                self.cfg,
+                stop_event=self._stop_event,
+                mp_context=self._mp_context,
             )
 
         logger.info("=== SETUP COMPLETE ===")
@@ -106,7 +109,9 @@ class TrainingController:
                     )
                     continue
 
-                self.channels[cid][name] = ChannelFactory.create(params)
+                self.channels[cid][name] = ChannelFactory.create(
+                    params, mp_context=self._mp_context
+                )
 
             missing = required - self.channels[cid].keys()
 
@@ -136,6 +141,7 @@ class TrainingController:
                 config=self.cfg.split_server,
                 client_channels=split_channels,
                 stop_event=self._stop_event,
+                mp_context=self._mp_context,
             )
             self.split_server.training_mode = self.cfg.training.mode.value
 
@@ -154,6 +160,7 @@ class TrainingController:
                 client_channels=fed_channels,
                 num_clients=len(self.cfg.clients),
                 stop_event=self._stop_event,
+                mp_context=self._mp_context,
             )
             self.fed_server.training_mode = self.cfg.training.mode.value
 
@@ -217,7 +224,8 @@ class TrainingController:
 
                 self._stop_events[cid] = self._stop_event
 
-                p = mp.Process(
+                process_factory = getattr(self, "_mp_context", mp).Process
+                p = process_factory(
                     target=_client_worker,
                     args=(
                         client_cfg,

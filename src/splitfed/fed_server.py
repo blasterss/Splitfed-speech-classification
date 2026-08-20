@@ -34,15 +34,19 @@ class FedServer:
         client_channels: dict[str, dict[str, Channel]],
         num_clients: int,
         stop_event=None,
+        mp_context=None,
     ):
         self.config = config
         self.client_channels = client_channels
         self.num_clients = num_clients
 
-        self._stop_event = stop_event if stop_event is not None else mp.Event()
+        self._mp_context = mp_context or mp.get_context("spawn")
+        self._stop_event = (
+            stop_event if stop_event is not None else self._mp_context.Event()
+        )
 
         # Stores final aggregated model after shutdown
-        self._result_queue: mp.Queue = mp.Queue(maxsize=1)
+        self._result_queue: mp.Queue = self._mp_context.Queue(maxsize=1)
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
@@ -53,7 +57,7 @@ class FedServer:
         """
         self._stop_event.clear()
 
-        self._process = mp.Process(
+        self._process = self._mp_context.Process(
             target=_fed_server_worker,
             args=(
                 self.config,

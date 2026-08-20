@@ -18,17 +18,20 @@ from ..utils.training import set_seed
 class CentralizedTrainer:
     """Own the single complete model used by the centralized baseline."""
 
-    def __init__(self, config: ConfigSchema, stop_event=None):
+    def __init__(self, config: ConfigSchema, stop_event=None, mp_context=None):
         self.config = config
-        self._stop_event = stop_event if stop_event is not None else mp.Event()
-        self._result_queue: mp.Queue = mp.Queue(maxsize=1)
+        self._mp_context = mp_context or mp.get_context("spawn")
+        self._stop_event = (
+            stop_event if stop_event is not None else self._mp_context.Event()
+        )
+        self._result_queue: mp.Queue = self._mp_context.Queue(maxsize=1)
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
 
     def start(self) -> None:
         self._stop_event.clear()
-        self._process = mp.Process(
+        self._process = self._mp_context.Process(
             target=_centralized_training_worker,
             args=(self.config, self._stop_event, self._result_queue),
             daemon=False,

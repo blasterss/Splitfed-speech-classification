@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import queue
 from abc import ABC, abstractmethod
-from multiprocessing import Queue
-from typing import Optional, Union
 
+from ..schema import GRPCChannelConfig, QueueChannelConfig
 from .message import Message
-from ..schema import QueueChannelConfig, GRPCChannelConfig
 
 
 class Channel(ABC):
@@ -19,7 +18,7 @@ class Channel(ABC):
         """Receive a message. Blocks until one is available."""
 
     @abstractmethod
-    def recv_nowait(self) -> Optional[Message]:
+    def recv_nowait(self) -> Message | None:
         """
         Non-blocking receive.
 
@@ -33,8 +32,10 @@ class QueueChannel(Channel):
         self,
         maxsize: int = 0,
         timeout: int = 60,
+        mp_context=None,
     ):
-        self.queue: Queue = Queue(maxsize=maxsize)
+        context = mp_context or mp.get_context("spawn")
+        self.queue = context.Queue(maxsize=maxsize)
         self.timeout: int = timeout
 
     def send(self, msg: Message) -> None:
@@ -43,7 +44,7 @@ class QueueChannel(Channel):
     def recv(self) -> Message:
         return self.queue.get(timeout=self.timeout)
 
-    def recv_nowait(self) -> Optional[Message]:
+    def recv_nowait(self) -> Message | None:
         try:
             return self.queue.get_nowait()
         except queue.Empty:
@@ -64,14 +65,15 @@ class GrpcChannel(Channel):
     def recv(self) -> Message:
         raise NotImplementedError
 
-    def recv_nowait(self) -> Optional[Message]:
+    def recv_nowait(self) -> Message | None:
         raise NotImplementedError
 
 
 class ChannelFactory:
     @staticmethod
     def create(
-        channel_params: Union[QueueChannelConfig, GRPCChannelConfig],
+        channel_params: QueueChannelConfig | GRPCChannelConfig,
+        mp_context=None,
     ) -> Channel:
         transport = channel_params.transport
 
@@ -79,6 +81,7 @@ class ChannelFactory:
             return QueueChannel(
                 maxsize=channel_params.maxsize,
                 timeout=channel_params.timeout,
+                mp_context=mp_context,
             )
         elif transport == "grpc":
             return GrpcChannel()

@@ -239,8 +239,9 @@ peer barriers. Remaining limitations include:
 - gRPC and message serialization are stubs.
 
 Changes to process coordination require a multiprocessing smoke test, not only
-an import test. Keep `spawn` compatibility in mind because `src/main.py` sets
-that start method explicitly.
+an import test. `TrainingController` explicitly constructs its manager, queues
+and processes from a `spawn` context; `src/main.py` also sets that method for
+other multiprocessing code.
 
 ## Known implementation hazards
 
