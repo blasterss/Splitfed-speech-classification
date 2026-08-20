@@ -15,10 +15,28 @@ from .splitfed.controller import TrainingController
 from .utils.common import read_yaml, save_yaml
 from .utils.training import set_seed
 
+PROFILE_REGISTRY = {
+    "smoke": {
+        "version": "1",
+        "config": {
+            "training": {
+                "num_rounds": 1,
+                "eval_every": 1,
+                "barrier_timeout_sec": 30.0,
+            }
+        },
+    }
+}
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-cf", "--config-file", type=str, required=True)
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILE_REGISTRY),
+        help="Apply a versioned built-in experiment profile before YAML.",
+    )
     parser.add_argument(
         "--set",
         dest="overrides",
@@ -33,8 +51,10 @@ def main():
     args = parser.parse_args()
 
     logger.info("=== READING CONFIG ===")
-    raw_config = apply_cli_overrides(
-        read_yaml(args.config_file, verbose=1), args.overrides
+    raw_config, config_provenance = resolve_raw_config(
+        read_yaml(args.config_file, verbose=1),
+        profile_name=args.profile,
+        overrides=args.overrides,
     )
 
     logger.info("=== VALIDATING CONFIG ===")
@@ -69,7 +89,9 @@ def main():
             model_path.mkdir(parents=True, exist_ok=True)
             _save_resolved_config(config, model_path)
             _save_run_metadata(
-                config, model_path, cli_overrides=args.overrides
+                config,
+                model_path,
+                configuration_provenance=config_provenance,
             )
             if controller.split_server is not None:
                 try:
@@ -133,6 +155,54 @@ def apply_cli_overrides(raw_config: dict, overrides: list[str]) -> dict:
     return resolved
 
 
+def resolve_raw_config(
+    raw_config: dict,
+    *,
+    profile_name: str | None,
+    overrides: list[str],
+) -> tuple[dict, dict]:
+    """Resolve profile, YAML and CLI layers in increasing precedence."""
+    yaml_profile = raw_config.get("experiment", {}).get("profile")
+    selected_profile = profile_name or yaml_profile
+    profile_provenance = None
+    if selected_profile is None:
+        merged = copy.deepcopy(raw_config)
+    else:
+        try:
+            profile = PROFILE_REGISTRY[selected_profile]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown experiment profile {selected_profile!r}"
+            ) from exc
+        merged = _deep_merge(profile["config"], raw_config)
+        merged.setdefault("experiment", {})["profile"] = selected_profile
+        profile_provenance = {
+            "name": selected_profile,
+            "version": profile["version"],
+        }
+
+    resolved = apply_cli_overrides(merged, overrides)
+    return resolved, {
+        "profile": profile_provenance,
+        "cli_overrides": list(overrides),
+    }
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge mappings while replacing non-mapping values."""
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
 def _descend_override_path(target, part: str, raw_path: str):
     if isinstance(target, dict):
         if part not in target:
@@ -163,6 +233,7 @@ def _save_run_metadata(
     artifact_path: Path,
     *,
     cli_overrides: list[str] | None = None,
+    configuration_provenance: dict | None = None,
 ) -> None:
     """Persist environment provenance and the configured seed tree."""
     seed_tree = {
@@ -194,9 +265,8 @@ def _save_run_metadata(
                 ),
             },
             "seed_tree": seed_tree,
-            "configuration": {
-                "cli_overrides": cli_overrides or [],
-            },
+            "configuration": configuration_provenance
+            or {"profile": None, "cli_overrides": cli_overrides or []},
         },
     )
 

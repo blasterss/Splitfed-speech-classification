@@ -50,7 +50,12 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     config = ConfigSchema(
         data_path=str(tmp_path),
         models_save_path=str(tmp_path / "checkpoints"),
-        experiment={"name": "metadata", "transport": "queue", "seed": 11},
+        experiment={
+            "name": "metadata",
+            "profile": "smoke",
+            "transport": "queue",
+            "seed": 11,
+        },
         training={
             "mode": "centralized",
             "num_rounds": 1,
@@ -85,7 +90,10 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     _save_run_metadata(
         config,
         artifact_path,
-        cli_overrides=["training.num_rounds=1"],
+        configuration_provenance={
+            "profile": {"name": "smoke", "version": "1"},
+            "cli_overrides": ["training.num_rounds=1"],
+        },
     )
 
     metadata = read_yaml(artifact_path / "run_metadata.yaml")
@@ -99,7 +107,8 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     assert metadata["environment"]["python"]
     assert metadata["environment"]["pytorch"]
     assert isinstance(metadata["environment"]["cuda_available"], bool)
-    assert metadata["configuration"]["cli_overrides"] == [
-        "training.num_rounds=1"
-    ]
+    assert metadata["configuration"] == {
+        "profile": {"name": "smoke", "version": "1"},
+        "cli_overrides": ["training.num_rounds=1"],
+    }
     assert metadata["created_at_utc"].endswith("+00:00")

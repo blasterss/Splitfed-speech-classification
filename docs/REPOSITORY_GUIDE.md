@@ -116,6 +116,11 @@ existing fields (including numeric list indices such as
 `clients.0.runtime.batch_size`). Unknown paths are rejected before process
 creation, and applied overrides are recorded in `run_metadata.yaml`.
 
+The built-in `--profile smoke` profile provides versioned training defaults.
+Resolution precedence is `profile < YAML < --set`; it intentionally does not
+invent dataset roots or force a topology. Configure reduced datasets, CPU
+devices and the desired clients in the YAML used for a smoke run.
+
 Create local configuration and output directories:
 
 ```bash
@@ -264,10 +269,11 @@ other multiprocessing code.
 - Capture and segmentation modules are incomplete and are not part of the
   supported training path.
 
-The planned research infrastructure in `docs/dev_plan` is not implemented yet:
-there are no per-client Docker runtimes, ClientLoadController, named policy
-registry, launch profiles or heterogeneous-client simulator in the current
-runtime. The mode matrix is executable: centralized uses one complete model and
+Most planned research infrastructure in `docs/dev_plan` is not implemented
+yet: there are no per-client Docker runtimes, ClientLoadController, named
+policy registry or heterogeneous-client simulator in the current runtime. A
+single versioned `smoke` default profile is available; the remaining named
+profiles are still planned. The mode matrix is executable: centralized uses one complete model and
 combined dataset view without channels, federated-only uses complete client
 classifiers, split/shared uses one shared server model,
 split/personalized owns one server model and optimizer per client, and SplitFed

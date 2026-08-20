@@ -65,6 +65,10 @@ class ServerModelScope(str, Enum):
     personalized = "personalized"
 
 
+class ExperimentProfile(str, Enum):
+    smoke = "smoke"
+
+
 class FeatureType(str, Enum):
     """Types of extracted features."""
 
@@ -440,6 +444,11 @@ class ExperimentConfig(StrictConfigModel):
     """Experiment metadata and execution mode."""
 
     name: str = Field(description="Experiment name.")
+
+    profile: ExperimentProfile | None = Field(
+        default=None,
+        description="Resolved name of the built-in experiment profile.",
+    )
 
     description: str | None = Field(
         default=None,

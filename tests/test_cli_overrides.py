@@ -1,6 +1,6 @@
 import pytest
 
-from src.main import apply_cli_overrides
+from src.main import apply_cli_overrides, resolve_raw_config
 
 
 def test_cli_overrides_parse_typed_values_and_list_paths():
@@ -35,3 +35,43 @@ def test_cli_overrides_reject_invalid_or_unknown_paths(override, match):
 
     with pytest.raises(ValueError, match=match):
         apply_cli_overrides(raw_config, [override])
+
+
+def test_profile_yaml_and_cli_merge_have_explicit_precedence():
+    raw_config = {
+        "experiment": {"name": "test", "transport": "queue", "seed": 7},
+        "training": {"eval_every": 3},
+    }
+
+    resolved, provenance = resolve_raw_config(
+        raw_config,
+        profile_name="smoke",
+        overrides=["training.eval_every=2"],
+    )
+
+    assert resolved["training"] == {
+        "num_rounds": 1,
+        "eval_every": 2,
+        "barrier_timeout_sec": 30.0,
+    }
+    assert resolved["experiment"]["profile"] == "smoke"
+    assert provenance == {
+        "profile": {"name": "smoke", "version": "1"},
+        "cli_overrides": ["training.eval_every=2"],
+    }
+
+
+def test_unknown_profile_is_rejected():
+    with pytest.raises(ValueError, match="Unknown experiment profile"):
+        resolve_raw_config({}, profile_name="missing", overrides=[])
+
+
+def test_yaml_can_select_registered_profile():
+    raw_config = {"experiment": {"profile": "smoke"}, "training": {}}
+
+    resolved, provenance = resolve_raw_config(
+        raw_config, profile_name=None, overrides=[]
+    )
+
+    assert resolved["training"]["num_rounds"] == 1
+    assert provenance["profile"] == {"name": "smoke", "version": "1"}

@@ -176,9 +176,11 @@ Important configuration caveats:
   compression selections are rejected before setup because those paths remain
   stubs.
 
-The repository also contains a forward-looking research plan for named launch
-profiles, simulation, isolated client containers and throughput-aware client
-scheduling. Those capabilities are planned, not part of the current runtime.
+The repository also contains a forward-looking research plan for additional
+launch profiles, simulation, isolated client containers and throughput-aware
+client scheduling. Only the versioned `smoke` configuration-default profile is
+currently available; the other planned profiles and capabilities are not part
+of the current runtime.
 The controller creates only mode-owned roles and channels. Centralized mode
 trains one complete `SpeechRecognitionModel` over the combined client dataset
 views without transport channels or servers. Federated mode trains and
@@ -221,6 +223,12 @@ uv run secureasr --config-file configs/config.yaml \
   --set clients.0.dataset.reduced=true
 ```
 
+`--profile smoke` supplies versioned defaults for one round, evaluation every
+round and a 30-second lifecycle barrier. YAML values override those defaults,
+and `--set` overrides YAML. The profile does not rewrite dataset paths, client
+counts, reduced-data selection or devices, so those must still be configured
+for the intended CPU smoke topology.
+
 Start with reduced datasets and a small number of rounds. A full CUDA run should
 only be attempted after all clients load successfully and a one-round smoke test
 has completed.
@@ -233,7 +241,7 @@ Expected generated artifacts include:
   directory;
 - the validated `resolved_config.yaml` beside model checkpoints.
 - `run_metadata.yaml` with environment provenance, the configured seed tree,
-  and the applied CLI overrides.
+  selected profile name/version and the applied CLI overrides.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes

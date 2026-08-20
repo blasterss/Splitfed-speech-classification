@@ -8,12 +8,23 @@ from src.schema import (
     ClientModelConfig,
     DatasetConfig,
     DatasetType,
+    ExperimentConfig,
     FedServerConfig,
     NoiseConfig,
     SplitServerModelConfig,
     TrainingConfig,
     _validate_device_available,
 )
+
+
+def test_experiment_config_rejects_unknown_profile():
+    with pytest.raises(ValidationError, match="profile"):
+        ExperimentConfig(
+            name="invalid-profile",
+            profile="missing",
+            transport="queue",
+            seed=42,
+        )
 
 
 @pytest.mark.parametrize("dataset_type", list(DatasetType))
