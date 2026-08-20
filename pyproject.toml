@@ -35,6 +35,9 @@ dependencies = [
     "tqdm>=4.66,<5",
 ]
 
+[project.scripts]
+secureasr = "src.main:main"
+
 # PyTorch is optional in package metadata because its wheel must be selected for
 # the host CUDA configuration. See README.md before installing this extra.
 [project.optional-dependencies]
