@@ -218,6 +218,7 @@ Expected generated artifacts include:
 - centralized, server and global client checkpoints under the configured model
   directory;
 - the validated `resolved_config.yaml` beside model checkpoints.
+- `run_metadata.yaml` with environment provenance and the configured seed tree.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes

@@ -1,6 +1,10 @@
 import argparse
+import platform
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+import torch
 import torch.multiprocessing as mp
 
 from .logger import logger
@@ -49,6 +53,7 @@ def main():
             model_path = model_path / experiment_name
             model_path.mkdir(parents=True, exist_ok=True)
             _save_resolved_config(config, model_path)
+            _save_run_metadata(config, model_path)
             if controller.split_server is not None:
                 try:
                     controller.split_server.save(model_path)
@@ -75,6 +80,41 @@ def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:
     save_yaml(
         artifact_path / "resolved_config.yaml",
         config.model_dump(mode="json", by_alias=True),
+    )
+
+
+def _save_run_metadata(config: ConfigSchema, artifact_path: Path) -> None:
+    """Persist environment provenance and the configured seed tree."""
+    seed_tree = {
+        "experiment": config.experiment.seed,
+        "training": config.training.seed,
+        "clients": {
+            str(client.client_id): {
+                "runtime": client.runtime.seed,
+                "dataset_split": client.dataset.split_seed,
+            }
+            for client in config.clients
+        },
+        "split_server": (
+            config.split_server.seed if config.split_server else None
+        ),
+        "fed_server": config.fed_server.seed if config.fed_server else None,
+    }
+    save_yaml(
+        artifact_path / "run_metadata.yaml",
+        {
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "environment": {
+                "python": sys.version.split()[0],
+                "pytorch": str(torch.__version__),
+                "platform": platform.platform(),
+                "cuda_available": torch.cuda.is_available(),
+                "cuda_runtime": (
+                    str(torch.version.cuda) if torch.version.cuda else None
+                ),
+            },
+            "seed_tree": seed_tree,
+        },
     )
 
 

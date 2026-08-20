@@ -172,6 +172,8 @@ workflow are still missing.
 - The root field is `models_save_path` (plural), not `model_save_path`.
 - Runs with `models_save_path` persist the validated JSON-compatible
   `resolved_config.yaml` beside model checkpoints.
+- The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA details
+  and experiment, training, dataset, client and server seeds.
 - Model checkpoint schema v1 is written atomically and records mode, server
   scope and personalized client identity. Loading validates ownership, keys,
   shapes and dtypes; optimizer/RNG resume is not implemented yet.
