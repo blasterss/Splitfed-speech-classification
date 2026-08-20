@@ -1,3 +1,5 @@
+import time
+
 import pytest
 import torch
 
@@ -14,6 +16,8 @@ from src.splitfed.split_server import (
 )
 from src.transport.message import Message, MessageType
 
+FUTURE_DEADLINE = time.time() + 3600
+
 
 def _train_message(sender, step):
     return Message(
@@ -22,12 +26,18 @@ def _train_message(sender, step):
         round=1,
         step=step,
         payload={},
+        deadline_at=FUTURE_DEADLINE,
     )
 
 
 def test_round_end_is_a_typed_protocol_message():
     message = Message(
-        type="round_end", sender="client-0", round=1, step=2, payload={}
+        type="round_end",
+        sender="client-0",
+        round=1,
+        step=2,
+        payload={},
+        deadline_at=FUTURE_DEADLINE,
     )
 
     assert message.type is MessageType.ROUND_END
@@ -40,6 +50,7 @@ def _split_message(**overrides):
         "sender": "client-0",
         "round": 1,
         "step": 1,
+        "deadline_at": FUTURE_DEADLINE,
         "payload": {
             "activations": torch.ones(2, 3),
             "labels": torch.ones(2),
@@ -54,6 +65,9 @@ def test_split_message_validates_channel_sender_and_correlation():
     assert not _validate_message(_split_message(sender="client-1"), "client-0")
     assert not _validate_message(_split_message(round=0), "client-0")
     assert not _validate_message(_split_message(step=0), "client-0")
+    assert not _validate_message(
+        _split_message(deadline_at=time.time() - 1), "client-0"
+    )
 
 
 def test_split_message_requires_labels_with_matching_batch_size():

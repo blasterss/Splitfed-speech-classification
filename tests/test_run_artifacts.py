@@ -121,7 +121,7 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     assert "git_revision" in metadata["environment"]
     assert "dependency_lock_sha256" in metadata["environment"]
     assert metadata["protocols"] == {
-        "message": {"name": "secureasr.queue", "version": 2}
+        "message": {"name": "secureasr.queue", "version": 3}
     }
     assert metadata["created_at_utc"].endswith("+00:00")
 

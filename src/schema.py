@@ -124,7 +124,7 @@ class QueueChannelConfig(ChannelConfig):
 
     timeout: float = Field(
         default=60.0,
-        ge=0,
+        gt=0,
         description="Timeout for waiting on a queue message (in seconds).",
     )
 

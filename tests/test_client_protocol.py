@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,8 @@ from src.splitfed.client import (
 )
 from src.transport.message import Message
 
+FUTURE_DEADLINE = time.time() + 3600
+
 
 def _response(**overrides):
     values = {
@@ -18,6 +21,7 @@ def _response(**overrides):
         "sender": "split_server",
         "round": 2,
         "step": 3,
+        "deadline_at": FUTURE_DEADLINE,
         "payload": {"gradients": torch.ones(1)},
     }
     values.update(overrides)
@@ -79,6 +83,24 @@ def test_extract_payload_rejects_mismatched_request_id():
     )
 
 
+def test_extract_payload_rejects_expired_response():
+    assert (
+        _extract_payload(
+            _response(
+                request_id="split-request",
+                deadline_at=time.time() - 1,
+            ),
+            "gradients",
+            "gradients",
+            "client-0",
+            2,
+            3,
+            "split-request",
+        )
+        is None
+    )
+
+
 def _global_response(state_dict, **overrides):
     values = {
         "type": "global_update",
@@ -87,6 +109,7 @@ def _global_response(state_dict, **overrides):
         "step": 1,
         "payload": state_dict,
         "request_id": "fed-request",
+        "deadline_at": FUTURE_DEADLINE,
     }
     values.update(overrides)
     return Message(**values)
@@ -167,6 +190,7 @@ def test_client_treats_correlated_split_error_as_fatal():
             sender="split_server",
             round=1,
             step=1,
+            deadline_at=FUTURE_DEADLINE,
             payload={"reason": "split_batch_timeout"},
         )
     )

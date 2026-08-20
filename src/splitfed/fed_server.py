@@ -432,6 +432,7 @@ def _validate_client_update(
     expected_round: int | None,
     expected_schema: dict | None,
 ) -> tuple[dict, int]:
+    message.validate_for_receive()
     if message.sender != expected_client_id:
         raise ValueError("Invalid client update sender")
     if message.type != "client_update":

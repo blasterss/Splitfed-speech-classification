@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,8 @@ from src.splitfed.fed_server import (
 from src.transport.message import Message
 from src.utils.state import deserialize_state_dict
 
+FUTURE_DEADLINE = time.time() + 3600
+
 
 def _update(**overrides):
     values = {
@@ -19,6 +22,7 @@ def _update(**overrides):
         "sender": "client-0",
         "round": 2,
         "step": 1,
+        "deadline_at": FUTURE_DEADLINE,
         "payload": {
             "state_dict": {"weight": torch.ones(2)},
             "dataset_size": 3,
@@ -40,6 +44,16 @@ def test_client_update_accepts_matching_round_and_schema():
 
     assert state is message.payload["state_dict"]
     assert size == 3
+
+
+def test_client_update_rejects_expired_deadline():
+    with pytest.raises(TimeoutError, match="deadline"):
+        _validate_client_update(
+            _update(deadline_at=time.time() - 1),
+            expected_client_id="client-0",
+            expected_round=2,
+            expected_schema={"weight": (torch.Size([2]), torch.float32)},
+        )
 
 
 @pytest.mark.parametrize(

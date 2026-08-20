@@ -402,6 +402,14 @@ def _extract_payload(
         )
         return None
 
+    try:
+        response.validate_for_receive()
+    except (ValueError, TimeoutError) as exc:
+        logger.error(
+            "Client %s: invalid response deadline: %s", client_id, exc
+        )
+        return None
+
     if (
         response.sender != "split_server"
         or response.type != expected_type
@@ -465,6 +473,7 @@ def _validate_global_update(
     round: int,
     expected_request_id: str,
 ) -> dict:
+    response.validate_for_receive()
     if response.sender != "fed_server":
         raise ValueError("Invalid global update sender")
     if response.type != "global_update":

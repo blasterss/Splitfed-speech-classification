@@ -246,9 +246,12 @@ Expected generated artifacts include:
   Git/lock values are null when the corresponding source is unavailable.
 
 Queue messages carry and validate protocol identity `secureasr.queue` version
-2 plus a bounded non-empty request ID. Split responses and accepted federated
+3 plus a bounded non-empty request ID. Split responses and accepted federated
 updates must echo the originating request ID in addition to matching sender,
-type, round and step. Explicit envelope deadlines are not yet implemented.
+type, round and step. `QueueChannel.send()` stamps an unset hop deadline from
+the positive channel timeout; expired messages are rejected at send and receive
+boundaries and again before client/server payload use. This is not yet a single
+end-to-end RPC deadline across split batching or federated quorum waiting.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes

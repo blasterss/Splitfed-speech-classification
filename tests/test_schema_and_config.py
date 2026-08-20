@@ -11,6 +11,7 @@ from src.schema import (
     ExperimentConfig,
     FedServerConfig,
     NoiseConfig,
+    QueueChannelConfig,
     SplitServerModelConfig,
     TrainingConfig,
     _validate_device_available,
@@ -63,6 +64,15 @@ def test_training_config_requires_positive_barrier_timeout():
             eval_every=1,
             fed_every=1,
             barrier_timeout_sec=0,
+        )
+
+
+def test_queue_channel_requires_positive_timeout():
+    with pytest.raises(ValidationError, match="timeout"):
+        QueueChannelConfig(
+            transport="queue",
+            name="invalid-timeout",
+            timeout=0,
         )
 
 

@@ -1,4 +1,5 @@
 import queue
+import time
 
 import pytest
 
@@ -35,6 +36,39 @@ def test_queue_channel_round_trips_messages():
     received = channel.recv()
 
     assert received == message
+    assert received.deadline_at is not None
+    assert received.deadline_at > time.time()
+
+
+def test_queue_channel_rejects_expired_message_before_enqueue():
+    channel = QueueChannel(timeout=1)
+    message = Message(
+        type=MessageType.ACK,
+        sender="server",
+        round=1,
+        step=1,
+        deadline_at=time.time() - 1,
+    )
+
+    with pytest.raises(TimeoutError, match="deadline"):
+        channel.send(message)
+
+    assert channel.recv_nowait() is None
+
+
+def test_queue_channel_rejects_expired_message_at_receive_boundary():
+    channel = QueueChannel(timeout=1)
+    message = Message(
+        type=MessageType.ACK,
+        sender="server",
+        round=1,
+        step=1,
+        deadline_at=time.time() - 1,
+    )
+    channel.queue.put(message, timeout=1)
+
+    with pytest.raises(TimeoutError, match="deadline"):
+        channel.recv()
 
 
 def test_queue_channel_recv_raises_timeout_when_empty():

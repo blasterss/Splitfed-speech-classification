@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 from uuid import uuid4
 
 MESSAGE_PROTOCOL = "secureasr.queue"
-MESSAGE_PROTOCOL_VERSION = 2
+MESSAGE_PROTOCOL_VERSION = 3
 
 
 class MessageType(str, Enum):
@@ -36,6 +38,7 @@ class Message:
     protocol: str = MESSAGE_PROTOCOL
     protocol_version: int = MESSAGE_PROTOCOL_VERSION
     request_id: str = field(default_factory=lambda: uuid4().hex)
+    deadline_at: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.type, MessageType):
@@ -51,6 +54,39 @@ class Message:
             raise ValueError("Message request_id must be a non-empty string")
         if len(self.request_id) > 128:
             raise ValueError("Message request_id exceeds 128 characters")
+        if self.deadline_at is not None and (
+            not isinstance(self.deadline_at, (int, float))
+            or not math.isfinite(self.deadline_at)
+            or self.deadline_at <= 0
+        ):
+            raise ValueError(
+                "Message deadline_at must be a positive timestamp"
+            )
+
+    def ensure_deadline(self, timeout: float) -> None:
+        """Stamp an unset deadline and reject messages already expired."""
+        now = time.time()
+        if self.deadline_at is None:
+            self.deadline_at = now + timeout
+        if self.deadline_at <= now:
+            raise TimeoutError(
+                f"Message {self.request_id} deadline has already expired"
+            )
+
+    def is_expired(self, now: float | None = None) -> bool:
+        """Return true for missing or elapsed wire deadlines."""
+        return self.deadline_at is None or self.deadline_at <= (
+            time.time() if now is None else now
+        )
+
+    def validate_for_receive(self, now: float | None = None) -> None:
+        """Reject envelopes that reached a consumer without live budget."""
+        if self.deadline_at is None:
+            raise ValueError("Received message has no deadline")
+        if self.is_expired(now):
+            raise TimeoutError(
+                f"Message {self.request_id} deadline expired before receive"
+            )
 
     # ------------------------------------------------------------------
     # Serialization (stubs for future gRPC transport)
@@ -68,5 +104,6 @@ class Message:
             f"Message(type={self.type.value!r}, sender={self.sender!r}, "
             f"round={self.round}, step={self.step}, "
             f"request_id={self.request_id!r}, "
+            f"deadline_at={self.deadline_at!r}, "
             f"payload_keys={payload_keys})"
         )

@@ -460,6 +460,12 @@ def _split_server_worker_batch(
 
 
 def _validate_message(msg: Message, client_id: str) -> bool:
+    try:
+        msg.validate_for_receive()
+    except (ValueError, TimeoutError) as exc:
+        logger.warning("SplitServer: invalid message deadline: %s", exc)
+        return False
+
     if msg.sender != client_id:
         logger.warning(
             "SplitServer: sender mismatch on client %s channel (got %s)",

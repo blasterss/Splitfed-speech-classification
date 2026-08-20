@@ -22,16 +22,21 @@ class SpawnQueueChannel:
         self.timeout = timeout
 
     def send(self, message):
+        message.ensure_deadline(self.timeout)
         self.queue.put(message, timeout=self.timeout)
 
     def recv(self):
-        return self.queue.get(timeout=self.timeout)
+        message = self.queue.get(timeout=self.timeout)
+        message.validate_for_receive()
+        return message
 
     def recv_nowait(self):
         try:
-            return self.queue.get_nowait()
+            message = self.queue.get_nowait()
         except queue.Empty:
             return None
+        message.validate_for_receive()
+        return message
 
 
 def _synthetic_client_worker(

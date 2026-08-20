@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from src.transport.message import (
@@ -32,3 +34,15 @@ def test_message_rejects_unsupported_protocol_identity(overrides, match):
             step=0,
             **overrides,
         )
+
+
+def test_message_reports_expired_deadline():
+    expired = Message(
+        type="ack",
+        sender="controller",
+        round=1,
+        step=0,
+        deadline_at=time.time() - 1,
+    )
+
+    assert expired.is_expired()

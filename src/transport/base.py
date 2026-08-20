@@ -31,24 +31,29 @@ class QueueChannel(Channel):
     def __init__(
         self,
         maxsize: int = 0,
-        timeout: int = 60,
+        timeout: float = 60,
         mp_context=None,
     ):
         context = mp_context or mp.get_context("spawn")
         self.queue = context.Queue(maxsize=maxsize)
-        self.timeout: int = timeout
+        self.timeout = timeout
 
     def send(self, msg: Message) -> None:
+        msg.ensure_deadline(self.timeout)
         self.queue.put(msg, timeout=self.timeout)
 
     def recv(self) -> Message:
-        return self.queue.get(timeout=self.timeout)
+        message = self.queue.get(timeout=self.timeout)
+        message.validate_for_receive()
+        return message
 
     def recv_nowait(self) -> Message | None:
         try:
-            return self.queue.get_nowait()
+            message = self.queue.get_nowait()
         except queue.Empty:
             return None
+        message.validate_for_receive()
+        return message
 
 
 class GrpcChannel(Channel):
