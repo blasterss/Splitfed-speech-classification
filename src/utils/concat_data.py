@@ -1,19 +1,19 @@
 from pathlib import Path
-from typing import List, Dict, Tuple, Any
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.schema import DatasetConfig
-from src.dataset.processors.factory import DatasetLoaderFactory
+from ..dataset.processors.factory import DatasetLoaderFactory
+from ..schema import DatasetConfig
 
 
 class DataConcatenator:
-    def __init__(self, configs: List[DatasetConfig]):
+    def __init__(self, configs: list[DatasetConfig]):
         self.configs = configs
         self.roots = [Path(config.root) for config in configs]
 
-    def get_all_files(self) -> List[Path]:
+    def get_all_files(self) -> list[Path]:
         all_files = []
         for root in self.roots:
             files = sorted(root.rglob("*.wav"))
@@ -21,8 +21,8 @@ class DataConcatenator:
         return all_files
 
     def aggregate_features(
-        self, all_data: List[List[np.ndarray]]
-    ) -> List[Dict[str, float]]:
+        self, all_data: list[list[np.ndarray]]
+    ) -> list[dict[str, float]]:
 
         aggregated_features = []
         feature_names = self.configs[0].feature_names
@@ -33,7 +33,7 @@ class DataConcatenator:
             if len(features) != len(feature_names):
                 raise ValueError("Mismatch between features and feature_names")
 
-            for name, feat in zip(feature_names, features):
+            for name, feat in zip(feature_names, features, strict=True):
                 # [F, T] → mel, mfcc, contrast
                 if feat.ndim == 2:
                     for j in range(feat.shape[0]):
@@ -61,7 +61,7 @@ class DataConcatenator:
 
     def get_agg_data(
         self,
-    ) -> Tuple[List[Dict[str, float]], List[Dict[str, Any]]]:
+    ) -> tuple[list[dict[str, float]], list[dict[str, Any]]]:
         all_data = []
         all_metadata = []
         for config in self.configs:
@@ -73,7 +73,7 @@ class DataConcatenator:
         return all_data, all_metadata
 
     def to_dataframe(
-        self, agg_data: List[Dict[str, float]], metadata: List[Dict[str, Any]]
+        self, agg_data: list[dict[str, float]], metadata: list[dict[str, Any]]
     ):
         df_features = pd.DataFrame(agg_data)
         df_metadata = pd.DataFrame(metadata)

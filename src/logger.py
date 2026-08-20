@@ -6,15 +6,13 @@ This module sets up logging based on the logger.yaml configuration file.
 
 import logging
 import logging.config
-from importlib.resources import files
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
 
 def setup_logging(
-    config_path: Optional[Path] = None,
+    config_path: Path | None = None,
     default_level: int = logging.INFO,
 ) -> None:
     """
@@ -29,6 +27,8 @@ def setup_logging(
     if config_path is None:
         config_path = Path("configs/logger.yaml")
 
+    Path("logs").mkdir(parents=True, exist_ok=True)
+
     try:
         if hasattr(config_path, "read_text") and not isinstance(
             config_path, Path
@@ -39,7 +39,7 @@ def setup_logging(
             logging.config.dictConfig(config)
         elif config_path.exists():
             # Regular Path object
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 config = yaml.safe_load(f)
             logging.config.dictConfig(config)
         else:

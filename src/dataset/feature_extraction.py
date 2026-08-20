@@ -1,9 +1,9 @@
+from typing import Literal
+
 import librosa
 import numpy as np
 
-from typing import Tuple, Union, Literal, List
-
-from src.schema import FeatureType
+from ..schema import FeatureType
 
 
 class FeatureExtraction:
@@ -36,7 +36,7 @@ class FeatureExtraction:
         y: np.ndarray,
         sr: int,
         feature_mode: Literal["stacked", "multi_channel"] = "stacked",
-        feature_names: List[FeatureType] = ["mel", "mfcc"],
+        feature_names: list[FeatureType] | None = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -61,6 +61,7 @@ class FeatureExtraction:
         """
 
         config = {**FeatureExtraction.DEFAULT_CONFIG, **kwargs}
+        feature_names = feature_names or [FeatureType.mel, FeatureType.mfcc]
 
         channels = []
 
@@ -129,7 +130,7 @@ class FeatureExtraction:
     @staticmethod
     def get_all_features_separate(
         y: np.ndarray, sr: int, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Returns extracted features separately.
 
@@ -301,7 +302,7 @@ class FeatureExtraction:
 
             return contrast
 
-        except Exception as e:
+        except Exception:
             # Fallback to zero tensor
             n_frames = 1 + len(y) // hop_length
 

@@ -1,17 +1,13 @@
-import sys
+import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
-
-import argparse
 import torch.multiprocessing as mp
 
-from src.splitfed.controller import TrainingController
-from src.utils.common import read_yaml
-from src.utils.training import set_seed
-from src.logger import logger
-from schema import ConfigSchema
+from .logger import logger
+from .schema import ConfigSchema
+from .splitfed.controller import TrainingController
+from .utils.common import read_yaml
+from .utils.training import set_seed
 
 
 def main():
