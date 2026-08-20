@@ -6,7 +6,7 @@ import torch.multiprocessing as mp
 from .logger import logger
 from .schema import ConfigSchema
 from .splitfed.controller import TrainingController
-from .utils.common import read_yaml
+from .utils.common import read_yaml, save_yaml
 from .utils.training import set_seed
 
 
@@ -48,6 +48,7 @@ def main():
             experiment_name = config.experiment.name
             model_path = model_path / experiment_name
             model_path.mkdir(parents=True, exist_ok=True)
+            _save_resolved_config(config, model_path)
             if controller.split_server is not None:
                 try:
                     controller.split_server.save(model_path)
@@ -67,6 +68,14 @@ def main():
                     controller.centralized_trainer.save(model_path)
                 except RuntimeError as e:
                     logger.warning("Could not save centralized weights: %s", e)
+
+
+def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:
+    """Persist the validated, alias-preserving run configuration."""
+    save_yaml(
+        artifact_path / "resolved_config.yaml",
+        config.model_dump(mode="json", by_alias=True),
+    )
 
 
 if __name__ == "__main__":

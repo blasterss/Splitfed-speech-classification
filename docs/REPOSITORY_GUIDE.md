@@ -170,6 +170,8 @@ workflow are still missing.
   requires `shared`. Personalized models, optimizers, metrics and checkpoint
   files remain isolated by client ID.
 - The root field is `models_save_path` (plural), not `model_save_path`.
+- Runs with `models_save_path` persist the validated JSON-compatible
+  `resolved_config.yaml` beside model checkpoints.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.
 - Every client needs all four fixed channel names:

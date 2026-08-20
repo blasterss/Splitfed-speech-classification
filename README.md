@@ -205,7 +205,8 @@ Expected generated artifacts include:
 - rotating logs under `logs/` when logging configuration is loaded;
 - evaluation CSV files under `experiments/results/`;
 - centralized, server and global client checkpoints under the configured model
-  directory.
+  directory;
+- the validated `resolved_config.yaml` beside model checkpoints.
 
 If custom logging configuration does not create its parent directory, prepare
 the log directory before running:
