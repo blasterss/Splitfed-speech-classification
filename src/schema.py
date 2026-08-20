@@ -1,12 +1,11 @@
 """
 schema.py
 
-Unified Pydantic configuration schema for the Split Federated Learning (SFL) system.
-Used to describe the experiment topology, clients, servers, and communication channels.
+Unified Pydantic configuration schema for the Split Federated Learning system.
+Describes experiment topology, clients, servers, and communication channels.
 """
 
 from enum import Enum
-from typing import List, Optional, Dict, Union
 from pathlib import Path
 
 from pydantic import (
@@ -16,7 +15,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
 
 # ============================================================
 # ENUMS
@@ -94,7 +92,7 @@ class ChannelConfig(StrictConfigModel):
         default=0, ge=0, description="Channel buffer size (0 — unlimited)."
     )
 
-    compression: Optional[str] = Field(
+    compression: str | None = Field(
         default=None,
         description="Compression type for transmitted data (if supported).",
     )
@@ -207,14 +205,14 @@ class DatasetConfig(StrictConfigModel):
 
     root: str = Field(description="Path to the dataset on the client device.")
 
-    feature_names: Optional[List[FeatureType]] = Field(
+    feature_names: list[FeatureType] | None = Field(
         default=[FeatureType.mfcc, FeatureType.rms, FeatureType.zcr],
         description=(
             "List of feature names to extract. "
             "If not specified, all supported features will be extracted."
         ),
     )
-    target_sample_rate: Optional[int] = Field(
+    target_sample_rate: int | None = Field(
         default=None,
         gt=0,
         description=(
@@ -229,7 +227,7 @@ class DatasetConfig(StrictConfigModel):
         description="Whether to use a reduced dataset (for testing).",
     )
 
-    reduced_size: Optional[int] = Field(
+    reduced_size: int | None = Field(
         default=None,
         gt=0,
         description=(
@@ -269,7 +267,7 @@ class ClientConfig(StrictConfigModel):
         description="Local training and runtime parameters."
     )
 
-    noise: Optional[NoiseConfig] = Field(
+    noise: NoiseConfig | None = Field(
         default=None, description="Noise injection configuration (optional)."
     )
 
@@ -285,7 +283,9 @@ class SplitServerModelConfig(StrictConfigModel):
     pos_weight: float = Field(
         default=3.0,
         gt=0,
-        description="pos_weight parameter for BCEWithLogitsLoss on the server.",
+        description=(
+            "pos_weight parameter for BCEWithLogitsLoss on the server."
+        ),
     )
 
     optimizer: str = Field(
@@ -331,11 +331,15 @@ class SplitServerConfig(StrictConfigModel):
     )
 
     split_uplink_channel: str = Field(
-        description="Channel name for transmitting activations from clients to the server."
+        description=(
+            "Channel name for transmitting activations from clients to server."
+        )
     )
 
     split_downlink_channel: str = Field(
-        description="Channel name for transmitting gradients from the server to clients."
+        description=(
+            "Channel name for transmitting gradients from server to clients."
+        )
     )
 
 
@@ -366,7 +370,9 @@ class FedServerConfig(StrictConfigModel):
 
     min_clients: int = Field(
         gt=0,
-        description="Minimum number of clients required to perform aggregation.",
+        description=(
+            "Minimum number of clients required to perform aggregation."
+        ),
     )
 
     quorum_timeout_sec: float = Field(
@@ -420,7 +426,7 @@ class ExperimentConfig(StrictConfigModel):
 
     name: str = Field(description="Experiment name.")
 
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional free-form text description of the experiment.",
     )
@@ -444,7 +450,7 @@ class ConfigSchema(StrictConfigModel):
         description="Path to the directory containing the source data."
     )
 
-    models_save_path: Optional[str] = Field(
+    models_save_path: str | None = Field(
         default=None,
         description=(
             "Path for saving trained models. "
@@ -460,20 +466,20 @@ class ConfigSchema(StrictConfigModel):
         description="Training process parameters."
     )
 
-    clients: List[ClientConfig] = Field(
+    clients: list[ClientConfig] = Field(
         min_length=1,
         description="List of client configurations.",
     )
 
-    split_server: Optional[SplitServerConfig] = Field(
+    split_server: SplitServerConfig | None = Field(
         default=None, description="Split-learning server configuration."
     )
 
-    fed_server: Optional[FedServerConfig] = Field(
+    fed_server: FedServerConfig | None = Field(
         default=None, description="Federated server configuration."
     )
 
-    channels: Dict[str, Union[QueueChannelConfig, GRPCChannelConfig]] = Field(
+    channels: dict[str, QueueChannelConfig | GRPCChannelConfig] = Field(
         description="Dictionary of communication channels used in the system."
     )
 
@@ -486,6 +492,31 @@ class ConfigSchema(StrictConfigModel):
         mode = self.training.mode
         needs_split = mode in (TrainingMode.split, TrainingMode.splitfed)
         needs_fed = mode in (TrainingMode.federated, TrainingMode.splitfed)
+
+        if mode is TrainingMode.centralized:
+            owner = self.clients[0]
+            owner_signature = (
+                owner.model,
+                owner.runtime.batch_size,
+                owner.runtime.device,
+                owner.noise,
+                owner.dataset.feature_names,
+                owner.dataset.target_sample_rate,
+            )
+            for client in self.clients[1:]:
+                signature = (
+                    client.model,
+                    client.runtime.batch_size,
+                    client.runtime.device,
+                    client.noise,
+                    client.dataset.feature_names,
+                    client.dataset.target_sample_rate,
+                )
+                if signature != owner_signature:
+                    raise ValueError(
+                        "centralized dataset views must share model, batch "
+                        "size, device, noise, feature ordering and sample rate"
+                    )
 
         if needs_split != (self.split_server is not None):
             requirement = "required" if needs_split else "not allowed"

@@ -164,8 +164,8 @@ workflow are still missing.
 - Unknown fields are rejected in root and nested configuration models.
 - `training.mode` selects mode-specific server and channel requirements.
   Controller setup creates only those roles. Execution is available for
-  `federated`, `split/shared`, `split/personalized` and `splitfed`; centralized
-  fails explicitly rather than partially.
+  `centralized`, `federated`, `split/shared`, `split/personalized` and
+  `splitfed`.
 - `split_server.model_scope` supports `shared` and `personalized`; SplitFed
   requires `shared`. Personalized models, optimizers, metrics and checkpoint
   files remain isolated by client ID.
@@ -247,11 +247,11 @@ that start method explicitly.
 The planned research infrastructure in `docs/dev_plan` is not implemented yet:
 there are no per-client Docker runtimes, ClientLoadController, named policy
 registry, launch profiles or heterogeneous-client simulator in the current
-runtime. The mode matrix is partially implemented: federated-only uses complete
-client classifiers, split/shared uses one shared server model,
+runtime. The mode matrix is executable: centralized uses one complete model and
+combined dataset view without channels, federated-only uses complete client
+classifiers, split/shared uses one shared server model,
 split/personalized owns one server model and optimizer per client, and SplitFed
-combines split training with client-partition FedAvg. Centralized remains a
-design target, not a current entry point.
+combines split training with client-partition FedAvg.
 
 Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
 model correctness, data semantics, and packaging changes into one patch.

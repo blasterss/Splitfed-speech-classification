@@ -149,8 +149,8 @@ Important configuration caveats:
 - unknown fields are rejected at every configuration level;
 - `training.mode` is typed as `centralized`, `federated`, `split` or
   `splitfed`; mode-specific server/channel topology is validated. Execution is
-  implemented for `federated`, `split/shared`, `split/personalized` and
-  `splitfed`;
+  implemented for `centralized`, `federated`, `split/shared`,
+  `split/personalized` and `splitfed`;
 - `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
   `shared`. Personalized split keeps one server model, optimizer, metrics stream
   and checkpoint per client;
@@ -171,11 +171,16 @@ Important configuration caveats:
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
 scheduling. Those capabilities are planned, not part of the current runtime.
-The controller creates only mode-owned roles and channels. Federated mode trains
-and aggregates a complete `SpeechRecognitionModel`; split/shared uses only the
-client partition and one shared SplitServer; SplitFed adds client-partition
-FedAvg. Centralized execution remains staged work and fails explicitly if
-started.
+The controller creates only mode-owned roles and channels. Centralized mode
+trains one complete `SpeechRecognitionModel` over the combined client dataset
+views without transport channels or servers. Federated mode trains and
+aggregates complete client models; split/shared uses the client partition and
+one shared SplitServer; SplitFed adds client-partition FedAvg.
+
+Centralized dataset views must use identical model, batch size, device, noise,
+feature ordering and target sample-rate settings. The first client entry owns
+that single runtime configuration; `local_steps` is not used because every
+combined training batch is consumed once per centralized round.
 
 ## Running
 
@@ -199,13 +204,14 @@ Expected generated artifacts include:
 
 - rotating logs under `logs/` when logging configuration is loaded;
 - evaluation CSV files under `experiments/results/`;
-- server and global client checkpoints under the configured model directory.
+- centralized, server and global client checkpoints under the configured model
+  directory.
 
-Some output directories are not created consistently by the current code. Create
-them before running if necessary:
+If custom logging configuration does not create its parent directory, prepare
+the log directory before running:
 
 ```bash
-mkdir -p logs experiments/results checkpoints
+mkdir -p logs
 ```
 
 ## Verification status

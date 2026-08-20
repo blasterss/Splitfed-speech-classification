@@ -62,6 +62,12 @@ def main():
                 except RuntimeError as e:
                     logger.warning("Could not save fed-server weights: %s", e)
 
+            if controller.centralized_trainer is not None:
+                try:
+                    controller.centralized_trainer.save(model_path)
+                except RuntimeError as e:
+                    logger.warning("Could not save centralized weights: %s", e)
+
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)

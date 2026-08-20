@@ -3,6 +3,7 @@ import torch.multiprocessing as mp
 from ..logger import get_logger
 from ..schema import ConfigSchema, TrainingMode
 from ..transport.base import ChannelFactory
+from .centralized import CentralizedTrainer
 from .client import Client, _client_worker
 from .fed_server import FedServer
 from .split_server import SplitServer
@@ -35,6 +36,7 @@ class TrainingController:
 
         self.split_server: SplitServer | None = None
         self.fed_server: FedServer | None = None
+        self.centralized_trainer: CentralizedTrainer | None = None
 
         self.channels: dict[str, dict] = {}
         self._client_processes: list[mp.Process] = []
@@ -56,6 +58,11 @@ class TrainingController:
 
         logger.info("Initialising servers...")
         self._init_servers()
+
+        if self.cfg.training.mode is TrainingMode.centralized:
+            self.centralized_trainer = CentralizedTrainer(
+                self.cfg, stop_event=self._stop_event
+            )
 
         logger.info("=== SETUP COMPLETE ===")
 
@@ -156,9 +163,8 @@ class TrainingController:
         """
 
         if self.cfg.training.mode is TrainingMode.centralized:
-            raise NotImplementedError(
-                "Centralized execution is not implemented yet"
-            )
+            self._start_centralized_training()
+            return
         if (
             self.cfg.training.mode
             in (TrainingMode.split, TrainingMode.splitfed)
@@ -265,6 +271,20 @@ class TrainingController:
 
         if training_error is not None:
             raise training_error
+
+    def _start_centralized_training(self) -> None:
+        if self._manager is None or self._stop_event is None:
+            raise RuntimeError("Call setup() before start_training().")
+        if self.centralized_trainer is None:
+            raise RuntimeError("Centralized trainer was not initialized")
+        try:
+            self.centralized_trainer.start()
+            self.centralized_trainer.wait(self.PROCESS_POLL_TIMEOUT)
+        except BaseException:
+            self._stop_event.set()
+            raise
+        finally:
+            self.centralized_trainer.stop()
 
 
 def _raise_for_failed_processes(processes: list[mp.Process]) -> None:

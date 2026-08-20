@@ -192,6 +192,38 @@ def test_federated_setup_creates_only_federated_channels_and_server(tmp_path):
     controller.teardown()
 
 
+def test_centralized_setup_creates_no_channels_or_servers(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "centralized"
+    raw["split_server"] = None
+    raw["fed_server"] = None
+    raw["channels"] = {}
+    controller = TrainingController(ConfigSchema(**raw))
+
+    controller.setup()
+
+    assert controller.channels == {0: {}}
+    assert controller.split_server is None
+    assert controller.fed_server is None
+    assert controller.centralized_trainer is not None
+    controller.teardown()
+
+
+def test_centralized_rejects_inconsistent_training_views(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "centralized"
+    raw["split_server"] = None
+    raw["fed_server"] = None
+    raw["channels"] = {}
+    second = copy.deepcopy(raw["clients"][0])
+    second["client_id"] = 1
+    second["runtime"]["batch_size"] = 2
+    raw["clients"].append(second)
+
+    with pytest.raises(ValidationError, match="centralized dataset views"):
+        ConfigSchema(**raw)
+
+
 def test_split_personalized_rejects_federated_server_and_channels(tmp_path):
     raw = make_config(tmp_path).model_dump(by_alias=True)
     raw["training"]["mode"] = "split"
