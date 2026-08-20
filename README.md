@@ -64,7 +64,7 @@ Federated server process
 TrainingController
   creates queues, barriers and processes
   starts clients and servers
-  coordinates shutdown and checkpoint retrieval
+  supervises child exit codes and coordinates shutdown
 ```
 
 All components currently run on one Unix host. Queue transport simulates
@@ -151,6 +151,10 @@ Important configuration caveats:
   controller, which relies on fixed names;
 - client IDs must be unique, although the schema does not yet enforce this.
 
+The repository also contains a forward-looking research plan for named launch
+profiles, simulation, isolated client containers and throughput-aware client
+scheduling. Those capabilities are planned, not part of the current runtime.
+
 ## Running
 
 From the repository root:
@@ -181,6 +185,19 @@ them before running if necessary:
 ```bash
 mkdir -p logs experiments/results checkpoints
 ```
+
+## Verification status
+
+The repository has focused tests for schema/configuration, dataset parsers,
+padding, models/FedAvg, queue transport and controller lifecycle. Run them with:
+
+```bash
+uv run pytest
+```
+
+There is no CI workflow yet, and the suite does not replace a real-data,
+multi-process or CUDA smoke test. Use a reduced dataset and one round before
+starting a long experiment.
 
 ## Dataset and evaluation assumptions
 
@@ -235,10 +252,12 @@ tests.
   waiting for gradients.
 - Dataset loading and the first barrier are outside the client's protected
   lifecycle. One failed client can leave every other client blocked.
-- The controller joins clients sequentially without a supervision loop.
-- Non-zero child exit codes are logged but do not fail the parent run.
-- Split and federated server failures are not actively monitored.
-- Queue and barrier timeouts do not form a unified cancellation protocol.
+- The controller has a polling supervision loop and propagates non-zero child
+  exit codes, but startup failures, barriers and queue timeouts are not yet one
+  complete cancellation protocol.
+- Split and federated server exit codes are monitored, but failure reporting and
+  recovery are not yet fault-tolerant or restartable.
+- Queue and barrier timeouts can still leave peers waiting in some failure paths.
 
 ### Numerical correctness
 
@@ -258,7 +277,8 @@ tests.
 - Client responses are not validated against sender, type, round and step.
 - Federated responses are passed directly to `load_state_dict`.
 - Payload shapes, dtypes and state-dict schemas are not validated.
-- `min_clients`, aggregation strategy and aggregation frequency are ignored.
+- `min_clients`, aggregation strategy and aggregation frequency are configured
+  but not fully honoured by the worker.
 - Metrics are logged locally and are not collected by the federated worker.
 
 ### Data pipeline
@@ -289,7 +309,8 @@ tests.
 - The microphone capture module contains undefined constants and empty methods.
 - The audio segmenter calls the audio loader with an incompatible signature.
 - Message byte serialization and `GrpcChannel` are stubs.
-- There is no automated test suite or CI workflow yet.
+- There is no CI workflow, multi-process spawn smoke suite, checkpoint round-trip
+  suite or CUDA test matrix yet.
 
 ## Recommended improvement plan
 

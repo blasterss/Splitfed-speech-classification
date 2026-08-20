@@ -152,9 +152,10 @@ For configuration or loader changes, also validate the example and a real WAV:
 uv run python -c "from src.schema import ConfigSchema; from src.utils.common import read_yaml; ConfigSchema(**read_yaml('configs/config.example.yaml')); print('schema-ok')"
 ```
 
-The repository currently has no test files. `uv run pytest` is still useful as a
-check that the test runner starts, but `0 items` is expected until tests are
-added.
+The repository has focused tests for schemas/configuration, dataset parsers,
+padding, models/FedAvg, queue transport and controller lifecycle. Run them with
+`uv run pytest`. A real-data multi-process smoke test, CUDA matrix and CI
+workflow are still missing.
 
 ## Configuration invariants
 
@@ -187,11 +188,13 @@ Clients send intermediate activations and labels to the split server. The split
 server returns activation gradients. Clients send client model state and sample
 counts to the federated server, which returns the aggregated state.
 
-The process lifecycle is fragile by design at this stage:
+The process lifecycle has basic supervision but remains fragile at this stage:
 
-- a failed client can leave peers waiting at barriers;
-- server failures are not supervised comprehensively;
-- joins happen sequentially;
+- client startup and barrier failures can still leave peers waiting;
+- server exit codes are checked, but recovery and structured error propagation
+  are incomplete;
+- joins use a polling loop but do not yet implement a complete cancellation
+  protocol;
 - queue and barrier timeouts are not one unified cancellation protocol;
 - gRPC and message serialization are stubs.
 
@@ -213,6 +216,11 @@ that start method explicitly.
 - `GrpcChannel` and message byte serialization are unimplemented.
 - Capture and segmentation modules are incomplete and are not part of the
   supported training path.
+
+The planned research infrastructure in `docs/dev_plan` is not implemented yet:
+there are no per-client Docker runtimes, ClientLoadController, named policy
+registry, launch profiles or heterogeneous-client simulator in the current
+runtime.
 
 Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
 model correctness, data semantics, and packaging changes into one patch.

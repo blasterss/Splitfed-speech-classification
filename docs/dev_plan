@@ -1,0 +1,809 @@
+# План полной доработки SecureASR
+
+## 1. Цель и границы
+
+SecureASR следует довести до воспроизводимой исследовательской платформы для
+сравнения централизованного обучения, Federated Learning, Split Learning и
+SplitFed. Целевой результат не должен называться production ASR, системой
+понимания конфликтов или криптографически защищённой системой: текущая задача
+остаётся бинарной классификацией эмоциональной речи, где `ANG` является
+положительным классом.
+
+План учитывает текущую архитектуру:
+
+```text
+CLI/config
+    -> validated ExperimentContext
+    -> TrainingController
+        -> ClientLoadController
+          -> client containers (one isolated runtime per client)
+            audio files -> features -> client model
+            activations/labels <-> SplitServer
+            client state <-> FedServer
+          -> throughput/health/credit telemetry
+        -> SplitServer container
+        -> FedServer container
+        -> MessageBroker/TransportGateway
+        -> checkpoints, metrics, manifest, logs
+```
+
+Главные критерии завершённой версии:
+
+- любой отказ клиента или сервера завершает запуск предсказуемо и не оставляет
+  зависших процессов;
+- все сообщения имеют проверяемый контракт и однозначно относятся к раунду и
+  шагу;
+- обучение, FedAvg, evaluation и checkpointing математически согласованы с
+  конфигурацией;
+- эксперименты воспроизводимы по seed, конфигурации, данным и окружению;
+- privacy claims ограничены измеренными гарантиями и threat model;
+- CPU smoke test, тесты контракта и CI проходят без внешних аудиодатасетов.
+
+## 2. Зафиксированные ограничения текущей версии
+
+Это исходные дефекты и незавершённые возможности, которые нельзя скрывать
+документацией:
+
+1. `queue` работает только внутри одного Unix-хоста и не даёт сетевой,
+   криптографической или организационной изоляции.
+2. `GrpcChannel` и сериализация `Message` не реализованы.
+3. Нет контейнерной runtime-модели: клиентские процессы не имеют отдельных
+  resource limits, health checks, network policies, image/version pinning или
+  изолированных volume/secrets.
+4. Нет отдельного контроллера загрузки клиентов: выбор участников не учитывает
+  скорость отдачи, backlog, стабильность, latency, объём данных или staleness.
+5. SplitServer ждёт всех клиентов для одинакового `(round, step)`; разные
+   размеры датасетов могут привести к deadlock. Просроченные batch сейчас
+   выбрасываются без отмены ожидающих клиентов.
+6. Ошибка загрузки до `ready_barrier`, ошибка barrier и ошибка сервера не
+   образуют единого cancellation protocol.
+7. В split-обучении accumulation зашит как `4`; остаток раунда не flush-ится,
+   а масштабирование градиентов клиента и сервера не задано одним контрактом.
+8. Настройки `min_clients`, `strategy`, `aggregation_freq` частично или вовсе
+   не используются; ответы FedServer загружаются без полной валидации.
+9. Фичи всего клиента загружаются в память; padding участвует в статистиках;
+   actor split использует `42`, а не configured seed; class coverage не
+   проверяется; sampler создаётся, но не передаётся в `DataLoader`.
+10. Noise действует во время evaluation; clipping и privacy accounting
+   отсутствуют; leakage attacks не измеряются.
+11. `eval_every` не управляет циклом; директории артефактов создаются
+   непоследовательно; checkpoint не содержит полного состояния эксперимента и
+   не поддерживает надёжный resume.
+12. Capture/segmentation и multi-channel utilities не являются рабочим
+    поддержанным training path.
+13. Тесты покрывают отдельные функции, но отсутствуют полноценные
+    multiprocessing, spawn, checkpoint, determinism, CI и CUDA проверки.
+
+## 3. Целевая архитектура
+
+### 3.1. Контекст эксперимента
+
+Ввести создаваемый на старте `ExperimentContext` или эквивалентный объект,
+который содержит:
+
+- resolved config с запретом неизвестных полей;
+- абсолютные пути к данным и артефактам;
+- experiment/run ID;
+- seed и сведения о Python, PyTorch, CUDA и Git revision;
+- manifest файлов, actor IDs, label counts и feature shapes;
+- единый `CancellationToken`/`stop_event` и error channel.
+
+`main.py` должен выполнять следующий pipeline:
+
+```text
+parse CLI
+  -> load YAML
+  -> resolve paths relative to repository/run root
+  -> validate schema and cross-field invariants
+  -> create run directories
+  -> write resolved_config.yaml and environment.json
+  -> seed parent process
+  -> setup controller
+  -> run smoke/full training
+  -> collect artifacts
+  -> return non-zero exit code on any child failure
+```
+
+### 3.2. Владение процессами
+
+`TrainingController` остаётся владельцем всех процессов, channels, barriers и
+cleanup. SplitServer и FedServer не должны самостоятельно скрывать ошибки в
+логах: ошибка должна попасть в structured error channel и установить общий
+stop event.
+
+Минимальная модель состояний:
+
+```text
+CREATED -> VALIDATED -> STARTING -> READY -> TRAINING
+TRAINING -> EVALUATING -> CHECKPOINTING -> COMPLETED
+любое состояние -> CANCELLING -> STOPPED/FAILED
+```
+
+После первой ошибки controller должен:
+
+1. записать первое исключение с компонентом, round/step и traceback;
+2. установить cancellation event;
+3. abort-нуть barriers и разбудить ожидающих клиентов;
+4. дождаться процессов bounded timeout;
+5. terminate/kill только оставшиеся процессы;
+6. сохранить диагностический run report;
+7. вернуть ненулевой exit code.
+
+### 3.3. Контейнерная топология и изоляция
+
+Целевой deployment должен поддерживать два режима с одним application
+protocol:
+
+```text
+development:
+  docker compose
+    controller
+    load-controller
+    split-server
+    fed-server
+    client-<id> x N
+    broker/transport-gateway
+
+deployment:
+  orchestrator (Compose initially, Kubernetes later)
+    control plane + server services + one client workload per client
+```
+
+Каждый клиент должен запускаться из immutable image с pinned Python/system
+dependencies и отдельными:
+
+- CPU/memory/GPU limits and reservations;
+- read-only dataset mount или object-store credentials, scoped to that client;
+- private result/checkpoint volume with no cross-client write access;
+- service identity, network policy and least-privilege permissions;
+- liveness/readiness/startup probes and graceful shutdown deadline;
+- structured logs and metrics tagged by `experiment_id`, `client_id` и
+  `round`.
+
+Нельзя передавать большие tensors через неограниченный broker. Для каждого
+message class определить inline size limit, compression policy и при
+необходимости content-addressed blob storage с TTL. Secrets не помещать в
+image, YAML или logs. Docker Compose должен быть dev/reference target, а не
+доказательством production security; Kubernetes, registry, TLS/mTLS и secret
+manager остаются отдельным deployment scope.
+
+### 3.4. ClientLoadController
+
+Ввести отдельный `ClientLoadController` между `TrainingController` и клиентами.
+Он не должен менять веса модели или подменять FedServer: его ответственность
+только в admission, scheduling и наблюдаемости участия.
+
+Для каждого клиента вести bounded telemetry window:
+
+- `available`, `ready`, `draining`, `failed`, `quarantined`;
+- samples/files available and effective local dataset size;
+- upload throughput (samples/sec and bytes/sec), step latency, round latency;
+- queue depth/backlog, timeout/error rate, resource pressure and last heartbeat;
+- staleness/version of model and number of completed local steps;
+- rolling reliability score and scheduler credits.
+
+На основе идеи MergeSFL о согласовании участия клиентов с неоднородными
+ресурсами заложить policy interface, а не зашивать одну формулу:
+
+```text
+telemetry + dataset profile + round requirements
+  -> eligibility filter
+  -> score / credits / fairness debt
+  -> select cohort and local budgets
+  -> reserve capacity with lease
+  -> dispatch round plan
+  -> observe completion or timeout
+  -> update score, debt, quarantine and metrics
+```
+
+Первый baseline policy должен быть детерминированным и объяснимым:
+
+```text
+eligible = healthy && ready && not quarantined && protocol_compatible
+score = throughput_weight * normalized_throughput
+      - latency_weight * normalized_latency
+      - failure_weight * error_rate
+      + data_weight * log1p(effective_samples)
+      + fairness_weight * fairness_debt
+select min_clients..max_clients subject to quorum and fairness constraints
+```
+
+Формулу нельзя называть точной реализацией MergeSFL без сверки с конкретной
+статьёй и её assumptions. Сохранить в run artifact версию policy, параметры,
+telemetry window, selected cohort и причины отказа каждого eligible клиента,
+чтобы выбор можно было воспроизвести и сравнить с all-client baseline.
+
+Load controller должен выдавать `RoundPlan`:
+
+- cohort и required quorum;
+- per-client local steps, batch/byte budget и deadline;
+- model/protocol version;
+- round seed and aggregation eligibility;
+- lease expiry and retry policy.
+
+Он не должен бесконечно предпочитать быстрых клиентов. Fairness debt,
+minimum participation frequency и per-dataset coverage обязательны для
+сравнимых экспериментов. Медленные клиенты должны получать graceful drop,
+reduced budget, delayed cohort или отдельную asynchronous policy, а не держать
+весь synchronous round без deadline.
+
+### 3.5. Research Experiment Control Plane
+
+Поскольку SecureASR является исследовательским фреймворком, параметры запуска
+нельзя зашивать в код или разносить по неявным переменным окружения. Ввести
+слои конфигурации с явным приоритетом:
+
+```text
+built-in defaults
+  < named experiment profile
+  < YAML config
+  < CLI overrides
+  < explicitly allowed environment substitution
+```
+
+Каждый запуск должен сохранять после merge:
+
+- `resolved_config.yaml` и canonical config hash;
+- profile name, CLI arguments и source каждого override;
+- protocol, scheduler, aggregation и transport policy versions;
+- seed tree: experiment, controller, client, server, data split and simulator;
+- environment/image digest, Git revision и dependency lock hash.
+
+Разделить конфигурацию минимум на следующие namespaces:
+
+```yaml
+experiment:        # name, run_id, profile, seed, tags
+runtime:           # backend, start_method, devices, run_dir, limits
+topology:          # process/container mode, service endpoints, replicas
+training:          # rounds, local steps, eval/fed cadence, accumulation
+data:              # datasets, split, features, cache, manifest policy
+transport:         # queue/grpc/broker, deadlines, compression, payload caps
+scheduler:         # load policy, quorum, fairness, leases, retry budget
+aggregation:       # strategy, partial participation, BN/buffer policy
+privacy:            # clipping, noise, accounting, train/eval behavior
+debug:             # verbosity, traces, dumps, deterministic checks
+simulation:        # virtual clients, speed/latency/failure profiles
+artifacts:         # checkpoints, metrics, telemetry and retention
+```
+
+Для каждой policy использовать registry с именем, версией, typed parameters и
+factory, например `scheduler.policy: throughput_fair_v1`,
+`aggregation.policy: weighted_fedavg_v1`, `transport.backend: queue_v1`.
+Не разрешать произвольный импорт класса из YAML. Unknown fields и несовместимые
+комбинации должны отклоняться до запуска.
+
+Обязательные профили запуска:
+
+- `unit`: один процесс, маленькие synthetic tensors, быстрые contract tests;
+- `smoke`: CPU, `spawn`, 2-3 virtual clients, один-два раунда;
+- `debug`: подробные structured logs, trace IDs, bounded tensor metadata и
+  детерминированные dumps без записи сырых аудио по умолчанию;
+- `fault_injection`: controlled timeout, dropped message, client crash,
+  malformed payload, broker backpressure and server restart;
+- `heterogeneous`: разные dataset sizes, throughput, latency, availability,
+  class distributions and device capacities;
+- `benchmark`: fixed workload, warmup, repeated seeds and performance metrics;
+- `repro`: deterministic algorithms, frozen manifest and checkpoint comparison;
+- `privacy`: clipping/noise/accounting/leakage experiment with explicit threat
+  model;
+- `distributed`: containerized services and real network transport.
+
+Debug и simulation должны быть безопасными по умолчанию:
+
+- debug не может обходить message validation, auth, deadlines или cancellation;
+- synthetic mode не может быть случайно включён на реальных данных;
+- failure injection принимает seed, сценарий, scope, trigger и expected result;
+- artificial speed/latency задаются распределением и фиксируются в artifacts;
+- virtual client data profiles отделены от actual dataset paths;
+- tensor/audio dumps требуют явного opt-in, size limit, TTL и redaction;
+- simulator должен уметь ускоренный deterministic clock для unit tests и
+  wall-clock mode для integration tests.
+
+Минимальный simulation profile клиента:
+
+```yaml
+simulation:
+  enabled: true
+  clients:
+    0: {data_multiplier: 1.0, throughput: 120, latency_ms: 20, availability: 1.0}
+    1: {data_multiplier: 5.0, throughput: 35, latency_ms: 180, availability: 0.85}
+    2: {data_multiplier: 0.4, throughput: 220, latency_ms: 8, availability: 0.98}
+  failures:
+    - {kind: timeout, client_id: 1, round: 2, probability: 1.0}
+```
+
+Симулятор должен генерировать отчёты, достаточные для сравнения политик:
+selected cohorts, participation frequency, fairness debt, dropped clients,
+round completion time, queue depth, bytes, retries, staleness, convergence и
+quality per client/data profile.
+
+## 4. Сквозные пайплайны
+
+### 4.1. Startup и валидация
+
+```text
+YAML -> Pydantic schema -> cross-field validation -> runtime probes
+     -> dataset probes -> resolved snapshot -> controller setup
+```
+
+Проверки должны включать уникальные client IDs, существующие channel names,
+соответствие transport, `min_clients <= number_of_clients`, корректные
+`fed_every/eval_every`, допустимые devices, непустые feature names,
+непересекающиеся actor splits и возможность получить оба класса в train/test.
+Пути должны разрешаться относительно явно выбранного project root, а не
+случайного current working directory.
+
+### 4.2. Подготовка данных
+
+```text
+discover WAV
+  -> parse dataset metadata
+  -> validate file/actor/label manifest
+  -> deterministic actor-disjoint split
+  -> lazy or bounded feature extraction
+  -> mask valid frames / fixed-duration crop
+  -> train-only normalization statistics
+  -> DataLoader and optional class sampler
+```
+
+Нужно сохранять manifest с file hash или размером/mtime, actor ID, label,
+duration, extraction status и reason for skip. Ошибки отдельных файлов должны
+собираться и иметь порог допустимой потери; spectral-contrast fallback не
+должен молча превращаться в научно неучтённые нули. Для padding выбрать один
+явный контракт: mask-aware normalization либо fixed-duration segmentation.
+
+### 4.3. Один SplitFed round
+
+```text
+round_start
+  -> client loads next local batches
+  -> ClientModel(x) = activations
+  -> TRAIN_STEP(client_id, round, step, request_id)
+  -> SplitServer validates and schedules participation
+  -> ServerModel(activations), loss
+  -> backward on server; return GRADIENTS(request_id)
+  -> client backward(gradients), optimizer.step()
+  -> repeat configured local_steps
+  -> optional client update to FedServer
+  -> aggregate when policy is satisfied
+  -> GLOBAL_UPDATE(request_id/round)
+  -> round_end/checkpoint/eval according to policy
+```
+
+Нужно выбрать и документировать policy участия: все клиенты, `min_clients`
+или sampled clients. При пропущенном клиенте сервер должен либо завершить
+round с явным quorum decision, либо отменить его; бесконечное ожидание
+недопустимо. Разные длины loaders должны обрабатываться через `local_steps`,
+циклический loader или явный `round_done`, а не через неявное ожидание
+одинакового числа batch.
+
+### 4.4. Message lifecycle
+
+```text
+construct typed message
+  -> validate before send
+  -> transport send with deadline
+  -> receiver validates sender/type/round/step/request_id
+  -> validate payload schema, shape, dtype, device policy
+  -> process or return typed ERROR
+  -> ack/response matched to pending request
+```
+
+Добавить envelope с `protocol_version`, `message_id`, `request_id`, `sender`,
+`receiver`, `round`, `step`, `kind`, `payload_metadata` и optional error.
+Описать допустимые переходы `TRAIN_STEP -> GRADIENTS`,
+`EVAL_STEP -> LOGITS`, `CLIENT_UPDATE -> GLOBAL_UPDATE`. Некорректное,
+устаревшее или повторное сообщение должно быть rejected/ignored с причиной и
+метрикой, а не приводить к `load_state_dict` или deadlock.
+
+### 4.5. Отказ и отмена
+
+```text
+failure detected
+  -> ErrorEvent(component, client, round, step, exception)
+  -> first-error-wins cancellation
+  -> barrier.abort / channel wake-up
+  -> clients stop waiting and report state
+  -> servers flush diagnostics and exit
+  -> controller joins, escalates, writes report
+```
+
+Добавить bounded receive wrappers, которые различают timeout, cancellation и
+malformed message. Не использовать `daemon=True` как механизм надёжного
+завершения; cleanup должен быть явным и проверяемым.
+
+### 4.6. Evaluation
+
+```text
+checkpoint/model state
+  -> model.eval(), no_grad(), noise disabled
+  -> local predictions
+  -> per-client/per-dataset confusion matrix
+  -> accuracy, macro-F1, binary-F1, precision, recall, per-class recall
+  -> weighted and unweighted aggregation
+  -> metrics.json + CSV + structured log
+```
+
+`eval_every` должен реально управлять промежуточной оценкой. Evaluation не
+должна блокировать training channels без отдельного protocol state. Метрики
+должны явно обрабатывать отсутствие positive predictions/labels через
+`zero_division` и сохранять denominators.
+
+### 4.7. Checkpoint и resume
+
+```text
+round boundary
+  -> model states (client/server/global)
+  -> optimizer states
+  -> round, RNG states, config hash
+  -> dataset manifest hash and metrics
+  -> atomic temp write + rename
+  -> latest pointer
+```
+
+Resume должен проверить совместимость config/schema/model shapes и продолжить с
+следующего round. Неполный или чужой checkpoint должен быть отвергнут явно.
+
+### 4.8. Планирование heterogeneous clients
+
+```text
+client heartbeats + telemetry
+  -> normalize window and detect stale measurements
+  -> eligibility/quarantine checks
+  -> load policy selects cohort and per-client budget
+  -> lease and RoundPlan broadcast
+  -> clients report progress/throughput/bytes
+  -> timeout or completion quorum
+  -> FedServer aggregates eligible updates
+  -> scheduler updates score, fairness debt and policy metrics
+```
+
+Каждый `RoundPlan` должен быть immutable для данного раунда и иметь
+`plan_id`. Retry не должен незаметно запускать второй update с тем же
+`request_id`; повторная попытка требует idempotency key и явной staleness
+policy. Сравнивать как минимум `all_clients`, `random_fixed`,
+`throughput_only`, `throughput_fair_v1`, `data_balanced` и
+`availability_aware` при одинаковых seed, budget и cohort constraints.
+
+Для разных объёмов данных разделить три понятия:
+
+- `dataset_weight`: вклад samples в aggregation;
+- `compute_budget`: сколько local steps/bytes клиент может выполнить;
+- `participation_credit`: как часто клиент должен получать шанс участия.
+
+Большой dataset не должен автоматически получать бесконечный compute budget,
+а быстрый клиент не должен монополизировать cohorts. Отдельно измерять
+sample-weighted quality, macro quality across clients, worst-client quality,
+dataset coverage и convergence per wall-clock/per byte.
+
+## 5. План реализации по этапам
+
+### Этап 0. Baseline и правила эксперимента
+
+**Задачи:** зафиксировать текущий baseline, добавить command/profile runner для
+CPU synthetic smoke-run, записать known failures и определить protocol version.
+Привести импорты к одному стилю, не меняя поведения.
+
+**Готово, когда:** чистый checkout с минимальной synthetic-конфигурацией
+запускается через console entry point, а baseline metrics и runtime metadata
+сохраняются.
+
+**Проверки:** `pytest`, `ruff`, `black --check`, `py_compile`, smoke test с
+`spawn`.
+
+### Этап 1. Конфигурация и startup
+
+**Задачи:** запретить extra fields, добавить cross-field validators, уникальные
+IDs, channel references, device probes, seed tree, profile loading, typed CLI
+overrides, policy registry, `run_dir`; централизовать создание директорий,
+resolved config и provenance каждого параметра.
+
+**Зависит от:** этапа 0.
+
+**Готово, когда:** ошибки конфигурации диагностичны до создания процессов, а
+одинаковая конфигурация из разных cwd даёт одинаковые resolved paths.
+
+**Тесты:** schema negative tests, path resolution, duplicate IDs, invalid
+quorum/device/channel, snapshot example config.
+
+### Этап 1.5. Debug и simulation harness
+
+**Задачи:** реализовать synthetic datasets, virtual client profiles,
+deterministic/wall-clock modes, artificial throughput/latency/availability,
+failure injection, broker backpressure, bounded debug dumps и trace IDs.
+Добавить профили `unit`, `smoke`, `debug`, `fault_injection`,
+`heterogeneous`, `benchmark` и `repro`.
+
+**Зависит от:** этапа 1.
+
+**Готово, когда:** все P0 lifecycle, protocol и scheduler сценарии можно
+воспроизвести без внешних WAV и без ручного вмешательства; synthetic mode
+невозможно случайно применить к production dataset.
+
+**Тесты:** deterministic replay, seed isolation, expected failure assertions,
+virtual clock, no-raw-data debug policy, profile merge/override tests.
+
+### Этап 2. Единый lifecycle и supervision
+
+**Задачи:** внедрить error channel, cancellation event, barrier timeout/abort,
+concurrent process supervision, bounded joins, cleanup idempotency и parent
+exit-code propagation. Обработать исключения конструктора Client до barrier.
+
+**Зависит от:** этапа 1.
+
+**Готово, когда:** synthetic client failure, server failure, timeout и manual
+cancellation завершают весь run за ограниченное время без живых процессов.
+
+**Тесты:** fake process tests, multiprocessing failure injection, spawn test,
+barrier abort test, repeated setup/teardown.
+
+### Этап 2.5. Container runtime foundation
+
+**Задачи:** добавить multi-stage Dockerfile(s), pinned dependency build,
+non-root images, Compose reference topology, per-client environment contract,
+health/readiness probes, resource limits, scoped mounts, graceful shutdown и
+container log/metric labels. Сначала контейнеризировать synthetic smoke path,
+затем real dataset path.
+
+**Зависит от:** этапов 1-1.5; использует cancellation contract этапа 2.
+
+**Готово, когда:** controller, servers и минимум два client containers
+проходят smoke run по isolated network, а остановка/ошибка контейнера
+завершает run и освобождает ресурсы.
+
+**Тесты:** image build, non-root check, health probes, network isolation,
+volume permissions, resource-limit behavior, container failure injection.
+
+### Этап 3. Typed protocol и local transport
+
+**Задачи:** реализовать строгие message payload schemas, request correlation,
+protocol version, validation errors и deadline-aware QueueChannel. Удалить
+фиксированные channel constants из controlling path или валидировать их
+соответствие конфигурации.
+
+**Зависит от:** этапа 2.
+
+**Готово, когда:** stale sender/round/step, wrong type, wrong shape/dtype,
+duplicate и malformed payload не блокируют peer и дают наблюдаемую ошибку.
+
+**Тесты:** round-trip contract, invalid messages, timeout/cancellation,
+out-of-order and duplicate messages, tensor metadata.
+
+### Этап 4. Корректность SplitServer и round scheduler
+
+**Задачи:** убрать hard-coded accumulation `4`; разделить gradient scaling на
+server accumulation и client update policy; flush remainder; задать quorum и
+обработку неполных batch; ввести `round_start`, `round_done`, `round_abort`.
+
+**Зависит от:** этапов 2-3.
+
+**Готово, когда:** любое значение local steps/accumulation даёт ожидаемое число
+optimizer steps, нет crossing round boundaries, а missing client не вызывает
+вечного ожидания.
+
+**Тесты:** deterministic gradient reference, remainder flush, unequal loader
+lengths, dropped client, stale batch cancellation, loss/gradient scaling.
+
+### Этап 4.5. ClientLoadController и policy experiments
+
+**Задачи:** реализовать telemetry ingestion, heartbeat, eligibility,
+quarantine, leases, `RoundPlan`, policy registry и baseline policies
+`all_clients`, `random_fixed`, `throughput_only`, `throughput_fair_v1`,
+`data_balanced`, `availability_aware`. Ввести fairness debt, minimum
+participation и per-dataset coverage constraints.
+
+**Зависит от:** этапов 1.5, 2.5, 3-5.
+
+**Готово, когда:** heterogeneous simulation с разными dataset sizes и
+скоростями не deadlock-ится, selection decisions воспроизводимы, а scheduler
+не даёт быстрым клиентам монополизировать участие.
+
+**Тесты:** policy golden cases, lease expiry, stale telemetry, fairness
+rotation, slow/dropout client, quorum, scheduler restart/resume, comparison
+of policy metrics against all-client baseline.
+
+### Этап 5. FedAvg и состояние оптимизации
+
+**Задачи:** реализовать `strategy`, `aggregation_freq`, `min_clients`, client
+sampling и quorum; валидировать state-dict schema, keys, shapes, dtypes и
+dataset sizes. Явно определить policy для BatchNorm buffers: aggregate,
+largest-client, server-only или FedBN. Решить, федерализуется ли optimizer
+state, и реализовать выбранную policy.
+
+**Зависит от:** этапов 3-4.
+
+**Готово, когда:** сервер агрегирует только согласованные updates, корректно
+работает с partial participation и политика non-floating buffers отражена в
+метриках и документации.
+
+**Тесты:** weighted/unweighted FedAvg, integer buffers, malformed state dict,
+zero/negative sample size, min-client quorum, aggregation frequency, optimizer
+round-trip.
+
+### Этап 6. Data pipeline и воспроизводимость
+
+**Задачи:** lazy/chunked loading, deterministic actor split from config seed,
+class/actor coverage validation, manifest, extraction error budget, mask-aware
+normalization или fixed-duration segmentation, фактическое подключение
+WeightedRandomSampler либо его удаление.
+
+**Зависит от:** этапа 1; может идти параллельно этапам 3-5 после утверждения
+метаданных.
+
+**Готово, когда:** один и тот же manifest/seed воспроизводит split и stats,
+padding не меняет normalization, а пропущенные файлы видны в отчёте.
+
+**Тесты:** real representative filenames, actor leakage, seed variation,
+class absence, padding masks, corrupted audio, memory-bounded fixture.
+
+### Этап 7. Evaluation, artifacts и resume
+
+**Задачи:** подключить `eval_every`, отключать noise в eval, добавить robust
+metrics, per-client reports, atomic artifact writes, config/environment/
+manifest metadata, checkpoint compatibility и resume.
+
+**Зависит от:** этапов 1, 4-6.
+
+**Готово, когда:** run можно остановить на round boundary и продолжить с теми
+же моделями, RNG policy и результатами; промежуточные метрики не смешиваются
+между run IDs.
+
+**Тесты:** evaluation edge cases, no-noise assertion, checkpoint round-trip,
+corrupt checkpoint, resume equivalence, artifact directory isolation.
+
+### Этап 8. Privacy and security research layer
+
+**Задачи:** описать threat model и adversary locations; добавить activation
+clipping, calibrated Gaussian/Laplace mechanism, accountant (epsilon/delta),
+per-round budget and privacy metadata. Разделить train/eval noise. Провести
+reconstruction, membership-inference и attribute-inference baselines. Для
+network deployment добавить authentication, TLS, authorization, replay
+protection и secure secret handling.
+
+**Зависит от:** стабильного protocol/lifecycle из этапов 2-5 и измеримых
+baseline artifacts из этапов 6-7.
+
+**Готово, когда:** для каждой privacy конфигурации есть заявленный threat
+model, параметры clipping/noise, accounting report и leakage comparison.
+Без этого использовать только формулировку «эксперимент с шумом».
+
+**Тесты:** clipping bounds, accountant fixtures, train/eval behavior,
+serialization security, replay/invalid-auth tests, leakage benchmark smoke.
+
+### Этап 9. gRPC и распределённый запуск
+
+**Задачи:** выбрать protobuf schema, реализовать Message serialization,
+client/server RPC services, deadlines, reconnect policy, TLS/mTLS, health
+checks и deployment configuration. Не смешивать queue и gRPC semantics без
+общего contract test suite.
+
+**Зависит от:** этапа 3 и стабильных cancellation semantics этапа 2.
+
+**Готово, когда:** локальный in-process gRPC test и два отдельных процесса
+проходят тот же protocol suite, а сетевой timeout вызывает тот же отказ run,
+что и queue timeout.
+
+**Тесты:** protobuf compatibility, loopback RPC, TLS, unavailable peer,
+reconnect, payload size/compression, multi-process integration.
+
+### Этап 10. Research baselines, performance и release gate
+
+**Задачи:** реализовать централизованный, FL-only и split-only baselines;
+сделать leave-one-dataset-out и multi-seed evaluation; измерять качество,
+latency, communication bytes, peak memory, throughput и privacy leakage.
+Добавить CI с Ruff, Black, mypy, pytest и smoke test; подготовить release
+checklist и обновить README/REPOSITORY_GUIDE.
+
+**Зависит от:** этапов 6-9 в зависимости от выбранного transport scope.
+
+**Готово, когда:** опубликованный experiment report воспроизводится из
+resolved config и содержит class/actor counts, per-dataset metrics,
+confidence intervals или разброс по seed, system metrics и explicit
+limitations.
+
+## 6. Приоритеты и порядок поставки
+
+### P0: исправить до любых длинных экспериментов
+
+- startup validation и artifact directories;
+- profile/config merge, CLI overrides, policy registry и provenance;
+- synthetic `unit`/`smoke`/`fault_injection` harness;
+- unified cancellation и supervision;
+- отсутствие deadlock при разной длине клиентов;
+- message correlation/validation;
+- accumulation и FedAvg policy;
+- containerized CPU smoke topology with health checks and resource limits;
+- ClientLoadController baseline with deadline, quorum and fairness guardrails;
+- noise off during evaluation;
+- CPU synthetic spawn smoke test.
+
+### P1: исправить до научных выводов
+
+- deterministic data split and manifest;
+- class/actor coverage and padding-aware normalization;
+- real eval cadence and robust metrics;
+- checkpoint/resume;
+- reproducible comparison of all-client and heterogeneous scheduler policies;
+- per-client throughput, latency, bytes, backlog and fairness telemetry;
+- multi-seed and leave-one-dataset-out evaluation;
+- CI and type/static checks.
+
+### P2: отдельный deployment/research scope
+
+- formal DP accounting and leakage studies;
+- gRPC, TLS/mTLS and authentication;
+- Kubernetes/operator deployment, registry and external secret manager;
+- streaming capture and segmentation;
+- performance tuning, compression and CUDA matrix.
+
+Не начинать P2 до завершения P0: network transport и noise mechanism не
+исправят невалидный round protocol или зависающий process lifecycle.
+
+## 7. Матрица проверки готовности
+
+| Область | Минимальная проверка | Критерий выхода |
+| --- | --- | --- |
+| Schema/startup | valid/invalid configs | все ошибки до spawn |
+| Profiles/config | profile + CLI merge replay | resolved config и provenance совпадают |
+| Lifecycle | spawn smoke + injected failure | нет живых child processes |
+| Simulation | deterministic virtual clients | сценарий и expected failure воспроизводимы |
+| Containers | isolated Compose smoke | probes, limits, mounts и shutdown проверены |
+| Transport | queue contract tests | timeout/cancel/mismatch явны |
+| Scheduling | heterogeneous policy matrix | quorum, fairness и deadlines соблюдены |
+| Load controller | telemetry/lease/fairness tests | decisions объяснимы и replayable |
+| Split training | reference gradients | scaling и flush доказуемы |
+| FedAvg | synthetic state dicts | policy для каждого buffer типа |
+| Data | fixture + representative WAV | split/stats/manifest воспроизводимы |
+| Evaluation | imbalanced/one-class fixtures | метрики не дают warnings/NaN |
+| Checkpoint | save/load/resume | resume эквивалентен uninterrupted run |
+| Privacy | accountant + leakage fixture | claim соответствует измерениям |
+| gRPC | loopback multi-process | тот же contract и cancellation |
+| Quality gate | CI on Python 3.10-3.12 | все обязательные jobs зелёные |
+
+## 8. Definition of Done
+
+Полная доработка считается завершённой только если:
+
+1. README и `REPOSITORY_GUIDE.md` описывают фактическое поведение, а не
+   незапущенные обещания.
+2. Для каждого P0/P1 ограничения есть код, тест и диагностируемый failure
+   mode.
+3. Один CPU synthetic run проходит от CLI до artifacts на Linux и через
+   `spawn`.
+4. Любой child failure приводит к failed run и понятному report.
+5. Containerized smoke run проходит с изоляцией, probes, limits и graceful
+  shutdown.
+6. Scheduler policy comparisons воспроизводимы и содержат worst-client,
+  fairness, throughput, latency и dataset-coverage metrics.
+7. Каждый run сохраняет profile, resolved config, policy versions, seed tree,
+  simulator parameters и provenance.
+8. Нет заявления о DP, TLS или secure aggregation без реализованного
+   механизма и тестов.
+9. Исследовательский отчёт содержит baseline, per-client/per-dataset metrics,
+   actor/class counts, seeds, manifest, ресурсы и ограничения.
+10. Все изменения разделены на атомарные commits по lifecycle, protocol,
+   numerics, data, privacy, transport и tooling; generated data и checkpoints
+   не попадают в Git.
+
+## 9. Рекомендуемая декомпозиция изменений
+
+Каждый пункт следует выполнять отдельным небольшим изменением:
+
+1. `test: establish synthetic spawn baseline`;
+2. `fix: validate cross-component configuration`;
+3. `feat: add experiment profiles and simulation harness`;
+4. `fix: unify cancellation and process supervision`;
+5. `feat: add container runtime foundation`;
+6. `feat: formalize message protocol`;
+7. `fix: schedule variable-length split rounds`;
+8. `fix: make optimization accumulation configurable`;
+9. `fix: implement federated aggregation policies`;
+10. `feat: add client load controller and policy registry`;
+11. `fix: make data split and normalization reproducible`;
+12. `feat: add evaluation and checkpoint lifecycle`;
+13. `feat: add privacy accounting and leakage benchmarks`;
+14. `feat: implement grpc transport`;
+15. `test: add baselines and continuous integration`.
+
+Каждый commit должен иметь focused test и не объединять lifecycle, numerical
+correctness, data semantics и packaging без прямой зависимости.
