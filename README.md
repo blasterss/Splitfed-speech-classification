@@ -248,10 +248,12 @@ Expected generated artifacts include:
   `<models_save_path>/<experiment.name>/checkpoints/`;
 - validated `resolved_config.yaml` and `run_metadata.yaml` under
   `<models_save_path>/<experiment.name>/metadata/`, including environment
-  provenance, the configured seed tree,
-  selected profile name/version, applied CLI overrides, canonical resolved
-  config SHA-256, Git revision, `uv.lock` SHA-256 and message protocol identity.
-  Git/lock values are null when the corresponding source is unavailable.
+  provenance, Git dirty state, the configured seed tree, selected profile
+  name/version/source, typed CLI override records, canonical resolved config
+  SHA-256, Git revision, `uv.lock` SHA-256, local multiprocessing identity and
+  implemented transport/aggregation policy versions. Git/lock values are null
+  when unavailable; container image digest and scheduler policy remain null for
+  the current local runtime.
 - `dataset_manifest.yaml` in the same metadata directory with per-client
   extraction counts/failure reasons, split seed, feature ordering,
   actor-disjoint IDs and train/test sample/actor/class coverage. Missing client

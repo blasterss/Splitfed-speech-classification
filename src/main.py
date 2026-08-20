@@ -234,6 +234,38 @@ def _git_revision() -> str | None:
     return result.stdout.strip() or None
 
 
+def _git_dirty() -> bool | None:
+    """Return checkout dirty state, or null outside an available checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    return bool(result.stdout.strip())
+
+
+def _implemented_policies(config: ConfigSchema) -> dict:
+    aggregation = None
+    if config.fed_server is not None:
+        aggregation = {
+            "name": config.fed_server.strategy.value,
+            "version": "1",
+        }
+    return {
+        "transport": {
+            "name": config.experiment.transport.value,
+            "version": "1",
+        },
+        "aggregation": aggregation,
+        "scheduler": None,
+    }
+
+
 def apply_cli_overrides(raw_config: dict, overrides: list[str]) -> dict:
     """Apply typed, existing-path-only CLI overrides to a raw config."""
     resolved = copy.deepcopy(raw_config)
@@ -291,12 +323,21 @@ def resolve_raw_config(
         profile_provenance = {
             "name": selected_profile,
             "version": profile["version"],
+            "source": "cli" if profile_name is not None else "yaml",
         }
 
     resolved = apply_cli_overrides(merged, overrides)
     return resolved, {
         "profile": profile_provenance,
         "cli_overrides": list(overrides),
+        "overrides": [
+            {
+                "source": "cli",
+                "path": override.split("=", 1)[0],
+                "expression": override,
+            }
+            for override in overrides
+        ],
     }
 
 
@@ -367,6 +408,14 @@ def _save_run_metadata(
     configuration = copy.deepcopy(configuration_provenance) or {
         "profile": None,
         "cli_overrides": cli_overrides or [],
+        "overrides": [
+            {
+                "source": "cli",
+                "path": override.split("=", 1)[0],
+                "expression": override,
+            }
+            for override in (cli_overrides or [])
+        ],
     }
     configuration["resolved_config_sha256"] = (
         resolved_config_sha256 or _config_sha256(config)
@@ -384,10 +433,17 @@ def _save_run_metadata(
                     str(torch.version.cuda) if torch.version.cuda else None
                 ),
                 "git_revision": _git_revision(),
+                "git_dirty": _git_dirty(),
                 "dependency_lock_sha256": _file_sha256(Path("uv.lock")),
+            },
+            "runtime": {
+                "backend": "local_multiprocessing",
+                "start_method": "spawn",
+                "container_image_digest": None,
             },
             "seed_tree": seed_tree,
             "configuration": configuration,
+            "policies": _implemented_policies(config),
             "protocols": {
                 "message": {
                     "name": MESSAGE_PROTOCOL,

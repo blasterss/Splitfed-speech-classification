@@ -122,9 +122,12 @@ invent dataset roots or force a topology. Configure reduced datasets, CPU
 devices and the desired clients in the YAML used for a smoke run.
 
 Run artifacts include a canonical SHA-256 of the validated resolved config,
-the current Git revision and a SHA-256 of `uv.lock` in `run_metadata.yaml`.
-Unavailable checkout or lock information is recorded as null rather than
-preventing checkpoint persistence.
+profile/override sources, the current Git revision and dirty state, and a
+SHA-256 of `uv.lock` in `run_metadata.yaml`. Runtime identity and implemented
+transport/aggregation policy versions are also explicit. Unavailable checkout
+or lock information is recorded as null rather than preventing checkpoint
+persistence; scheduler policy and container image digest are null for the
+current local runtime.
 
 Every local queue `Message` validates `secureasr.queue` protocol version 3 and
 a bounded non-empty request ID, which are also represented in run metadata.
@@ -204,8 +207,9 @@ workflow are still missing.
   `<root>/<experiment.name>/{metadata,checkpoints,metrics}`.
 - Runs with `models_save_path` persist the validated JSON-compatible
   `resolved_config.yaml` in the experiment `metadata/` directory.
-- The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA details
-  and experiment, training, dataset, client and server seeds.
+- The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA and Git
+  details, local runtime identity, config-layer provenance, implemented policy
+  versions, and experiment, training, dataset, client and server seeds.
 - `dataset_manifest.yaml` records each reporting client's dataset name,
   extraction loss/reasons, split seed, feature ordering, train/test actor IDs
   and sample/actor/class coverage. Missing client reports are listed and set

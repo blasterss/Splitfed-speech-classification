@@ -97,8 +97,19 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
         artifact_path,
         resolved_config_sha256=_config_sha256(config),
         configuration_provenance={
-            "profile": {"name": "smoke", "version": "1"},
+            "profile": {
+                "name": "smoke",
+                "version": "1",
+                "source": "yaml",
+            },
             "cli_overrides": ["training.num_rounds=1"],
+            "overrides": [
+                {
+                    "source": "cli",
+                    "path": "training.num_rounds",
+                    "expression": "training.num_rounds=1",
+                }
+            ],
         },
     )
 
@@ -114,12 +125,30 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     assert metadata["environment"]["pytorch"]
     assert isinstance(metadata["environment"]["cuda_available"], bool)
     assert metadata["configuration"] == {
-        "profile": {"name": "smoke", "version": "1"},
+        "profile": {"name": "smoke", "version": "1", "source": "yaml"},
         "cli_overrides": ["training.num_rounds=1"],
+        "overrides": [
+            {
+                "source": "cli",
+                "path": "training.num_rounds",
+                "expression": "training.num_rounds=1",
+            }
+        ],
         "resolved_config_sha256": _config_sha256(config),
     }
     assert "git_revision" in metadata["environment"]
+    assert isinstance(metadata["environment"]["git_dirty"], bool)
     assert "dependency_lock_sha256" in metadata["environment"]
+    assert metadata["runtime"] == {
+        "backend": "local_multiprocessing",
+        "start_method": "spawn",
+        "container_image_digest": None,
+    }
+    assert metadata["policies"] == {
+        "transport": {"name": "queue", "version": "1"},
+        "aggregation": None,
+        "scheduler": None,
+    }
     assert metadata["protocols"] == {
         "message": {"name": "secureasr.queue", "version": 3}
     }

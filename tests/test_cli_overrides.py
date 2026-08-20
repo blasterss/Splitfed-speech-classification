@@ -56,8 +56,15 @@ def test_profile_yaml_and_cli_merge_have_explicit_precedence():
     }
     assert resolved["experiment"]["profile"] == "smoke"
     assert provenance == {
-        "profile": {"name": "smoke", "version": "1"},
+        "profile": {"name": "smoke", "version": "1", "source": "cli"},
         "cli_overrides": ["training.eval_every=2"],
+        "overrides": [
+            {
+                "source": "cli",
+                "path": "training.eval_every",
+                "expression": "training.eval_every=2",
+            }
+        ],
     }
 
 
@@ -74,4 +81,8 @@ def test_yaml_can_select_registered_profile():
     )
 
     assert resolved["training"]["num_rounds"] == 1
-    assert provenance["profile"] == {"name": "smoke", "version": "1"}
+    assert provenance["profile"] == {
+        "name": "smoke",
+        "version": "1",
+        "source": "yaml",
+    }
