@@ -4,8 +4,9 @@ models_save_path: artifacts
 experiment:
   name: splitfed_real_480x3_r30_f10
   description: >-
-    Real-data CPU run with 480 discovered WAV files per dataset, one complete
-    local loader pass per round, and aggregation at rounds 10, 20, and 30.
+    Real-data hybrid run with 480 discovered WAV files per dataset, one complete
+    local loader pass per round, CUDA split/Fed servers, and aggregation at
+    rounds 10, 20, and 30. Clients remain on CPU.
   transport: queue
   seed: &seed 42
 
@@ -61,10 +62,10 @@ clients:
 split_server:
   model_scope: shared
   model:
-    pos_weight: 3.0
+    pos_weight: 6.0
     optimizer: adam
     lr: 0.0005
-    device: cpu
+    device: cuda
     gradient_accumulation_steps: 4
     batch_timeout_sec: 60
   seed: *seed
@@ -74,7 +75,7 @@ split_server:
 fed_server:
   strategy: fedavg
   seed: *seed
-  device: cpu
+  device: cuda
   aggregation_freq: 10
   min_clients: 3
   quorum_timeout_sec: 120
