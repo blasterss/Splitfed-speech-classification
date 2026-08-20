@@ -1,0 +1,107 @@
+data_path: ../datasets
+models_save_path: artifacts
+
+experiment:
+  name: splitfed_real_480x3_r30_f10
+  description: >-
+    Real-data CPU run with 480 discovered WAV files per dataset, one complete
+    local loader pass per round, and aggregation at rounds 10, 20, and 30.
+  transport: queue
+  seed: &seed 42
+
+training:
+  mode: splitfed
+  num_rounds: 30
+  seed: *seed
+  eval_every: 10
+  fed_every: 10
+  barrier_timeout_sec: 900
+
+clients:
+  - client_id: 0
+    dataset: &base_dataset
+      target_sample_rate: 8000
+      feature_names: [mfcc, rms, zcr]
+      name: CREMA-D
+      root: ../datasets/CREMA-D/raw
+      reduced: true
+      reduced_size: 480
+      test_size: 0.2
+      split_seed: *seed
+    model: &client_model
+      lr: 0.001
+      optimizer: adam
+    runtime: &client_runtime
+      local_steps: 64
+      batch_size: 8
+      seed: *seed
+      device: cpu
+    noise: &client_noise
+      type: gauss
+      std: 1.0e-10
+
+  - client_id: 1
+    dataset:
+      <<: *base_dataset
+      name: RAVDESS
+      root: ../datasets/RAVDESS/raw
+    model: *client_model
+    runtime: *client_runtime
+    noise: *client_noise
+
+  - client_id: 2
+    dataset:
+      <<: *base_dataset
+      name: SAVEE
+      root: ../datasets/SAVEE/raw
+    model: *client_model
+    runtime: *client_runtime
+    noise: *client_noise
+
+split_server:
+  model_scope: shared
+  model:
+    pos_weight: 3.0
+    optimizer: adam
+    lr: 0.0005
+    device: cpu
+    gradient_accumulation_steps: 4
+    batch_timeout_sec: 60
+  seed: *seed
+  split_uplink_channel: split_uplink
+  split_downlink_channel: split_downlink
+
+fed_server:
+  strategy: fedavg
+  seed: *seed
+  device: cpu
+  aggregation_freq: 10
+  min_clients: 3
+  quorum_timeout_sec: 120
+  federated_uplink_channel: federated_uplink
+  federated_downlink_channel: federated_downlink
+
+channels:
+  split_uplink:
+    transport: queue
+    name: split_uplink
+    maxsize: 32
+    timeout: 300
+
+  split_downlink:
+    transport: queue
+    name: split_downlink
+    maxsize: 32
+    timeout: 300
+
+  federated_uplink:
+    transport: queue
+    name: federated_uplink
+    maxsize: 8
+    timeout: 300
+
+  federated_downlink:
+    transport: queue
+    name: federated_downlink
+    maxsize: 8
+    timeout: 300
