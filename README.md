@@ -196,6 +196,9 @@ method before using the controller API. The CLI always tears down the manager
 after stopping workers and persisting available artifacts, including setup,
 training and artifact failures. Forced process shutdown performs a final
 bounded join after kill and reports a process that still cannot be reaped.
+Spawned training workers ignore terminal SIGINT so the controller alone turns
+it into the shared stop event and barrier abort. Blocking queue receives poll
+that event and exit without waiting for the full channel timeout.
 
 Centralized dataset views must use identical model, batch size, device, noise,
 feature ordering and target sample-rate settings. The first client entry owns

@@ -11,6 +11,7 @@ from ..logger import logger
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ConfigSchema
 from ..utils.checkpoint import save_checkpoint
+from ..utils.process import ignore_parent_interrupts
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
 
@@ -144,6 +145,7 @@ def _centralized_training_worker(
     dataset_report_queue=None,
 ) -> None:
     """Train and evaluate one complete model over the combined dataset view."""
+    ignore_parent_interrupts()
     set_seed(config.training.seed)
     if datasets is None:
         loaded = [

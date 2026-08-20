@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
+import time
 from abc import ABC, abstractmethod
 
 from ..schema import GRPCChannelConfig, QueueChannelConfig
 from .message import Message
+
+
+class ChannelCancelled(RuntimeError):
+    """Raised when a shared cancellation event interrupts a channel wait."""
 
 
 class Channel(ABC):
@@ -33,19 +38,31 @@ class QueueChannel(Channel):
         maxsize: int = 0,
         timeout: float = 60,
         mp_context=None,
+        stop_event=None,
     ):
         context = mp_context or mp.get_context("spawn")
         self.queue = context.Queue(maxsize=maxsize)
         self.timeout = timeout
+        self.stop_event = stop_event
 
     def send(self, msg: Message) -> None:
         msg.ensure_deadline(self.timeout)
         self.queue.put(msg, timeout=self.timeout)
 
     def recv(self) -> Message:
-        message = self.queue.get(timeout=self.timeout)
-        message.validate_for_receive()
-        return message
+        deadline = time.monotonic() + self.timeout
+        while True:
+            if self.stop_event is not None and self.stop_event.is_set():
+                raise ChannelCancelled("Channel receive cancelled")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise queue.Empty
+            try:
+                message = self.queue.get(timeout=min(remaining, 0.1))
+            except queue.Empty:
+                continue
+            message.validate_for_receive()
+            return message
 
     def recv_nowait(self) -> Message | None:
         try:
@@ -79,6 +96,7 @@ class ChannelFactory:
     def create(
         channel_params: QueueChannelConfig | GRPCChannelConfig,
         mp_context=None,
+        stop_event=None,
     ) -> Channel:
         transport = channel_params.transport
 
@@ -87,6 +105,7 @@ class ChannelFactory:
                 maxsize=channel_params.maxsize,
                 timeout=channel_params.timeout,
                 mp_context=mp_context,
+                stop_event=stop_event,
             )
         elif transport == "grpc":
             return GrpcChannel()

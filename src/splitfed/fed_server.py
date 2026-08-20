@@ -11,6 +11,7 @@ from ..schema import AggregationStrategy, FedServerConfig
 from ..transport.base import Channel, Message
 from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
+from ..utils.process import ignore_parent_interrupts
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
 
@@ -240,6 +241,8 @@ def _fed_server_worker(
     """
     Background worker implementing the federated aggregation loop.
     """
+
+    ignore_parent_interrupts()
 
     set_seed(config.seed)  # Ensure deterministic behavior in server process,
 

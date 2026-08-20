@@ -14,6 +14,7 @@ from ..schema import ServerModelScope, SplitServerConfig
 from ..transport.base import Channel, Message
 from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
+from ..utils.process import ignore_parent_interrupts
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
 from ..utils.training_stats import _RoundStats
@@ -184,6 +185,7 @@ def _split_server_worker_personalized(
     result_queue: mp.Queue,
 ) -> None:
     """Serve each client with an isolated model and optimizer."""
+    ignore_parent_interrupts()
     set_seed(config.seed)
     device = torch.device(config.model.device)
     client_ids = list(client_channels)
@@ -297,6 +299,7 @@ def _split_server_worker_batch(
     stop_event,
     result_queue: mp.Queue,
 ) -> None:
+    ignore_parent_interrupts()
     set_seed(config.seed)  # Ensure deterministic behavior in server process,
 
     device = torch.device(config.model.device)

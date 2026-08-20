@@ -10,7 +10,8 @@ from ..logger import logger
 from ..model.client_side_model import ClientSideModel
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ClientConfig, TrainingConfig, TrainingMode
-from ..transport.base import Channel, Message
+from ..transport.base import Channel, ChannelCancelled, Message
+from ..utils.process import ignore_parent_interrupts
 from ..utils.training import set_seed
 
 logger = logger.getChild("Client")
@@ -536,6 +537,8 @@ def _client_worker(
         preventing server deadlocks due to missing eval streams.
     """
 
+    ignore_parent_interrupts()
+
     try:
         set_seed(cfg.runtime.seed + int(cfg.client_id))
 
@@ -599,6 +602,11 @@ def _client_worker(
                 training_cfg.barrier_timeout_sec,
             )
 
+    except ChannelCancelled:
+        if stop_event.is_set():
+            logger.info("Client %s cancelled", cfg.client_id)
+            return
+        raise
     except BaseException as exc:
         stop_event.set()
         _abort_barriers((ready_barrier, eval_barrier))

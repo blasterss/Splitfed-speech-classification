@@ -4,7 +4,7 @@ import time
 import pytest
 
 from src.schema import QueueChannelConfig, TransportType
-from src.transport.base import ChannelFactory, QueueChannel
+from src.transport.base import ChannelCancelled, ChannelFactory, QueueChannel
 from src.transport.message import Message, MessageType
 
 
@@ -76,6 +76,20 @@ def test_queue_channel_recv_raises_timeout_when_empty():
 
     with pytest.raises(queue.Empty):
         channel.recv()
+
+
+def test_queue_channel_recv_is_interrupted_by_cancellation():
+    class SetEvent:
+        @staticmethod
+        def is_set():
+            return True
+
+    channel = QueueChannel(timeout=60, stop_event=SetEvent())
+
+    started = time.monotonic()
+    with pytest.raises(ChannelCancelled, match="cancelled"):
+        channel.recv()
+    assert time.monotonic() - started < 0.5
 
 
 def test_channel_factory_creates_queue_channel():

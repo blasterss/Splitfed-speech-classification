@@ -275,9 +275,10 @@ peer barriers. Remaining limitations include:
 
 - server exit codes are checked, but recovery and structured error propagation
   are incomplete;
-- joins use a polling loop but do not yet implement a complete cancellation
-  protocol;
-- queue timeouts and server shutdown are not one unified cancellation protocol;
+- joins use a polling loop and bounded terminate/kill fallback, but there is no
+  recovery protocol;
+- local queue receive waits participate in the shared cancellation event, but
+  cancellation is not yet represented as a typed transport message;
 - gRPC and message serialization are stubs.
 
 Changes to process coordination require a multiprocessing smoke test, not only

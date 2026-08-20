@@ -127,7 +127,9 @@ class TrainingController:
                     continue
 
                 self.channels[cid][name] = ChannelFactory.create(
-                    params, mp_context=self._mp_context
+                    params,
+                    mp_context=self._mp_context,
+                    stop_event=self._stop_event,
                 )
 
             missing = required - self.channels[cid].keys()
@@ -283,6 +285,14 @@ class TrainingController:
                     if server is not None
                 ),
                 self.PROCESS_POLL_TIMEOUT,
+            )
+
+        except KeyboardInterrupt as exc:
+            training_error = exc
+            logger.info("Training interrupted — cancelling workers")
+            _cancel_training(self._stop_event, (ready_barrier, eval_barrier))
+            _shutdown_processes(
+                self._client_processes, self.PROCESS_SHUTDOWN_TIMEOUT
             )
 
         except BaseException as exc:
