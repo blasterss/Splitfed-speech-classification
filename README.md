@@ -135,7 +135,7 @@ cp configs/config.example.yaml configs/config.yaml
 Then update at least:
 
 - every `clients[].dataset.root`;
-- `models_save_path` (note the plural form expected by the current schema);
+- `models_save_path` (note the plural form) is the artifact root;
 - client and split-server devices;
 - batch size and local steps for available GPU memory;
 - channel timeouts;
@@ -242,11 +242,13 @@ has completed.
 Expected generated artifacts include:
 
 - rotating logs under `logs/` when logging configuration is loaded;
-- evaluation CSV files under `experiments/results/`;
-- centralized, server and global client checkpoints under the configured model
-  directory;
-- the validated `resolved_config.yaml` beside model checkpoints.
-- `run_metadata.yaml` with environment provenance, the configured seed tree,
+- evaluation CSV files under
+  `<models_save_path>/<experiment.name>/metrics/`;
+- centralized, server and global client checkpoints under
+  `<models_save_path>/<experiment.name>/checkpoints/`;
+- validated `resolved_config.yaml` and `run_metadata.yaml` under
+  `<models_save_path>/<experiment.name>/metadata/`, including environment
+  provenance, the configured seed tree,
   selected profile name/version, applied CLI overrides, canonical resolved
   config SHA-256, Git revision, `uv.lock` SHA-256 and message protocol identity.
   Git/lock values are null when the corresponding source is unavailable.

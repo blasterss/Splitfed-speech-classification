@@ -37,11 +37,15 @@ class Client:
         fed_uplink_channel: Channel,
         fed_downlink_channel: Channel,
         mode: TrainingMode = TrainingMode.splitfed,
+        metrics_path: str | Path | None = None,
     ):
         self.cfg = cfg
         self.client_id = cfg.client_id
         self.device = torch.device(cfg.runtime.device)
         self.mode = mode
+        self.metrics_path = (
+            Path(metrics_path) if metrics_path is not None else None
+        )
 
         # ==== DATASET ====
         self.dataset = ConflictEmotionalDataset(cfg.dataset)
@@ -337,12 +341,14 @@ class Client:
             }
         )
 
-        results_dir = Path("experiments/results")
-        results_dir.mkdir(parents=True, exist_ok=True)
-        df.to_csv(
-            results_dir / f"Client{self.client_id}_round_{round}_eval.csv",
-            index=False,
-        )
+        metrics_path = getattr(self, "metrics_path", None)
+        if metrics_path is not None:
+            metrics_path.mkdir(parents=True, exist_ok=True)
+            df.to_csv(
+                metrics_path
+                / f"Client{self.client_id}_round_{round}_eval.csv",
+                index=False,
+            )
 
         f1 = f1_score(
             all_labels_np, all_preds_np, average="binary", zero_division=0
@@ -511,6 +517,7 @@ def _client_worker(
     stop_event,
     ready_barrier,
     eval_barrier,
+    metrics_path=None,
 ) -> None:
     """
     Persistent client process.
@@ -535,6 +542,7 @@ def _client_worker(
             fed_uplink_channel=fed_uplink,
             fed_downlink_channel=fed_downlink,
             mode=training_cfg.mode,
+            metrics_path=metrics_path,
         )
 
         logger.info(

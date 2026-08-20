@@ -16,6 +16,7 @@ from .logger import logger
 from .schema import ConfigSchema
 from .splitfed.controller import TrainingController
 from .transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
+from .utils.artifacts import ArtifactPaths
 from .utils.common import read_yaml, save_yaml
 from .utils.training import set_seed
 
@@ -130,30 +131,32 @@ def _finalize_run(
     if not config.models_save_path:
         return
 
-    model_path = Path(config.models_save_path) / config.experiment.name
-    model_path.mkdir(parents=True, exist_ok=True)
-    _save_resolved_config(config, model_path)
+    artifact_paths = ArtifactPaths.from_root(
+        config.models_save_path, config.experiment.name
+    )
+    artifact_paths.mkdir()
+    _save_resolved_config(config, artifact_paths.metadata)
     _save_run_metadata(
         config,
-        model_path,
+        artifact_paths.metadata,
         resolved_config_sha256=_config_sha256(config),
         configuration_provenance=configuration_provenance,
     )
     if controller.split_server is not None:
         try:
-            controller.split_server.save(model_path)
+            controller.split_server.save(artifact_paths.checkpoints)
         except RuntimeError as exc:
             logger.warning("Could not save split-server weights: %s", exc)
 
     if controller.fed_server is not None:
         try:
-            controller.fed_server.save(model_path)
+            controller.fed_server.save(artifact_paths.checkpoints)
         except RuntimeError as exc:
             logger.warning("Could not save fed-server weights: %s", exc)
 
     if controller.centralized_trainer is not None:
         try:
-            controller.centralized_trainer.save(model_path)
+            controller.centralized_trainer.save(artifact_paths.checkpoints)
         except RuntimeError as exc:
             logger.warning("Could not save centralized weights: %s", exc)
 

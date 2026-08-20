@@ -459,6 +459,15 @@ class ExperimentConfig(StrictConfigModel):
 
     seed: int = Field(description="Seed for experiment reproducibility.")
 
+    @field_validator("name")
+    @classmethod
+    def validate_artifact_component(cls, value: str) -> str:
+        if not value or value in {".", ".."} or "/" in value or "\\" in value:
+            raise ValueError(
+                "experiment.name must be a non-empty path component"
+            )
+        return value
+
 
 # ============================================================
 # ROOT CONFIG
@@ -477,8 +486,8 @@ class ConfigSchema(StrictConfigModel):
     models_save_path: str | None = Field(
         default=None,
         description=(
-            "Path for saving trained models. "
-            "If not specified, models will not be saved."
+            "Artifact root for experiment metadata, checkpoints and metrics. "
+            "If not specified, run artifacts will not be saved."
         ),
     )
 

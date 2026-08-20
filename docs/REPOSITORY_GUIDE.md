@@ -146,7 +146,7 @@ Create local configuration and output directories:
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml
-mkdir -p logs experiments/results checkpoints
+mkdir -p logs artifacts
 ```
 
 Use a reduced dataset, few rounds, and CPU for the first smoke test. Do not
@@ -200,9 +200,10 @@ workflow are still missing.
 - `split_server.model_scope` supports `shared` and `personalized`; SplitFed
   requires `shared`. Personalized models, optimizers, metrics and checkpoint
   files remain isolated by client ID.
-- The root field is `models_save_path` (plural), not `model_save_path`.
+- The root field is `models_save_path` (plural), not `model_save_path`; it owns
+  `<root>/<experiment.name>/{metadata,checkpoints,metrics}`.
 - Runs with `models_save_path` persist the validated JSON-compatible
-  `resolved_config.yaml` beside model checkpoints.
+  `resolved_config.yaml` in the experiment `metadata/` directory.
 - The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA details
   and experiment, training, dataset, client and server seeds.
 - Model checkpoint schema v1 is written atomically and records mode, server

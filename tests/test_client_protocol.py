@@ -216,8 +216,7 @@ def test_federated_client_trains_complete_model_without_split_channels():
     assert not torch.equal(client.model.weight.detach(), initial_weight)
 
 
-def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def test_federated_evaluation_writes_to_experiment_metrics_path(tmp_path):
     client = Client.__new__(Client)
     client.client_id = "client-0"
     client.mode = TrainingMode.federated
@@ -225,6 +224,7 @@ def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
     client.dataset = SimpleNamespace(test_dataset=[object()])
     client.test_loader = [(torch.ones(1, 2), torch.tensor([0]))]
     client.model = torch.nn.Linear(2, 1)
+    client.metrics_path = tmp_path / "artifacts" / "run" / "metrics"
     client.model.weight.data.zero_()
     client.model.bias.data.fill_(-1)
 
@@ -239,6 +239,4 @@ def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
         "num_positive_labels": 0,
         "num_positive_predictions": 0,
     }
-    assert (
-        tmp_path / "experiments/results/Clientclient-0_round_0_eval.csv"
-    ).is_file()
+    assert (client.metrics_path / "Clientclient-0_round_0_eval.csv").is_file()

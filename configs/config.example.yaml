@@ -1,5 +1,5 @@
 data_path: ../datasets
-models_save_path: checkpoints
+models_save_path: artifacts
 
 experiment:
   name: sfl_audio_exp

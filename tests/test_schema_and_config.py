@@ -28,6 +28,12 @@ def test_experiment_config_rejects_unknown_profile():
         )
 
 
+@pytest.mark.parametrize("name", ["", ".", "..", "nested/run", "nested\\run"])
+def test_experiment_name_must_be_safe_artifact_component(name):
+    with pytest.raises(ValidationError, match="name"):
+        ExperimentConfig(name=name, transport="queue", seed=42)
+
+
 @pytest.mark.parametrize("dataset_type", list(DatasetType))
 def test_dataset_config_resolves_existing_root(tmp_path, dataset_type):
     config = DatasetConfig(name=dataset_type, root=str(tmp_path))
@@ -46,7 +52,7 @@ def test_example_config_uses_portable_dataset_paths():
     config_path = Path("configs/config.example.yaml")
     config = yaml.safe_load(config_path.read_text())
 
-    assert config["models_save_path"] == "checkpoints"
+    assert config["models_save_path"] == "artifacts"
     assert "model_save_path" not in config
     assert config["data_path"] == "../datasets"
     assert [client["dataset"]["root"] for client in config["clients"]] == [

@@ -3,6 +3,7 @@ import torch.multiprocessing as mp
 from ..logger import get_logger
 from ..schema import ConfigSchema, TrainingMode
 from ..transport.base import ChannelFactory
+from ..utils.artifacts import ArtifactPaths
 from .centralized import CentralizedTrainer
 from .client import Client, _client_worker
 from .fed_server import FedServer
@@ -203,6 +204,12 @@ class TrainingController:
         logger.info("=== STARTING TRAINING ===")
 
         num_clients = len(self.client_cfgs)
+        metrics_path = None
+        if getattr(self.cfg, "models_save_path", None):
+            metrics_path = ArtifactPaths.from_root(
+                self.cfg.models_save_path,
+                self.cfg.experiment.name,
+            ).metrics
 
         # Barrier: ensures all clients are ready before training begins
         ready_barrier = self._manager.Barrier(num_clients)
@@ -237,6 +244,7 @@ class TrainingController:
                         self._stop_event,
                         ready_barrier,
                         eval_barrier,
+                        metrics_path,
                     ),
                     daemon=False,
                     name=f"Client-{cid}",
