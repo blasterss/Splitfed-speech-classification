@@ -221,8 +221,10 @@ workflow are still missing.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
-  aggregation window. The completed global state is broadcast to all clients;
-  validated late updates for that round are discarded.
+  aggregation window. The completed global state is sent to accepted
+  participants. A validated late update for that same completed round receives
+  a correlated catch-up response without changing the completed aggregate;
+  older rounds remain unsupported and are discarded.
 - Partial quorum is arrival-window based and does not yet provide fairness or
   leases. `fedavg` uses uniform accepted-client weights; `weighted_fedavg` uses
   dataset-size weights for floating tensors. Non-floating buffers come from the

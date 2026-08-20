@@ -30,7 +30,7 @@ The repository currently provides:
 - explicit per-client round completion for unequal local loader lengths;
 - validated split message identity/correlation and duplicate-step rejection;
 - weighted FedAvg for the client-side model;
-- bounded partial-quorum FedAvg windows with global broadcast to all clients;
+- bounded partial-quorum FedAvg windows with correlated late-client catch-up;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
 
@@ -162,6 +162,9 @@ Important configuration caveats:
 - `training.eval_every` schedules synchronized evaluation snapshots; the final
   round is always evaluated;
 - `fed_server.min_clients` and `quorum_timeout_sec` control partial aggregation;
+  accepted participants receive the result immediately, while a validated
+  client arriving later in the same completed round receives the current
+  global state correlated to its own request;
 - `fed_server.strategy: fedavg` assigns equal weight to every accepted client;
   `weighted_fedavg` weights floating tensors by dataset size. Non-floating
   buffers come from the largest accepted dataset. `aggregation_freq` must equal
@@ -353,13 +356,16 @@ tests.
 
 ### Messages and aggregation
 
-- Client responses are not validated against sender, type, round and step.
+- Client responses validate protocol, deadline, request ID, sender, type, round
+  and step before payload use.
 - Federated client/global updates validate sender, type, round, step, keys,
   tensor shapes and dtypes before aggregation or `load_state_dict`.
 - Partial quorum uses an arrival window, not a fairness-aware cohort scheduler.
-  Late authenticated updates are discarded after their round completes, while
-  the global model is broadcast to all clients. A client that falls behind many
-  rounds can still exhaust its bounded downlink queue and fail the run.
+  Aggregation responses go only to accepted participants. A validated client
+  arriving later in the same completed round receives a correlated catch-up
+  model without changing the completed aggregate. A client lagging by more
+  than one completed round still has no catch-up/resume protocol and fails
+  through bounded lifecycle handling.
 - `aggregation_freq` and `training.fed_every` are required to match; clients use
   that cadence to trigger server aggregation.
 - Metrics are logged locally and are not collected by the federated worker.

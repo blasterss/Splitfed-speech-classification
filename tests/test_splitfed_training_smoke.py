@@ -1,4 +1,5 @@
 import queue
+import time
 
 import torch
 import torch.multiprocessing as mp
@@ -141,6 +142,7 @@ def _synthetic_federated_client_worker(
     fed_uplink,
     fed_downlink,
     result_queue,
+    delay_sec=0,
 ):
     torch.set_num_threads(1)
     torch.manual_seed(200 + int(client_id[-1]))
@@ -156,6 +158,8 @@ def _synthetic_federated_client_worker(
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
+    if delay_sec:
+        time.sleep(delay_sec)
 
     request = Message(
         type="client_update",
@@ -382,6 +386,76 @@ def test_spawned_federated_cycle_uses_complete_models_without_split_server():
             name=f"FederatedSmoke-{client_id}",
         )
         for client_id in client_ids
+    ]
+
+    try:
+        server.start()
+        for client in clients:
+            client.start()
+        for client in clients:
+            client.join(timeout=30)
+        assert all(not client.is_alive() for client in clients)
+        assert all(client.exitcode == 0 for client in clients)
+        results = {client_result_queue.get(timeout=2) for _ in clients}
+        assert results == {("client-0", (1, 1)), ("client-1", (1, 1))}
+    finally:
+        stop_event.set()
+        fed_payload = fed_result_queue.get(timeout=10)
+        server.join(timeout=10)
+        if server.is_alive():
+            server.terminate()
+            server.join(timeout=5)
+        for client in clients:
+            if client.is_alive():
+                client.terminate()
+                client.join(timeout=5)
+
+    assert not server.is_alive()
+    assert server.exitcode == 0
+    assert deserialize_state_dict(fed_payload)
+
+
+def test_spawned_partial_quorum_catches_up_slow_client():
+    context = mp.get_context("spawn")
+    stop_event = context.Event()
+    fed_result_queue = context.Queue(maxsize=1)
+    client_result_queue = context.Queue(maxsize=2)
+    client_ids = ("client-0", "client-1")
+    channels = {
+        client_id: {
+            "uplink": SpawnQueueChannel(context),
+            "downlink": SpawnQueueChannel(context),
+        }
+        for client_id in client_ids
+    }
+    config = FedServerConfig(
+        strategy="fedavg",
+        seed=42,
+        device="cpu",
+        aggregation_freq=1,
+        min_clients=1,
+        quorum_timeout_sec=0.05,
+        federated_uplink_channel="federated_uplink",
+        federated_downlink_channel="federated_downlink",
+    )
+    server = context.Process(
+        target=_fed_server_worker,
+        args=(config, channels, 2, stop_event, fed_result_queue),
+        name="PartialQuorumSmokeServer",
+    )
+    clients = [
+        context.Process(
+            target=_synthetic_federated_client_worker,
+            args=(
+                client_id,
+                channels[client_id]["uplink"],
+                channels[client_id]["downlink"],
+                client_result_queue,
+                delay,
+            ),
+            name=f"PartialQuorumSmoke-{client_id}",
+        )
+        for client_id, delay in zip(client_ids, (0, 1), strict=True)
     ]
 
     try:

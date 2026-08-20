@@ -122,6 +122,14 @@ class FakeUplink:
         return message
 
 
+class SequenceUplink:
+    def __init__(self, messages):
+        self.messages = iter(messages)
+
+    def recv_nowait(self):
+        return next(self.messages, None)
+
+
 class FakeStopEvent:
     def __init__(self):
         self.stopped = False
@@ -152,9 +160,16 @@ class FakeResultQueue:
         self.value = value
 
 
-def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
+def test_worker_aggregates_partial_quorum_and_catches_up_late_client():
     stop_event = FakeStopEvent()
     broadcasts = []
+    late_update = _update(
+        sender="client-2",
+        payload={
+            "state_dict": {"weight": torch.tensor([100.0])},
+            "dataset_size": 5,
+        },
+    )
     updates = {
         "client-0": _update(
             sender="client-0",
@@ -170,11 +185,15 @@ def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
                 "dataset_size": 3,
             },
         ),
-        "client-2": None,
+        "client-2": late_update,
     }
     channels = {
         client_id: {
-            "uplink": FakeUplink(message),
+            "uplink": (
+                SequenceUplink([None, message])
+                if client_id == "client-2"
+                else FakeUplink(message)
+            ),
             "downlink": FakeDownlink(broadcasts, stop_event),
         }
         for client_id, message in updates.items()
@@ -193,6 +212,7 @@ def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
     assert all(message.round == 2 for message in broadcasts)
     assert broadcasts[0].request_id == updates["client-0"].request_id
     assert broadcasts[1].request_id == updates["client-1"].request_id
+    assert broadcasts[2].request_id == late_update.request_id
     assert all(
         torch.equal(message.payload["weight"], torch.tensor([7.5]))
         for message in broadcasts

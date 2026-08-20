@@ -275,6 +275,27 @@ def _fed_server_worker(
                         expected_round=msg.round,
                         expected_schema=None,
                     )
+                    if (
+                        msg.round == last_completed_round
+                        and latest_params is not None
+                    ):
+                        client_channels[client_id]["downlink"].send(
+                            Message(
+                                type="global_update",
+                                sender="fed_server",
+                                round=msg.round,
+                                step=1,
+                                request_id=msg.request_id,
+                                payload=latest_params,
+                            )
+                        )
+                        logger.info(
+                            "Sent correlated catch-up model to %s for "
+                            "completed round %d",
+                            client_id,
+                            msg.round,
+                        )
+                        continue
                     logger.info(
                         "Discarding late update from %s for completed "
                         "round %d",
@@ -351,7 +372,7 @@ def _fed_server_worker(
                     latest_round,
                 )
 
-                for client_id in client_ids:
+                for client_id in participant_ids:
                     downlink: Channel = client_channels[client_id]["downlink"]
 
                     downlink.send(
@@ -360,10 +381,7 @@ def _fed_server_worker(
                             sender="fed_server",
                             round=latest_round,
                             step=1,
-                            request_id=request_ids.get(
-                                client_id,
-                                f"federated-round-{latest_round}",
-                            ),
+                            request_id=request_ids[client_id],
                             payload=latest_params,
                         )
                     )
