@@ -28,6 +28,7 @@ The repository currently provides:
 - local multiprocessing channels based on `multiprocessing.Queue`;
 - synchronous split-learning forward/backward steps;
 - explicit per-client round completion for unequal local loader lengths;
+- validated split message identity/correlation and duplicate-step rejection;
 - weighted FedAvg for the client-side model;
 - bounded partial-quorum FedAvg windows with global broadcast to all clients;
 - optional Gaussian or Laplace perturbation of intermediate activations;

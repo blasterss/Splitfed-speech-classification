@@ -157,7 +157,9 @@ def _split_server_worker_batch(
                     continue
 
                 if not _validate_message(msg, client_id):
-                    continue
+                    raise ValueError(
+                        f"Invalid split message from client {client_id}"
+                    )
 
                 served_any = True
 
@@ -172,14 +174,23 @@ def _split_server_worker_batch(
                         all_eval_labels,
                     )
                 elif msg.type == "round_end":
+                    if client_id in completed_rounds[msg.round]:
+                        raise ValueError(
+                            f"Duplicate round_end from client {client_id} "
+                            f"for round {msg.round}"
+                        )
                     completed_rounds[msg.round].add(client_id)
                 elif msg.type == "train_step":
+                    if client_id in completed_rounds[msg.round]:
+                        raise ValueError(
+                            f"Train step after round_end from client {client_id}"
+                        )
                     key = (msg.round, msg.step)
 
                     if key not in pending_timestamps:
                         pending_timestamps[key] = time.monotonic()
 
-                    pending_batches[key][client_id] = msg
+                    _store_pending_batch(pending_batches, msg, client_id)
 
                     logger.info(
                         "Received '%s' from %s (round=%d step=%d) [%d/%d]",
@@ -274,11 +285,28 @@ def _split_server_worker_batch(
 
 
 def _validate_message(msg: Message, client_id: str) -> bool:
+    if msg.sender != client_id:
+        logger.warning(
+            "SplitServer: sender mismatch on client %s channel (got %s)",
+            client_id,
+            msg.sender,
+        )
+        return False
+
     if msg.type not in ("train_step", "eval_step", "round_end"):
         logger.warning(
             "SplitServer: unknown message type '%s' from client %s — discarding.",
             msg.type,
             client_id,
+        )
+        return False
+
+    if msg.round <= 0 or msg.step <= 0:
+        logger.warning(
+            "SplitServer: invalid correlation from client %s (round=%d step=%d)",
+            client_id,
+            msg.round,
+            msg.step,
         )
         return False
 
@@ -300,9 +328,9 @@ def _validate_message(msg: Message, client_id: str) -> bool:
         )
         return False
 
-    if msg.type == "train_step" and "labels" not in msg.payload:
+    if "labels" not in msg.payload:
         logger.warning(
-            "SplitServer: missing 'labels' in train payload (client %s) — discarding.",
+            "SplitServer: missing 'labels' in payload (client %s) — discarding.",
             client_id,
         )
         return False
@@ -311,6 +339,18 @@ def _validate_message(msg: Message, client_id: str) -> bool:
     if not isinstance(act, torch.Tensor) or act.dim() < 1:
         logger.warning(
             "SplitServer: 'activations' is not a valid tensor (client %s) — discarding.",
+            client_id,
+        )
+        return False
+
+    labels = msg.payload["labels"]
+    if (
+        not isinstance(labels, torch.Tensor)
+        or labels.dim() < 1
+        or labels.shape[0] != act.shape[0]
+    ):
+        logger.warning(
+            "SplitServer: invalid labels for activation batch (client %s)",
             client_id,
         )
         return False
@@ -325,6 +365,19 @@ def _batch_is_ready(
 ) -> bool:
     missing_clients = client_ids - set(batch)
     return missing_clients <= completed_clients
+
+
+def _store_pending_batch(
+    pending_batches: Dict[tuple, Dict[str, Message]],
+    message: Message,
+    client_id: str,
+) -> None:
+    key = (message.round, message.step)
+    if client_id in pending_batches.setdefault(key, {}):
+        raise ValueError(
+            f"Duplicate split step from client {client_id} for key {key}"
+        )
+    pending_batches[key][client_id] = message
 
 
 def _resolve_batch_type(

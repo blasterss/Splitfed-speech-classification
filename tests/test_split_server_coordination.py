@@ -1,9 +1,11 @@
+import pytest
 import torch
 
 from src.splitfed.split_server import (
     _batch_is_ready,
     _forward_parallel,
     _step_accumulated_gradients,
+    _store_pending_batch,
     _validate_message,
 )
 from src.transport.message import Message, MessageType
@@ -26,6 +28,54 @@ def test_round_end_is_a_typed_protocol_message():
 
     assert message.type is MessageType.ROUND_END
     assert _validate_message(message, "client-0")
+
+
+def _split_message(**overrides):
+    values = {
+        "type": "train_step",
+        "sender": "client-0",
+        "round": 1,
+        "step": 1,
+        "payload": {
+            "activations": torch.ones(2, 3),
+            "labels": torch.ones(2),
+        },
+    }
+    values.update(overrides)
+    return Message(**values)
+
+
+def test_split_message_validates_channel_sender_and_correlation():
+    assert _validate_message(_split_message(), "client-0")
+    assert not _validate_message(_split_message(sender="client-1"), "client-0")
+    assert not _validate_message(_split_message(round=0), "client-0")
+    assert not _validate_message(_split_message(step=0), "client-0")
+
+
+def test_split_message_requires_labels_with_matching_batch_size():
+    assert not _validate_message(
+        _split_message(payload={"activations": torch.ones(2, 3)}),
+        "client-0",
+    )
+    assert not _validate_message(
+        _split_message(
+            payload={
+                "activations": torch.ones(2, 3),
+                "labels": torch.ones(3),
+            }
+        ),
+        "client-0",
+    )
+
+
+def test_duplicate_split_step_is_rejected_as_replay():
+    pending = {}
+    message = _split_message()
+
+    _store_pending_batch(pending, message, "client-0")
+
+    with pytest.raises(ValueError, match="Duplicate split step"):
+        _store_pending_batch(pending, message, "client-0")
 
 
 def test_batch_becomes_ready_when_missing_client_finished_round():

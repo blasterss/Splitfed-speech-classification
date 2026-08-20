@@ -199,6 +199,8 @@ server returns activation gradients. Clients send client model state and sample
 counts to the federated server, which returns the aggregated state.
 Clients also send a typed `round_end` control message after their last local
 batch so that peers with longer loaders are not blocked on an inactive client.
+The split server validates channel sender identity, round/step correlation,
+activation/label batch compatibility and duplicate steps before model use.
 
 The process lifecycle has basic supervision but remains incomplete at this
 stage. Client construction, training, evaluation and bounded barrier waits
