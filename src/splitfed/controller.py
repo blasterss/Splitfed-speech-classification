@@ -1,14 +1,11 @@
 import torch.multiprocessing as mp
 
-from .split_server import SplitServer
-from .fed_server import FedServer
-from .client import Client, _client_worker
-
-from ..transport.base import ChannelFactory
-from ..schema import ConfigSchema
 from ..logger import get_logger
-
-from typing import Dict, List, Optional
+from ..schema import ConfigSchema
+from ..transport.base import ChannelFactory
+from .client import Client, _client_worker
+from .fed_server import FedServer
+from .split_server import SplitServer
 
 logger = get_logger(__name__)
 
@@ -34,13 +31,13 @@ class TrainingController:
         self.cfg = config
         self.client_cfgs = config.clients
 
-        self.split_server: Optional[SplitServer] = None
-        self.fed_server: Optional[FedServer] = None
+        self.split_server: SplitServer | None = None
+        self.fed_server: FedServer | None = None
 
-        self.channels: Dict[str, Dict] = {}
-        self._client_processes: List[mp.Process] = []
-        self._manager: Optional[mp.managers.SyncManager] = None
-        self._stop_events: Dict[str, mp.Event] = {}
+        self.channels: dict[str, dict] = {}
+        self._client_processes: list[mp.Process] = []
+        self._manager: mp.managers.SyncManager | None = None
+        self._stop_events: dict[str, mp.Event] = {}
 
     def setup(self) -> None:
         """
@@ -194,16 +191,13 @@ class TrainingController:
 
             logger.info("Client '%s' process started (pid=%d)", cid, p.pid)
 
-        training_error: Optional[BaseException] = None
+        training_error: BaseException | None = None
 
         try:
             for p in self._client_processes:
                 p.join()
 
-                if p.exitcode != 0:
-                    logger.error(
-                        "Process %s exited with code %d", p.name, p.exitcode
-                    )
+            _raise_for_failed_processes(self._client_processes)
 
         except BaseException as exc:
             training_error = exc
@@ -231,6 +225,19 @@ class TrainingController:
 
         if training_error is not None:
             raise training_error
+
+
+def _raise_for_failed_processes(processes: list[mp.Process]) -> None:
+    failures = [
+        f"{process.name} (exitcode={process.exitcode})"
+        for process in processes
+        if process.exitcode not in (None, 0)
+    ]
+
+    if failures:
+        message = "Client process failure: " + ", ".join(failures)
+        logger.error(message)
+        raise RuntimeError(message)
 
     def evaluate_all(self) -> None:
         """

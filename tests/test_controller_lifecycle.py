@@ -1,5 +1,8 @@
 from src.schema import ConfigSchema
-from src.splitfed.controller import TrainingController
+from src.splitfed.controller import (
+    TrainingController,
+    _raise_for_failed_processes,
+)
 
 
 def make_config(dataset_root):
@@ -93,3 +96,24 @@ def test_controller_setup_and_teardown_manage_runtime_resources(tmp_path):
     controller.teardown()
 
     assert controller._manager is None
+
+
+class FakeProcess:
+    def __init__(self, name, exitcode):
+        self.name = name
+        self.exitcode = exitcode
+
+
+def test_failed_client_process_is_propagated():
+    processes = [FakeProcess("Client-0", 0), FakeProcess("Client-1", 1)]
+
+    try:
+        _raise_for_failed_processes(processes)
+    except RuntimeError as error:
+        assert str(error) == "Client process failure: Client-1 (exitcode=1)"
+    else:
+        raise AssertionError("Expected failed client process to be propagated")
+
+
+def test_successful_client_processes_do_not_raise():
+    _raise_for_failed_processes([FakeProcess("Client-0", 0)])
