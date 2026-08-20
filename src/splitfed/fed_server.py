@@ -139,12 +139,23 @@ class FedServer:
             )
 
         new_params = copy.deepcopy(client_params_list[0])
+        largest_client = max(
+            range(len(client_sizes)), key=client_sizes.__getitem__
+        )
 
         for key in new_params.keys():
-            new_params[key] = sum(
-                client_params_list[i][key] * (client_sizes[i] / total_samples)
-                for i in range(len(client_params_list))
-            )
+            value = client_params_list[0][key]
+
+            if torch.is_tensor(value) and (
+                torch.is_floating_point(value) or torch.is_complex(value)
+            ):
+                new_params[key] = sum(
+                    client_params_list[i][key]
+                    * (client_sizes[i] / total_samples)
+                    for i in range(len(client_params_list))
+                )
+            else:
+                new_params[key] = client_params_list[largest_client][key]
 
         return new_params
 
