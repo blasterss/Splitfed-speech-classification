@@ -6,21 +6,21 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
-from ...logger import logger
-from ...schema import SplitServerConfig
-from ...transport.base import Channel
-from ...transport.replay import ReplayGuard
-from ...utils.failures import FailureRecord, publish_failure
-from ...utils.process import ignore_parent_interrupts
-from ...utils.state import serialize_state_dict
-from ...utils.training import set_seed
-from ...utils.training_stats import _RoundStats
-from .operations import _handle_eval_single, _handle_train_batch
-from .optimization import (
+from ....logger import logger
+from ....schema import SplitServerConfig
+from ....transport.base import Channel
+from ....transport.replay import ReplayGuard
+from ....utils.failures import FailureRecord, publish_failure
+from ....utils.process import ignore_parent_interrupts
+from ....utils.state import serialize_state_dict
+from ....utils.training import set_seed
+from ....utils.training_stats import _RoundStats
+from ..operations import _handle_eval_single, _handle_train_batch
+from ..optimization import (
     build_personalized_models,
     step_accumulated_gradients,
 )
-from .protocol import _validate_message
+from ..protocol import _validate_message
 
 logger = logger.getChild("SplitServer")
 
