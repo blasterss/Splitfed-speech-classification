@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 import torch.optim as optim
 from sklearn.metrics import f1_score, precision_score, recall_score
@@ -331,15 +333,24 @@ class Client:
             }
         )
 
+        results_dir = Path("experiments/results")
+        results_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(
-            f"experiments/results/Client{self.client_id}_eval.csv", index=False
+            results_dir / f"Client{self.client_id}_eval.csv", index=False
         )
 
-        f1 = f1_score(all_labels_np, all_preds_np, average="binary")
-        precision = precision_score(
-            all_labels_np, all_preds_np, average="binary"
+        f1 = f1_score(
+            all_labels_np, all_preds_np, average="binary", zero_division=0
         )
-        recall = recall_score(all_labels_np, all_preds_np, average="binary")
+        precision = precision_score(
+            all_labels_np,
+            all_preds_np,
+            average="binary",
+            zero_division=0,
+        )
+        recall = recall_score(
+            all_labels_np, all_preds_np, average="binary", zero_division=0
+        )
 
         return {
             "accuracy": correct / total,

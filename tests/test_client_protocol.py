@@ -153,3 +153,19 @@ def test_federated_client_trains_complete_model_without_split_channels():
     client.train_one_round(1)
 
     assert not torch.equal(client.model.weight.detach(), initial_weight)
+
+
+def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.mode = TrainingMode.federated
+    client.device = torch.device("cpu")
+    client.dataset = SimpleNamespace(test_dataset=[object()])
+    client.test_loader = [(torch.ones(1, 2), torch.tensor([0]))]
+    client.model = torch.nn.Linear(2, 1)
+
+    metrics = client.evaluate()
+
+    assert metrics.keys() == {"accuracy", "f1", "precision", "recall"}
+    assert (tmp_path / "experiments/results/Clientclient-0_eval.csv").is_file()

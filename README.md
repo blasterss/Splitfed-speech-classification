@@ -318,8 +318,6 @@ tests.
 ### Evaluation and artifacts
 
 - `eval_every` is unused; evaluation occurs only after training.
-- Undefined precision/recall cases are not handled explicitly.
-- Evaluation result directories are not always created before writing.
 - Checkpoints do not contain configuration, optimiser state, seed or dataset
   manifest.
 - The experiment cannot currently be resumed reliably.
