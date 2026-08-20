@@ -389,83 +389,64 @@ def _client_worker(
         preventing server deadlocks due to missing eval streams.
     """
 
-    set_seed(cfg.runtime.seed + int(cfg.client_id))
-
-    client = Client(
-        cfg=cfg,
-        split_uplink_channel=split_uplink,
-        split_downlink_channel=split_downlink,
-        fed_uplink_channel=fed_uplink,
-        fed_downlink_channel=fed_downlink,
-    )
-
-    logger.info(
-        "Client %s: dataset loaded — waiting at ready_barrier.",
-        cfg.client_id,
-    )
-    ready_barrier.wait()
-
-    logger.info(
-        "Client %s: ready_barrier passed — starting training.", cfg.client_id
-    )
-
-    num_rounds = training_cfg.num_rounds
-    fed_every = training_cfg.fed_every
-
-    training_error: Optional[BaseException] = None
-    last_round = 0
-
     try:
-        for round_idx in range(1, num_rounds + 1):
+        set_seed(cfg.runtime.seed + int(cfg.client_id))
+
+        client = Client(
+            cfg=cfg,
+            split_uplink_channel=split_uplink,
+            split_downlink_channel=split_downlink,
+            fed_uplink_channel=fed_uplink,
+            fed_downlink_channel=fed_downlink,
+        )
+
+        logger.info(
+            "Client %s: dataset loaded — waiting at ready_barrier.",
+            cfg.client_id,
+        )
+        ready_barrier.wait(timeout=training_cfg.barrier_timeout_sec)
+
+        logger.info(
+            "Client %s: ready_barrier passed — starting training.",
+            cfg.client_id,
+        )
+
+        last_round = 0
+        for round_idx in range(1, training_cfg.num_rounds + 1):
             if stop_event.is_set():
-                break
+                return
 
             last_round = round_idx
             client.train_one_round(round_idx)
 
-            if round_idx % fed_every == 0:
+            if round_idx % training_cfg.fed_every == 0:
                 client.federative_aggregate(round_idx)
 
-    except Exception as exc:
-        training_error = exc
-        logger.error(
-            "Client %s crashed: %s", client.client_id, exc, exc_info=True
+        logger.info(
+            "Client %s: training finished — waiting at eval_barrier.",
+            cfg.client_id,
         )
+        eval_barrier.wait(timeout=training_cfg.barrier_timeout_sec)
 
-    finally:
+        logger.info(
+            "Client %s: eval_barrier passed — starting evaluation.",
+            cfg.client_id,
+        )
+        metrics = client.evaluate(round=last_round)
+        logger.info("Client %s final metrics: %s", client.client_id, metrics)
+
+    except BaseException as exc:
+        stop_event.set()
+        _abort_barriers((ready_barrier, eval_barrier))
+        logger.error(
+            "Client %s crashed: %s", cfg.client_id, exc, exc_info=True
+        )
+        raise
+
+
+def _abort_barriers(barriers: tuple[object, ...]) -> None:
+    for barrier in barriers:
         try:
-            logger.info(
-                "Client %s: training finished — waiting at eval_barrier.",
-                cfg.client_id,
-            )
-            eval_barrier.wait()
-
-            logger.info(
-                "Client %s: eval_barrier passed — starting evaluation.",
-                cfg.client_id,
-            )
-
-        except Exception as barrier_exc:
-            logger.error(
-                "Client %s: eval_barrier failed: %s",
-                cfg.client_id,
-                barrier_exc,
-                exc_info=True,
-            )
-
-        if training_error is None:
-            try:
-                metrics = client.evaluate(round=last_round)
-                logger.info(
-                    "Client %s final metrics: %s", client.client_id, metrics
-                )
-            except Exception as eval_exc:
-                logger.error(
-                    "Client %s: evaluate() failed: %s",
-                    client.client_id,
-                    eval_exc,
-                    exc_info=True,
-                )
-
-        if training_error is not None:
-            raise training_error
+            barrier.abort()
+        except Exception as exc:
+            logger.debug("Client could not abort lifecycle barrier: %s", exc)

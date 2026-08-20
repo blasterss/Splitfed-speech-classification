@@ -169,6 +169,7 @@ workflow are still missing.
   installed runtime.
 - `training.fed_every` is used by training; `training.eval_every` is currently
   not used by the training loop.
+- `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
 - `fed_server.strategy`, `aggregation_freq`, and `min_clients` are currently
   configured but not fully honoured by the worker.
 - The controller uses fixed channel constants rather than the channel names
@@ -188,14 +189,16 @@ Clients send intermediate activations and labels to the split server. The split
 server returns activation gradients. Clients send client model state and sample
 counts to the federated server, which returns the aggregated state.
 
-The process lifecycle has basic supervision but remains fragile at this stage:
+The process lifecycle has basic supervision but remains incomplete at this
+stage. Client construction, training, evaluation and bounded barrier waits
+share one worker failure boundary; failures set the shared stop event and abort
+peer barriers. Remaining limitations include:
 
-- client startup and barrier failures can still leave peers waiting;
 - server exit codes are checked, but recovery and structured error propagation
   are incomplete;
 - joins use a polling loop but do not yet implement a complete cancellation
   protocol;
-- queue and barrier timeouts are not one unified cancellation protocol;
+- queue timeouts and server shutdown are not one unified cancellation protocol;
 - gRPC and message serialization are stubs.
 
 Changes to process coordination require a multiprocessing smoke test, not only

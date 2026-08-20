@@ -144,6 +144,7 @@ there. The example expects the downloaded datasets in `../datasets`.
 Important configuration caveats:
 
 - `training.fed_every` currently controls federated synchronization;
+- `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `training.eval_every` is defined but not used by the training loop;
 - `fed_server.strategy`, `aggregation_freq` and `min_clients` are currently not
   honoured by the worker;
@@ -252,14 +253,13 @@ tests.
   numbers of client batches can deadlock training.
 - A stale partial batch is discarded without sending an error to clients already
   waiting for gradients.
-- Dataset loading and the first barrier are outside the client's protected
-  lifecycle. One failed client can leave every other client blocked.
 - The controller has a polling supervision loop and propagates non-zero child
-  exit codes, but startup failures, barriers and queue timeouts are not yet one
-  complete cancellation protocol.
+  exit codes. Client initialization and barrier failures now set the shared
+  stop event and abort peer barriers, but queue timeouts and server failures are
+  not yet one complete cancellation protocol.
 - Split and federated server exit codes are monitored, but failure reporting and
   recovery are not yet fault-tolerant or restartable.
-- Queue and barrier timeouts can still leave peers waiting in some failure paths.
+- Queue timeouts can still leave peers waiting in some failure paths.
 
 ### Numerical correctness
 
@@ -327,10 +327,8 @@ tests.
 ### 2. Introduce process supervision
 
 - use one shared cancellation event and a structured error channel;
-- protect client construction and all barrier waits;
 - monitor all client and server exit codes concurrently;
-- apply bounded join/barrier timeouts;
-- abort barriers and notify waiting peers after the first failure;
+- unify bounded joins, queue waits and server cancellation;
 - propagate child failures to the command exit code.
 
 ### 3. Formalise the training protocol

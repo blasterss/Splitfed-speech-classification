@@ -11,6 +11,7 @@ training:
   seed: *seed
   eval_every: 4
   fed_every: 10
+  barrier_timeout_sec: 300
 
 base_dataset: &base_data
   target_sample_rate: 8000

@@ -364,6 +364,12 @@ class TrainingConfig(BaseModel):
         gt=0, description="Federated aggregation frequency (in rounds)."
     )
 
+    barrier_timeout_sec: float = Field(
+        default=60.0,
+        gt=0,
+        description="Maximum wait for client lifecycle barriers in seconds.",
+    )
+
 
 class ExperimentConfig(BaseModel):
     """Experiment metadata and execution mode."""

@@ -4,7 +4,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from src.schema import DatasetConfig, DatasetType
+from src.schema import DatasetConfig, DatasetType, TrainingConfig
 
 
 @pytest.mark.parametrize("dataset_type", list(DatasetType))
@@ -33,3 +33,14 @@ def test_example_config_uses_portable_dataset_paths():
         "../datasets/RAVDESS/raw",
         "../datasets/SAVEE/raw",
     ]
+
+
+def test_training_config_requires_positive_barrier_timeout():
+    with pytest.raises(ValidationError, match="barrier_timeout_sec"):
+        TrainingConfig(
+            num_rounds=1,
+            seed=42,
+            eval_every=1,
+            fed_every=1,
+            barrier_timeout_sec=0,
+        )
