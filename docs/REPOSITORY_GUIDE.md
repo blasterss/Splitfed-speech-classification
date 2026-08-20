@@ -183,7 +183,8 @@ workflow are still missing.
   `federated_downlink`.
 - Dataset roots must exist before `ConfigSchema` validation.
 - Client, split-server, and federated-server device choices must match the
-  installed runtime.
+  installed runtime; syntax, CUDA availability and indexed device bounds are
+  validated before controller setup.
 - `training.fed_every` is used by training; `training.eval_every` is currently
   not used by the training loop.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.

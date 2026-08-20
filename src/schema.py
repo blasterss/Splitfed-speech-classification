@@ -8,6 +8,7 @@ Describes experiment topology, clients, servers, and communication channels.
 from enum import Enum
 from pathlib import Path
 
+import torch
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -490,6 +491,22 @@ class ConfigSchema(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_topology(self):
+        device_fields = [
+            (
+                f"clients[{client.client_id}].runtime.device",
+                client.runtime.device,
+            )
+            for client in self.clients
+        ]
+        if self.split_server:
+            device_fields.append(
+                ("split_server.model.device", self.split_server.model.device)
+            )
+        if self.fed_server:
+            device_fields.append(("fed_server.device", self.fed_server.device))
+        for field, device in device_fields:
+            _validate_device_available(device, field)
+
         client_ids = [client.client_id for client in self.clients]
         if len(client_ids) != len(set(client_ids)):
             raise ValueError("Client IDs must be unique")
@@ -605,3 +622,23 @@ class ConfigSchema(StrictConfigModel):
             )
 
         return self
+
+
+def _validate_device_available(device: str, field: str) -> None:
+    if device == "cpu":
+        return
+    if device == "cuda":
+        index = 0
+    elif device.startswith("cuda:") and device[5:].isdigit():
+        index = int(device[5:])
+    else:
+        raise ValueError(
+            f"{field} must be 'cpu', 'cuda', or an indexed CUDA device"
+        )
+    if not torch.cuda.is_available():
+        raise ValueError(f"{field} requests CUDA but CUDA is unavailable")
+    if index >= torch.cuda.device_count():
+        raise ValueError(
+            f"{field} requests cuda:{index}, but only "
+            f"{torch.cuda.device_count()} CUDA device(s) are available"
+        )

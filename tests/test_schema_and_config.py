@@ -10,6 +10,7 @@ from src.schema import (
     FedServerConfig,
     SplitServerModelConfig,
     TrainingConfig,
+    _validate_device_available,
 )
 
 
@@ -86,3 +87,23 @@ def test_fed_server_requires_positive_quorum_timeout():
             federated_uplink_channel="federated_uplink",
             federated_downlink_channel="federated_downlink",
         )
+
+
+def test_device_validation_rejects_unknown_device_name():
+    with pytest.raises(ValueError, match="must be"):
+        _validate_device_available("gpu", "client.device")
+
+
+def test_device_validation_rejects_cuda_when_unavailable(monkeypatch):
+    monkeypatch.setattr("src.schema.torch.cuda.is_available", lambda: False)
+
+    with pytest.raises(ValueError, match="unavailable"):
+        _validate_device_available("cuda", "client.device")
+
+
+def test_device_validation_rejects_missing_cuda_index(monkeypatch):
+    monkeypatch.setattr("src.schema.torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("src.schema.torch.cuda.device_count", lambda: 1)
+
+    with pytest.raises(ValueError, match="only 1"):
+        _validate_device_available("cuda:1", "client.device")

@@ -169,6 +169,8 @@ Important configuration caveats:
   the controller;
 - client IDs must be unique; referenced server channels and feasible client
   quorum are validated before controller setup.
+- device values must be `cpu`, `cuda`, or `cuda:N`; requested CUDA devices are
+  checked for availability before any child process is spawned.
 
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
