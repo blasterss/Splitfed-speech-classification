@@ -143,6 +143,8 @@ def _split_server_worker_batch(
 
     all_eval_probs = []
     all_eval_labels = []
+    accumulated_batches = 0
+    optimizer.zero_grad()
     try:
         while not stop_event.is_set():
             served_any = False
@@ -217,13 +219,40 @@ def _split_server_worker_batch(
                     batch_loss = _handle_train_batch(
                         batch_msgs,
                         model,
-                        optimizer,
                         criterion,
                         device,
                         client_channels,
                     )
                     if batch_loss is not None:
                         stats.update(batch_loss)
+                        accumulated_batches += 1
+                        if (
+                            accumulated_batches
+                            == config.model.gradient_accumulation_steps
+                        ):
+                            _step_accumulated_gradients(
+                                model.parameters(),
+                                optimizer,
+                                accumulated_batches,
+                            )
+                            accumulated_batches = 0
+
+                completed_round = msg.round
+                round_is_complete = completed_rounds[completed_round] == set(
+                    client_ids
+                )
+                round_has_pending = any(
+                    key[0] == completed_round for key in pending_batches
+                )
+                if round_is_complete and not round_has_pending:
+                    if accumulated_batches:
+                        _step_accumulated_gradients(
+                            model.parameters(),
+                            optimizer,
+                            accumulated_batches,
+                        )
+                        accumulated_batches = 0
+                    completed_rounds.pop(completed_round, None)
 
             _evict_stale_batches(pending_batches, pending_timestamps)
 
@@ -338,24 +367,19 @@ def _evict_stale_batches(
 def _handle_train_batch(
     batch_msgs: Dict[str, Message],
     model: ServerSideModel,
-    optimizer: optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
     client_channels: Dict[str, Dict[str, Channel]],
-    accum_steps: int = 4,
     parallel: bool = True,
 ) -> None:
     """
     parallel=True  — single forward/backward over concatenated activations;
                      gradients are sliced back per client.
     parallel=False — sequential forward/backward per client;
-                     gradients accumulate in model parameters,
-                     with a single optimizer.step() at the end.
+                     gradients accumulate in model parameters.
     """
     model.train()
 
-    # Pull step from any message — all messages in the batch share the same step
-    current_step = next(iter(batch_msgs.values())).step
     n_clients = len(batch_msgs)
 
     if parallel:
@@ -364,8 +388,6 @@ def _handle_train_batch(
             model,
             criterion,
             device,
-            n_clients,
-            accum_steps,
         )
     else:
         grads_per_client, batch_loss = _forward_sequential(
@@ -374,16 +396,10 @@ def _handle_train_batch(
             criterion,
             device,
             n_clients,
-            accum_steps,
         )
 
     if grads_per_client is None:
-        optimizer.zero_grad()
         return None
-
-    if current_step % accum_steps == 0:
-        optimizer.step()
-        optimizer.zero_grad()
 
     for client_id, msg in batch_msgs.items():
         client_channels[client_id]["downlink"].send(
@@ -404,8 +420,6 @@ def _forward_parallel(
     model: ServerSideModel,
     criterion: nn.Module,
     device: torch.device,
-    n_clients: int,
-    accum_steps: int,
 ) -> Optional[Dict[str, torch.Tensor]]:
     """
     Concatenates activations from all clients → single forward → single backward.
@@ -438,8 +452,8 @@ def _forward_parallel(
         )
         return None
 
-    loss = criterion(outputs, Y_true) / accum_steps
-    loss_value = loss.item() * accum_steps
+    loss = criterion(outputs, Y_true)
+    loss_value = loss.item()
     loss.backward()
 
     if H.grad is None:
@@ -463,7 +477,6 @@ def _forward_sequential(
     criterion: nn.Module,
     device: torch.device,
     n_clients: int,
-    accum_steps: int,
 ) -> Optional[Dict[str, torch.Tensor]]:
     """
     Sequential forward/backward for each client individually.
@@ -493,10 +506,10 @@ def _forward_sequential(
             model.zero_grad()
             return None
 
-        # Divide by n_clients so each client contributes equally,
-        # and by accum_steps to accumulate gradients across multiple batches.
-        loss = criterion(outputs, lbl) / (n_clients * accum_steps)
-        loss_value = loss.item() * n_clients * accum_steps
+        # Divide by n_clients so each client contributes equally within this
+        # server batch. Cross-batch averaging happens before optimizer.step().
+        loss = criterion(outputs, lbl) / n_clients
+        loss_value = loss.item() * n_clients
         total_loss += loss_value / n_clients  # average across clients
         loss.backward()
 
@@ -511,6 +524,22 @@ def _forward_sequential(
             grads[client_id] = H.grad.detach().cpu()
 
     return grads, total_loss
+
+
+def _step_accumulated_gradients(
+    parameters,
+    optimizer: optim.Optimizer,
+    batch_count: int,
+) -> None:
+    if batch_count <= 0:
+        raise ValueError("batch_count must be positive")
+
+    for parameter in parameters:
+        if parameter.grad is not None:
+            parameter.grad.div_(batch_count)
+
+    optimizer.step()
+    optimizer.zero_grad()
 
 
 def _handle_eval_single(

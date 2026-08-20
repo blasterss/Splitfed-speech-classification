@@ -4,7 +4,12 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from src.schema import DatasetConfig, DatasetType, TrainingConfig
+from src.schema import (
+    DatasetConfig,
+    DatasetType,
+    SplitServerModelConfig,
+    TrainingConfig,
+)
 
 
 @pytest.mark.parametrize("dataset_type", list(DatasetType))
@@ -43,4 +48,15 @@ def test_training_config_requires_positive_barrier_timeout():
             eval_every=1,
             fed_every=1,
             barrier_timeout_sec=0,
+        )
+
+
+def test_split_server_requires_positive_gradient_accumulation_steps():
+    with pytest.raises(ValidationError, match="gradient_accumulation_steps"):
+        SplitServerModelConfig(
+            pos_weight=1,
+            optimizer="adam",
+            lr=0.001,
+            device="cpu",
+            gradient_accumulation_steps=0,
         )

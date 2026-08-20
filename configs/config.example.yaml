@@ -81,6 +81,7 @@ split_server:
     optimizer: adam
     lr: 0.0005
     device: cpu
+    gradient_accumulation_steps: 4
   seed: *seed
   split_uplink_channel: split_uplink
   split_downlink_channel: split_downlink

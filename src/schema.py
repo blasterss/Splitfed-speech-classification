@@ -282,6 +282,12 @@ class SplitServerModelConfig(BaseModel):
         description="Execution device for the server-side model.",
     )
 
+    gradient_accumulation_steps: int = Field(
+        default=4,
+        gt=0,
+        description="Server batches averaged per optimizer update.",
+    )
+
 
 class SplitServerConfig(BaseModel):
     """Configuration for the split-learning server."""

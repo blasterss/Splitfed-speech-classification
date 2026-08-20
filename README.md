@@ -146,6 +146,8 @@ Important configuration caveats:
 
 - `training.fed_every` currently controls federated synchronization;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
+- `split_server.model.gradient_accumulation_steps` controls how many server
+  batches are averaged per optimizer update; each round flushes its remainder;
 - `training.eval_every` is defined but not used by the training loop;
 - `fed_server.strategy`, `aggregation_freq` and `min_clients` are currently not
   honoured by the worker;
@@ -264,11 +266,9 @@ tests.
 
 ### Numerical correctness
 
-- Server gradient accumulation is hard-coded to four steps.
-- Unflushed gradients cross round boundaries when the number of local steps is
-  not divisible by four.
-- Client gradients are scaled by the server accumulation factor even though the
-  client optimiser steps every batch.
+- Server gradient accumulation is configurable and remainder gradients are
+  flushed at the end of each completed round. Client activation gradients use
+  the full batch loss; only accumulated server parameter gradients are averaged.
 - FedAvg does not treat floating parameters and integer BatchNorm counters
   separately.
 - BatchNorm statistics from non-IID clients are averaged without an explicit
@@ -342,8 +342,6 @@ tests.
 
 ### 4. Correct optimisation and FedAvg
 
-- make accumulation configurable and flush remainder gradients per round;
-- define client/server gradient scaling independently;
 - implement the configured aggregation strategy and minimum-client policy;
 - handle non-floating buffers explicitly;
 - decide between local and global BatchNorm statistics;

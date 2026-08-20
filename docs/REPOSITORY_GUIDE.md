@@ -170,6 +170,9 @@ workflow are still missing.
 - `training.fed_every` is used by training; `training.eval_every` is currently
   not used by the training loop.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
+- `split_server.model.gradient_accumulation_steps` controls averaged server
+  optimizer updates. Client activation gradients are not scaled by this value,
+  and incomplete accumulation windows flush at the completed round boundary.
 - `fed_server.strategy`, `aggregation_freq`, and `min_clients` are currently
   configured but not fully honoured by the worker.
 - The controller uses fixed channel constants rather than the channel names
