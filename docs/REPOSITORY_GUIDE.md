@@ -100,8 +100,14 @@ uv sync --extra train --extra dev
 Inspect the runtime:
 
 ```bash
-uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda)'
+uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.get_arch_list())'
 ```
+
+The locked `train` extra uses the explicit official PyTorch CUDA 12.8 index on
+Linux/Windows and the normal PyPI source on macOS. CUDA 12.8 is required by the
+supported wheel to execute on Blackwell `sm_120`; the host still owns the
+NVIDIA driver. Reuse the default shared `uv` cache rather than installing an
+untracked wheel into each environment.
 
 Run the application:
 

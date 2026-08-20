@@ -116,12 +116,16 @@ Install development tools when needed:
 uv sync --extra train --extra dev
 ```
 
-For an NVIDIA machine, install the CUDA wheel selected by the official PyTorch
-installation selector using `uv pip` after creating the environment. Verify the
-runtime before loading the datasets:
+On Linux and Windows, the `train` extra resolves the pinned official PyTorch
+CUDA 12.8 wheel; this supports Blackwell (`sm_120`) GPUs. macOS falls back to
+the PyPI wheel. `uv` keeps downloaded packages in its shared cache and normally
+hardlinks them into project environments, so CUDA libraries are not downloaded
+again for every project. A compatible system NVIDIA driver is still required;
+installing a system CUDA Toolkit does not replace the runtime bundled with the
+PyTorch wheel. Verify the runtime before loading datasets:
 
 ```bash
-uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda)'
+uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.get_arch_list())'
 ```
 
 ## Configuration
