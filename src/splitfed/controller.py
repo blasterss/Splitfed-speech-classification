@@ -177,6 +177,7 @@ class TrainingController:
                 client_channels=split_channels,
                 stop_event=self._stop_event,
                 mp_context=self._mp_context,
+                failure_queue=self._failure_queue,
             )
             self.split_server.training_mode = self.cfg.training.mode.value
 
@@ -196,6 +197,7 @@ class TrainingController:
                 num_clients=len(self.cfg.clients),
                 stop_event=self._stop_event,
                 mp_context=self._mp_context,
+                failure_queue=self._failure_queue,
             )
             self.fed_server.training_mode = self.cfg.training.mode.value
 

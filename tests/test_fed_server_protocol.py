@@ -1,3 +1,4 @@
+import queue
 import time
 from types import SimpleNamespace
 
@@ -137,6 +138,9 @@ class FakeStopEvent:
     def is_set(self):
         return self.stopped
 
+    def set(self):
+        self.stopped = True
+
     def wait(self, timeout):
         pass
 
@@ -240,6 +244,8 @@ def test_worker_rejects_replayed_federated_request():
         strategy=AggregationStrategy.fedavg,
     )
 
+    failure_queue = queue.Queue(maxsize=1)
+
     with pytest.raises(ValueError, match="Replay"):
         _fed_server_worker(
             config,
@@ -247,6 +253,13 @@ def test_worker_rejects_replayed_federated_request():
             1,
             stop_event,
             FakeResultQueue(),
+            failure_queue,
         )
 
     assert len(broadcasts) == 1
+    failure = failure_queue.get_nowait()
+    assert failure["component"] == "fed_server"
+    assert failure["client_id"] == "client-0"
+    assert failure["round"] == 2
+    assert failure["step"] == 1
+    assert failure["exception_type"] == "ValueError"

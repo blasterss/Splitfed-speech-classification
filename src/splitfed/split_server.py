@@ -14,6 +14,7 @@ from ..schema import ServerModelScope, SplitServerConfig
 from ..transport.base import Channel, Message
 from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
+from ..utils.failures import FailureRecord, publish_failure
 from ..utils.process import ignore_parent_interrupts
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
@@ -44,6 +45,7 @@ class SplitServer:
         client_channels: dict[str, dict[str, Channel]],
         stop_event=None,
         mp_context=None,
+        failure_queue=None,
     ):
         self.config = config
         self.client_channels = client_channels
@@ -56,6 +58,7 @@ class SplitServer:
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
+        self._failure_queue = failure_queue
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -72,6 +75,7 @@ class SplitServer:
                 self.client_channels,
                 self._stop_event,
                 self._result_queue,
+                self._failure_queue,
             ),
             daemon=True,
             name="SplitServer",
@@ -183,6 +187,7 @@ def _split_server_worker_personalized(
     client_channels: dict[str, dict[str, Channel]],
     stop_event,
     result_queue: mp.Queue,
+    failure_queue=None,
 ) -> None:
     """Serve each client with an isolated model and optimizer."""
     ignore_parent_interrupts()
@@ -197,6 +202,9 @@ def _split_server_worker_personalized(
     completed_steps = {client_id: set() for client_id in client_ids}
     stats = {client_id: _RoundStats() for client_id in client_ids}
     replay_guard = ReplayGuard()
+    current_client_id = None
+    current_round = None
+    current_step = None
 
     logger.info(
         "Personalized SplitServer worker ready, serving clients: %s",
@@ -209,6 +217,9 @@ def _split_server_worker_personalized(
                 msg = client_channels[client_id]["uplink"].recv_nowait()
                 if msg is None:
                     continue
+                current_client_id = client_id
+                current_round = msg.round
+                current_step = msg.step
                 if not _validate_message(msg, client_id):
                     raise ValueError(
                         f"Invalid split message from client {client_id}"
@@ -270,6 +281,19 @@ def _split_server_worker_personalized(
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
+    except BaseException as exc:
+        publish_failure(
+            failure_queue,
+            FailureRecord.from_exception(
+                component="split_server",
+                client_id=current_client_id,
+                round=current_round,
+                step=current_step,
+                exception=exc,
+            ),
+        )
+        stop_event.set()
+        raise
     finally:
         for client_id in client_ids:
             if accumulated_batches[client_id]:
@@ -298,6 +322,7 @@ def _split_server_worker_batch(
     client_channels: dict[str, dict[str, Channel]],
     stop_event,
     result_queue: mp.Queue,
+    failure_queue=None,
 ) -> None:
     ignore_parent_interrupts()
     set_seed(config.seed)  # Ensure deterministic behavior in server process,
@@ -318,6 +343,8 @@ def _split_server_worker_batch(
     current_round = 1
     stats = _RoundStats()
     replay_guard = ReplayGuard()
+    current_client_id = None
+    current_step = None
 
     all_eval_probs = []
     all_eval_labels = []
@@ -333,6 +360,9 @@ def _split_server_worker_batch(
                 msg = uplink.recv_nowait()
                 if msg is None:
                     continue
+                current_client_id = client_id
+                current_round = msg.round
+                current_step = msg.step
 
                 if not _validate_message(msg, client_id):
                     raise ValueError(
@@ -456,6 +486,20 @@ def _split_server_worker_batch(
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
+
+    except BaseException as exc:
+        publish_failure(
+            failure_queue,
+            FailureRecord.from_exception(
+                component="split_server",
+                client_id=current_client_id,
+                round=current_round,
+                step=current_step,
+                exception=exc,
+            ),
+        )
+        stop_event.set()
+        raise
 
     finally:
         stats.log_and_reset(current_round)

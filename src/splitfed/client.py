@@ -1,4 +1,3 @@
-import queue
 from pathlib import Path
 
 import torch
@@ -12,7 +11,7 @@ from ..model.client_side_model import ClientSideModel
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ClientConfig, TrainingConfig, TrainingMode
 from ..transport.base import Channel, ChannelCancelled, Message
-from ..utils.failures import FailureRecord
+from ..utils.failures import FailureRecord, publish_failure
 from ..utils.process import ignore_parent_interrupts
 from ..utils.training import set_seed
 
@@ -631,18 +630,15 @@ def _client_worker(
             return
         raise
     except BaseException as exc:
-        if failure_queue is not None:
-            try:
-                failure_queue.put_nowait(
-                    FailureRecord.from_exception(
-                        component="client",
-                        client_id=cfg.client_id,
-                        round=current_round,
-                        exception=exc,
-                    ).as_dict()
-                )
-            except queue.Full:
-                pass
+        publish_failure(
+            failure_queue,
+            FailureRecord.from_exception(
+                component="client",
+                client_id=cfg.client_id,
+                round=current_round,
+                exception=exc,
+            ),
+        )
         stop_event.set()
         _abort_barriers((ready_barrier, eval_barrier))
         logger.error(

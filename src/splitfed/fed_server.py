@@ -11,6 +11,7 @@ from ..schema import AggregationStrategy, FedServerConfig
 from ..transport.base import Channel, Message
 from ..transport.replay import ReplayGuard
 from ..utils.checkpoint import save_checkpoint
+from ..utils.failures import FailureRecord, publish_failure
 from ..utils.process import ignore_parent_interrupts
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
@@ -37,6 +38,7 @@ class FedServer:
         num_clients: int,
         stop_event=None,
         mp_context=None,
+        failure_queue=None,
     ):
         self.config = config
         self.client_channels = client_channels
@@ -52,6 +54,7 @@ class FedServer:
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
+        self._failure_queue = failure_queue
 
     def start(self) -> None:
         """
@@ -67,6 +70,7 @@ class FedServer:
                 self.num_clients,
                 self._stop_event,
                 self._result_queue,
+                self._failure_queue,
             ),
             daemon=True,
             name="FedServer",
@@ -240,6 +244,7 @@ def _fed_server_worker(
     num_clients: int,
     stop_event,
     result_queue: mp.Queue,
+    failure_queue=None,
 ) -> None:
     """
     Background worker implementing the federated aggregation loop.
@@ -264,6 +269,9 @@ def _fed_server_worker(
     expected_schema = None
     round_started_at: float | None = None
     replay_guard = ReplayGuard()
+    current_client_id = None
+    current_round = None
+    current_step = None
 
     try:
         while not stop_event.is_set():
@@ -278,6 +286,9 @@ def _fed_server_worker(
 
                 if msg is None:
                     continue
+                current_client_id = client_id
+                current_round = msg.round
+                current_step = msg.step
 
                 served_any = True
                 replay_guard.accept(msg.request_id)
@@ -413,6 +424,20 @@ def _fed_server_worker(
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
+
+    except BaseException as exc:
+        publish_failure(
+            failure_queue,
+            FailureRecord.from_exception(
+                component="fed_server",
+                client_id=current_client_id,
+                round=current_round,
+                step=current_step,
+                exception=exc,
+            ),
+        )
+        stop_event.set()
+        raise
 
     finally:
         if latest_params is not None:

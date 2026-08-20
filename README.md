@@ -285,8 +285,8 @@ Expected generated artifacts include:
   extraction counts/failure reasons, split seed, feature ordering,
   actor-disjoint IDs and train/test sample/actor/class coverage. Missing client
   reports are explicit and mark the manifest incomplete.
-- `diagnostics/first_failure.yaml` after a captured client or controller
-  failure, with a bounded versioned record containing component, optional
+- `diagnostics/first_failure.yaml` after a captured worker/controller failure,
+  with a bounded versioned record containing component, optional
   client/round/step context, exception type/message and traceback.
 
 Queue messages carry and validate protocol identity `secureasr.queue` version
@@ -381,9 +381,8 @@ tests.
   exit codes. Client initialization and barrier failures now set the shared
   stop event, abort peer barriers and publish a bounded first-failure record,
   but queue timeouts and server failures are not yet one complete cancellation
-  protocol.
-- Split and federated server exit codes are monitored, but server-side
-  structured failure reporting and recovery are not yet implemented.
+  protocol. SplitServer and FedServer publish their original failure context
+  before cancellation; recovery is not yet implemented.
 - Queue timeouts can still leave peers waiting in some failure paths.
 
 ### Numerical correctness
@@ -461,9 +460,8 @@ work, in delivery order, is:
 
 1. Add the typed policy registry, deterministic heterogeneous simulator and
    remaining named research profiles.
-2. Extend the client/controller first-failure report to servers and unify
-   queue, quorum, barrier and shutdown deadlines under one cancellation
-   protocol.
+2. Unify queue, quorum, barrier and shutdown deadlines under one typed
+   cancellation protocol and persist explicit failed run status.
 3. Implement `ClientLoadController` telemetry, leases, fairness debt,
    quarantine and replayable cohort policies.
 4. Bound dataset memory use, freeze input manifests and decide a typed

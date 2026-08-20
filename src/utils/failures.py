@@ -1,5 +1,6 @@
 """Structured failure records shared by training processes."""
 
+import queue
 import traceback
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -59,3 +60,14 @@ class FailureRecord:
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def publish_failure(failure_queue, record: FailureRecord) -> bool:
+    """Best-effort bounded publish that never masks the original failure."""
+    if failure_queue is None:
+        return False
+    try:
+        failure_queue.put_nowait(record.as_dict())
+    except (queue.Full, OSError, ValueError):
+        return False
+    return True

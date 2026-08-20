@@ -1,3 +1,4 @@
+import queue
 import time
 
 import pytest
@@ -10,6 +11,7 @@ from src.splitfed.split_server import (
     _build_personalized_models,
     _evict_stale_batches,
     _forward_parallel,
+    _split_server_worker_batch,
     _step_accumulated_gradients,
     _store_pending_batch,
     _validate_message,
@@ -94,6 +96,76 @@ def test_duplicate_split_step_is_rejected_as_replay():
 
     with pytest.raises(ValueError, match="Duplicate split step"):
         _store_pending_batch(pending, message, "client-0")
+
+
+class WorkerStopEvent:
+    def __init__(self):
+        self.stopped = False
+
+    def is_set(self):
+        return self.stopped
+
+    def set(self):
+        self.stopped = True
+
+    def wait(self, timeout):
+        return self.stopped
+
+
+class OneMessageUplink:
+    def __init__(self, message):
+        self.message = message
+
+    def recv_nowait(self):
+        message, self.message = self.message, None
+        return message
+
+
+class DiscardResultQueue:
+    def put_nowait(self, value):
+        pass
+
+
+def test_split_worker_reports_original_failure_context():
+    stop_event = WorkerStopEvent()
+    failure_queue = queue.Queue(maxsize=1)
+    config = SplitServerConfig(
+        seed=42,
+        model_scope="shared",
+        split_uplink_channel="split_uplink",
+        split_downlink_channel="split_downlink",
+        model={
+            "pos_weight": 1,
+            "optimizer": "adam",
+            "lr": 0.001,
+            "device": "cpu",
+            "gradient_accumulation_steps": 1,
+            "batch_timeout_sec": 1,
+        },
+    )
+    invalid = _split_message(sender="wrong-client")
+    channels = {
+        "client-0": {
+            "uplink": OneMessageUplink(invalid),
+            "downlink": RecordingDownlink(),
+        }
+    }
+
+    with pytest.raises(ValueError, match="Invalid split message"):
+        _split_server_worker_batch(
+            config,
+            channels,
+            stop_event,
+            DiscardResultQueue(),
+            failure_queue,
+        )
+
+    failure = failure_queue.get_nowait()
+    assert failure["component"] == "split_server"
+    assert failure["client_id"] == "client-0"
+    assert failure["round"] == 1
+    assert failure["step"] == 1
+    assert failure["exception_type"] == "ValueError"
 
 
 class RecordingDownlink:
