@@ -208,7 +208,10 @@ class Client:
         self.agg_to_server.send(msg)
 
         response = self.agg_from_server.recv()
-        self.model.load_state_dict(response.payload)
+        state_dict = _validate_global_update(
+            response, self.model.state_dict(), round
+        )
+        self.model.load_state_dict(state_dict)
 
         logger.info(
             "Client %s ← fed_server: global model received r=%d",
@@ -406,6 +409,36 @@ def _extract_payload(
         return None
 
     return tensor
+
+
+def _validate_global_update(
+    response: Message,
+    expected_state: dict,
+    round: int,
+) -> dict:
+    if response.sender != "fed_server":
+        raise ValueError("Invalid global update sender")
+    if response.type != "global_update":
+        raise ValueError("Invalid global update type")
+    if response.round != round:
+        raise ValueError("Invalid global update round")
+    if response.step != 1:
+        raise ValueError("Invalid global update step")
+    if not isinstance(response.payload, dict):
+        raise ValueError("Invalid global update payload")
+    if response.payload.keys() != expected_state.keys():
+        raise ValueError("Invalid global update state keys")
+
+    for key, expected in expected_state.items():
+        value = response.payload[key]
+        if not isinstance(value, torch.Tensor):
+            raise ValueError(f"Invalid global update tensor for {key}")
+        if value.shape != expected.shape:
+            raise ValueError(f"Invalid global update shape for {key}")
+        if value.dtype != expected.dtype:
+            raise ValueError(f"Invalid global update dtype for {key}")
+
+    return response.payload
 
 
 def _client_worker(
