@@ -243,6 +243,11 @@ class DatasetConfig(StrictConfigModel):
         description="Fraction of data reserved for the test split.",
     )
 
+    split_seed: int = Field(
+        default=42,
+        description="Seed used only for the actor-disjoint train/test split.",
+    )
+
     @field_validator("root")
     @classmethod
     def validate_root_exists(cls, v):

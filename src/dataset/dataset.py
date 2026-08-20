@@ -1,12 +1,11 @@
-import torch
-from torch.utils.data import Dataset
-from sklearn.model_selection import train_test_split
-
 import numpy as np
+import torch
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset
 
 from ..dataset.processors.factory import DatasetLoaderFactory
-from ..schema import DatasetConfig
 from ..logger import logger
+from ..schema import DatasetConfig
 
 
 class EmotionalDataset(Dataset):
@@ -89,8 +88,12 @@ class ConflictEmotionalDataset:
         unique_actors = np.unique(actor_ids)
 
         train_actors, test_actors = train_test_split(
-            unique_actors, test_size=config.test_size, random_state=42
+            unique_actors,
+            test_size=config.test_size,
+            random_state=config.split_seed,
         )
+        self.train_actor_ids = tuple(train_actors.tolist())
+        self.test_actor_ids = tuple(test_actors.tolist())
 
         train_mask = np.isin(actor_ids, train_actors)
         test_mask = np.isin(actor_ids, test_actors)

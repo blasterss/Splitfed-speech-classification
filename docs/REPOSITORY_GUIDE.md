@@ -177,6 +177,7 @@ workflow are still missing.
   shapes and dtypes; optimizer/RNG resume is not implemented yet.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.
+- `dataset.split_seed` controls the actor-disjoint split and defaults to `42`.
 - Every client needs all four fixed channel names:
   `split_uplink`, `split_downlink`, `federated_uplink`, and
   `federated_downlink`.

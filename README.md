@@ -182,6 +182,9 @@ feature ordering and target sample-rate settings. The first client entry owns
 that single runtime configuration; `local_steps` is not used because every
 combined training batch is consumed once per centralized round.
 
+Each dataset view uses `dataset.split_seed` for its actor-disjoint train/test
+partition. The default remains `42` for compatibility.
+
 ## Running
 
 From the repository root:
