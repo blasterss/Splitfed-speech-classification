@@ -1,5 +1,5 @@
-data_path: \data\raw
-model_save_path: \checkpoints
+data_path: ../datasets
+models_save_path: checkpoints
 
 experiment:
   name: sfl_audio_exp
@@ -21,7 +21,7 @@ clients:
     dataset:
       <<: *base_data
       name: CREMA-D
-      root: \data\raw\CREMA-D
+      root: ../datasets/CREMA-D/raw
       reduced: False
       reduced_size: 2000
       test_size: 0.2
@@ -40,7 +40,7 @@ clients:
     dataset: 
       <<: *base_data
       name: RAVDESS
-      root: \data\raw\RAVDESS
+      root: ../datasets/RAVDESS/raw
       reduced: False
       reduced_size: 1400
       test_size: 0.2
@@ -59,7 +59,7 @@ clients:
     dataset:
       <<: *base_data
       name: SAVEE
-      root: \data\raw\SAVEE
+      root: ../datasets/SAVEE/raw
       reduced: False
       reduced_size: 1500
       test_size: 0.2
@@ -79,7 +79,7 @@ split_server:
     pos_weight: 3
     optimizer: adam
     lr: 0.0005
-    device: cuda
+    device: cpu
   seed: *seed
   split_uplink_channel: split_uplink
   split_downlink_channel: split_downlink
@@ -87,7 +87,7 @@ split_server:
 fed_server:
   strategy: fedavg
   seed: *seed
-  device: cuda
+  device: cpu
   aggregation_freq: 1
   min_clients: 2
   federated_uplink_channel: federated_uplink
