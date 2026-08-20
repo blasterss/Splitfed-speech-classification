@@ -42,6 +42,7 @@ class FedServer:
         # Stores final aggregated model after shutdown
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
         self._process: Optional[mp.Process] = None
+        self._last_exitcode: int | None = None
 
     def start(self) -> None:
         """
@@ -61,6 +62,7 @@ class FedServer:
             daemon=True,
             name="FedServer",
         )
+        self._last_exitcode = None
 
         self._process.start()
 
@@ -86,9 +88,17 @@ class FedServer:
                 if self._process.is_alive():
                     self._process.kill()
 
+            self._last_exitcode = self._process.exitcode
+
             self._process = None
 
         logger.info("FedServer process stopped")
+
+    @property
+    def exitcode(self) -> int | None:
+        if self._process is not None:
+            return self._process.exitcode
+        return self._last_exitcode
 
     def get_state_dict(self) -> dict:
         """

@@ -1,7 +1,12 @@
+import pytest
+
 from src.schema import ConfigSchema
 from src.splitfed.controller import (
     TrainingController,
+    _raise_for_failed_servers,
     _raise_for_failed_processes,
+    _shutdown_processes,
+    _wait_for_training_processes,
 )
 
 
@@ -106,6 +111,38 @@ class FakeProcess:
         self.exitcode = exitcode
 
 
+class PollProcess(FakeProcess):
+    def __init__(self, name, exitcode=0, alive=True):
+        super().__init__(name, exitcode)
+        self.alive = alive
+        self.terminate_called = False
+        self.kill_called = False
+
+    def join(self, timeout=None):
+        self.alive = False
+
+    def is_alive(self):
+        return self.alive
+
+    def terminate(self):
+        self.terminate_called = True
+        self.alive = False
+
+    def kill(self):
+        self.kill_called = True
+        self.alive = False
+
+
+class StubbornProcess(PollProcess):
+    def join(self, timeout=None):
+        pass
+
+
+class FakeServer:
+    def __init__(self, exitcode):
+        self.exitcode = exitcode
+
+
 def test_failed_client_process_is_propagated():
     processes = [FakeProcess("Client-0", 0), FakeProcess("Client-1", 1)]
 
@@ -119,3 +156,26 @@ def test_failed_client_process_is_propagated():
 
 def test_successful_client_processes_do_not_raise():
     _raise_for_failed_processes([FakeProcess("Client-0", 0)])
+
+
+def test_training_process_wait_checks_server_exitcodes():
+    _wait_for_training_processes(
+        [PollProcess("Client-0")], (FakeServer(0),), poll_timeout=0
+    )
+
+
+def test_failed_server_process_is_propagated():
+    with pytest.raises(
+        RuntimeError,
+        match=r"Server process failure: FakeServer \(exitcode=1\)",
+    ):
+        _raise_for_failed_servers((FakeServer(1),))
+
+
+def test_shutdown_processes_terminates_alive_processes():
+    process = StubbornProcess("Client-0", alive=True)
+
+    _shutdown_processes([process], join_timeout=0)
+
+    assert process.terminate_called
+    assert not process.is_alive()

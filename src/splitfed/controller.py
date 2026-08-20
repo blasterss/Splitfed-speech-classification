@@ -26,6 +26,8 @@ class TrainingController:
     SPLIT_DOWNLINK = "split_downlink"
     FED_UPLINK = "federated_uplink"
     FED_DOWNLINK = "federated_downlink"
+    PROCESS_POLL_TIMEOUT = 0.5
+    PROCESS_SHUTDOWN_TIMEOUT = 10
 
     def __init__(self, config: ConfigSchema):
         self.cfg = config
@@ -201,10 +203,11 @@ class TrainingController:
         training_error: BaseException | None = None
 
         try:
-            for p in self._client_processes:
-                p.join()
-
-            _raise_for_failed_processes(self._client_processes)
+            _wait_for_training_processes(
+                self._client_processes,
+                (self.split_server, self.fed_server),
+                self.PROCESS_POLL_TIMEOUT,
+            )
 
         except BaseException as exc:
             training_error = exc
@@ -213,14 +216,9 @@ class TrainingController:
                 "Exception while waiting for clients: %s", exc, exc_info=True
             )
 
-            for event in self._stop_events.values():
-                event.set()
-
-            for p in self._client_processes:
-                p.join(timeout=10)
-
-                if p.is_alive():
-                    p.terminate()
+            _shutdown_processes(
+                self._client_processes, self.PROCESS_SHUTDOWN_TIMEOUT
+            )
 
         finally:
             logger.info("=== TRAINING COMPLETE — stopping servers ===")
@@ -245,6 +243,61 @@ def _raise_for_failed_processes(processes: list[mp.Process]) -> None:
         message = "Client process failure: " + ", ".join(failures)
         logger.error(message)
         raise RuntimeError(message)
+
+
+def _raise_for_failed_servers(servers: tuple[object, ...]) -> None:
+    failures = [
+        f"{type(server).__name__} (exitcode={server.exitcode})"
+        for server in servers
+        if server.exitcode not in (None, 0)
+    ]
+
+    if failures:
+        message = "Server process failure: " + ", ".join(failures)
+        logger.error(message)
+        raise RuntimeError(message)
+
+
+def _wait_for_training_processes(
+    processes: list[mp.Process],
+    servers: tuple[object, ...],
+    poll_timeout: float,
+) -> None:
+    remaining = list(processes)
+
+    while remaining:
+        _raise_for_failed_servers(servers)
+
+        for process in remaining[:]:
+            process.join(timeout=poll_timeout)
+
+            if not process.is_alive():
+                remaining.remove(process)
+
+        _raise_for_failed_processes(
+            [process for process in processes if not process.is_alive()]
+        )
+
+    _raise_for_failed_servers(servers)
+
+
+def _shutdown_processes(
+    processes: list[mp.Process], join_timeout: float
+) -> None:
+    for process in processes:
+        process.join(timeout=join_timeout)
+
+    alive_processes = [process for process in processes if process.is_alive()]
+
+    for process in alive_processes:
+        process.terminate()
+
+    for process in alive_processes:
+        process.join(timeout=join_timeout)
+
+    for process in alive_processes:
+        if process.is_alive():
+            process.kill()
 
     def evaluate_all(self) -> None:
         """

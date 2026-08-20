@@ -51,6 +51,7 @@ class SplitServer:
         self._stop_event = stop_event if stop_event is not None else mp.Event()
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
         self._process: Optional[mp.Process] = None
+        self._last_exitcode: int | None = None
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -66,6 +67,7 @@ class SplitServer:
             daemon=True,
             name="SplitServer",
         )
+        self._last_exitcode = None
         self._process.start()
         logger.info("SplitServer process started (pid=%d)", self._process.pid)
 
@@ -82,8 +84,17 @@ class SplitServer:
                 self._process.join(timeout=5)
                 if self._process.is_alive():
                     self._process.kill()
+
+            self._last_exitcode = self._process.exitcode
+
             self._process = None
         logger.info("SplitServer process stopped")
+
+    @property
+    def exitcode(self) -> int | None:
+        if self._process is not None:
+            return self._process.exitcode
+        return self._last_exitcode
 
     def get_state_dict(self) -> dict:
         """
