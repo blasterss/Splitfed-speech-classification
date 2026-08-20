@@ -239,8 +239,8 @@ that start method explicitly.
 
 - Feature extraction currently loads complete client datasets into memory.
 - Padding zeros can affect normalization statistics.
-- Actor split uses a hard-coded random state rather than the configured seed.
-- Class coverage is not validated before training.
+- Actor-disjoint splits expose actor/sample/class counts and reject a training
+  split missing either binary class. One-class test splits remain supported.
 - Client training currently shuffles without class-balanced sampling.
 - Checkpoint metadata does not include full configuration, seed, or optimizer
   state.

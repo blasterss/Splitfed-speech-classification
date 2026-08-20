@@ -164,8 +164,18 @@ def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
     client.dataset = SimpleNamespace(test_dataset=[object()])
     client.test_loader = [(torch.ones(1, 2), torch.tensor([0]))]
     client.model = torch.nn.Linear(2, 1)
+    client.model.weight.data.zero_()
+    client.model.bias.data.fill_(-1)
 
     metrics = client.evaluate()
 
-    assert metrics.keys() == {"accuracy", "f1", "precision", "recall"}
+    assert metrics == {
+        "accuracy": 1.0,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "num_samples": 1,
+        "num_positive_labels": 0,
+        "num_positive_predictions": 0,
+    }
     assert (tmp_path / "experiments/results/Clientclient-0_eval.csv").is_file()

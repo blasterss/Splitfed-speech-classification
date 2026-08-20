@@ -112,3 +112,33 @@ def test_actor_split_uses_configured_seed_and_remains_disjoint(
         "actor-2",
         "actor-3",
     }
+    assert dataset.coverage == {
+        "train": {"samples": 2, "actors": 2, "class_0": 1, "class_1": 1},
+        "test": {"samples": 2, "actors": 2, "class_0": 1, "class_1": 1},
+    }
+
+
+def test_training_split_rejects_missing_binary_class(tmp_path, monkeypatch):
+    class OneClassLoader:
+        def load(self):
+            return (
+                [np.zeros((3, 8)) for _ in range(4)],
+                [
+                    {"label": 0, "actor_id": f"actor-{index}"}
+                    for index in range(4)
+                ],
+            )
+
+    monkeypatch.setattr(
+        "src.dataset.dataset.DatasetLoaderFactory.create",
+        lambda config: OneClassLoader(),
+    )
+
+    with pytest.raises(ValueError, match="both binary classes"):
+        ConflictEmotionalDataset(
+            DatasetConfig(
+                name=DatasetType.savee,
+                root=str(tmp_path),
+                test_size=0.5,
+            )
+        )

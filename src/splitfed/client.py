@@ -238,7 +238,7 @@ class Client:
         )
 
     @torch.no_grad()
-    def evaluate(self, round: int = 0) -> dict[str, float]:
+    def evaluate(self, round: int = 0) -> dict[str, float | int]:
         """
         Evaluates model on local test set.
 
@@ -251,7 +251,7 @@ class Client:
                 "Client %s: test dataset is empty — returning zero metrics.",
                 self.client_id,
             )
-            return {"accuracy": 0.0, "f1": 0.0}
+            return _empty_metrics()
 
         self.model.eval()
 
@@ -317,7 +317,7 @@ class Client:
 
         if total == 0:
             logger.warning("Client %s: no samples evaluated.", self.client_id)
-            return {"accuracy": 0.0, "f1": 0.0}
+            return _empty_metrics()
 
         all_preds_np = torch.cat(all_preds).numpy()
         all_labels_np = torch.cat(all_labels).numpy()
@@ -357,7 +357,22 @@ class Client:
             "f1": float(f1),
             "precision": float(precision),
             "recall": float(recall),
+            "num_samples": total,
+            "num_positive_labels": int(all_labels_np.sum()),
+            "num_positive_predictions": int(all_preds_np.sum()),
         }
+
+
+def _empty_metrics() -> dict[str, float | int]:
+    return {
+        "accuracy": 0.0,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "num_samples": 0,
+        "num_positive_labels": 0,
+        "num_positive_predictions": 0,
+    }
 
 
 def _extract_payload(

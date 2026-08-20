@@ -78,14 +78,31 @@ class ConflictEmotionalDataset:
         # Load raw features and metadata
         data, metadata = loader.load()
 
+        if not data or not metadata or len(data) != len(metadata):
+            raise ValueError(
+                "Dataset extraction must produce matching non-empty data and "
+                "metadata"
+            )
+
         data = np.stack(data)
 
         labels = np.asarray([item["label"] for item in metadata])
+
+        unsupported_labels = set(np.unique(labels)) - {0, 1}
+        if unsupported_labels:
+            raise ValueError(
+                f"Dataset contains unsupported binary labels: "
+                f"{sorted(unsupported_labels)}"
+            )
 
         actor_ids = np.asarray([item["actor_id"] for item in metadata])
 
         # Split dataset by actor IDs
         unique_actors = np.unique(actor_ids)
+        if len(unique_actors) < 2:
+            raise ValueError(
+                "Actor-disjoint split requires at least two unique actors"
+            )
 
         train_actors, test_actors = train_test_split(
             unique_actors,
@@ -100,6 +117,16 @@ class ConflictEmotionalDataset:
 
         train_data = data[train_mask]
         test_data = data[test_mask]
+        train_labels = labels[train_mask]
+        test_labels = labels[test_mask]
+        if set(np.unique(train_labels)) != {0, 1}:
+            raise ValueError(
+                "Training split must contain both binary classes 0 and 1"
+            )
+        self.coverage = {
+            "train": _coverage(train_labels, train_actors),
+            "test": _coverage(test_labels, test_actors),
+        }
 
         # --------- NORMALIZATION (TRAIN ONLY) ---------
 
@@ -110,12 +137,12 @@ class ConflictEmotionalDataset:
 
         # Create PyTorch datasets
         self.train_dataset = EmotionalDataset(
-            train_data, labels[train_mask], mean, std
+            train_data, train_labels, mean, std
         )
 
-        self.test_dataset = EmotionalDataset(
-            test_data, labels[test_mask], mean, std
-        )
+        self.test_dataset = EmotionalDataset(test_data, test_labels, mean, std)
+
+        logger.info("Dataset coverage: %s", self.coverage)
 
     def get_sample_weights(self) -> np.ndarray:
         """
@@ -137,3 +164,12 @@ class ConflictEmotionalDataset:
         ]
 
         return sample_weights
+
+
+def _coverage(labels: np.ndarray, actors: np.ndarray) -> dict:
+    return {
+        "samples": int(len(labels)),
+        "actors": int(len(actors)),
+        "class_0": int((labels == 0).sum()),
+        "class_1": int((labels == 1).sum()),
+    }

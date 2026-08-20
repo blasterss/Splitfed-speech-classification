@@ -326,9 +326,8 @@ tests.
 
 - Feature extraction loads each client dataset fully into memory.
 - Padding zeros participate in normalisation statistics.
-- The actor split seed is hard-coded rather than taken from configuration.
-- Split class coverage is not validated.
-- A `WeightedRandomSampler` is created but not used by the training loader.
+- Actor-disjoint splits record per-split actor/sample/class coverage and reject
+  training partitions that do not contain both binary classes.
 - Per-file feature extraction errors are skipped and can hide systematic data
   loss.
 - Spectral-contrast failures fall back to zero features.
@@ -337,6 +336,8 @@ tests.
 ### Evaluation and artifacts
 
 - `eval_every` is unused; evaluation occurs only after training.
+- Evaluation metrics include sample, positive-label and positive-prediction
+  denominators and remain finite for one-class test partitions.
 - Checkpoint envelopes contain mode/scope ownership but not optimiser state,
   RNG state, resolved configuration or dataset manifest. Resolved configuration
   is stored as a separate artifact.
