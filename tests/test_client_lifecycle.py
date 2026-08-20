@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch.multiprocessing as mp
 
+from src.schema import TrainingMode
 from src.splitfed.client import _client_worker
 from src.splitfed.controller import _cancel_training
 
@@ -56,6 +57,7 @@ def _worker_args(stop_event, ready_barrier, eval_barrier):
     training_cfg = SimpleNamespace(
         num_rounds=0,
         fed_every=1,
+        mode=TrainingMode.splitfed,
         barrier_timeout_sec=0.25,
     )
     channels = (object(), object(), object(), object())

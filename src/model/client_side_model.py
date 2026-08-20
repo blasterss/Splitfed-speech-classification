@@ -35,6 +35,9 @@ class PrivacyLayer(nn.Module):
         Applies clipping and noise injection.
         """
 
+        if not self.training:
+            return x
+
         # Optional L2 norm clipping
         if self.clip_norm:
             norm = x.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-6)

@@ -155,13 +155,36 @@ class TrainingController:
         Starts distributed training across all clients and servers.
         """
 
-        if self.cfg.training.mode is not TrainingMode.splitfed:
+        if self.cfg.training.mode is TrainingMode.centralized:
             raise NotImplementedError(
-                f"Execution for mode {self.cfg.training.mode.value} "
-                "is not implemented yet"
+                "Centralized execution is not implemented yet"
+            )
+        if (
+            self.cfg.training.mode is TrainingMode.split
+            and self.cfg.split_server.model_scope.value == "personalized"
+        ):
+            raise NotImplementedError(
+                "Personalized split execution is not implemented yet"
             )
 
-        if self.split_server is None or self.fed_server is None:
+        if (
+            self.cfg.training.mode
+            in (TrainingMode.split, TrainingMode.splitfed)
+            and self.split_server is None
+        ):
+            raise RuntimeError(
+                "SplitServer was not initialized for split mode"
+            )
+        if (
+            self.cfg.training.mode
+            in (TrainingMode.federated, TrainingMode.splitfed)
+            and self.fed_server is None
+        ):
+            raise RuntimeError(
+                "FedServer was not initialized for federated mode"
+            )
+
+        if self.split_server is None and self.fed_server is None:
             raise RuntimeError("Call setup() before start_training().")
 
         if self._manager is None:
@@ -183,8 +206,10 @@ class TrainingController:
         training_error: BaseException | None = None
 
         try:
-            self.split_server.start()
-            self.fed_server.start()
+            if self.split_server is not None:
+                self.split_server.start()
+            if self.fed_server is not None:
+                self.fed_server.start()
 
             for client_cfg in self.client_cfgs:
                 cid = client_cfg.client_id
@@ -197,10 +222,10 @@ class TrainingController:
                     args=(
                         client_cfg,
                         self.cfg.training,
-                        ch[self.SPLIT_UPLINK],
-                        ch[self.SPLIT_DOWNLINK],
-                        ch[self.FED_UPLINK],
-                        ch[self.FED_DOWNLINK],
+                        ch.get(self.SPLIT_UPLINK),
+                        ch.get(self.SPLIT_DOWNLINK),
+                        ch.get(self.FED_UPLINK),
+                        ch.get(self.FED_DOWNLINK),
                         self._stop_event,
                         ready_barrier,
                         eval_barrier,
@@ -216,7 +241,11 @@ class TrainingController:
 
             _wait_for_training_processes(
                 self._client_processes,
-                (self.split_server, self.fed_server),
+                tuple(
+                    server
+                    for server in (self.split_server, self.fed_server)
+                    if server is not None
+                ),
                 self.PROCESS_POLL_TIMEOUT,
             )
 
@@ -235,8 +264,10 @@ class TrainingController:
         finally:
             logger.info("=== TRAINING COMPLETE — stopping servers ===")
 
-            self.split_server.stop()
-            self.fed_server.stop()
+            if self.split_server is not None:
+                self.split_server.stop()
+            if self.fed_server is not None:
+                self.fed_server.stop()
 
             self._client_processes.clear()
 

@@ -148,8 +148,8 @@ Important configuration caveats:
 
 - unknown fields are rejected at every configuration level;
 - `training.mode` is typed as `centralized`, `federated`, `split` or
-  `splitfed`; mode-specific server/channel topology is validated, but only
-  `splitfed` has an execution worker in the current slice;
+  `splitfed`; mode-specific server/channel topology is validated. Execution is
+  implemented for `federated`, `split/shared` and `splitfed`;
 - `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
   `shared`, while personalized split execution is not implemented yet;
 - `training.fed_every` currently controls federated synchronization;
@@ -169,9 +169,11 @@ Important configuration caveats:
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
 scheduling. Those capabilities are planned, not part of the current runtime.
-The schema and controller setup model the planned training-mode matrix without
-creating unused roles or channels. Federated-only, centralized and split-only
-execution paths remain staged work and fail explicitly if started.
+The controller creates only mode-owned roles and channels. Federated mode trains
+and aggregates a complete `SpeechRecognitionModel`; split/shared uses only the
+client partition and one shared SplitServer; SplitFed adds client-partition
+FedAvg. Centralized and split/personalized execution remain staged work and fail
+explicitly if started.
 
 ## Running
 
@@ -252,7 +254,7 @@ differential privacy implementation**:
 - clipping is not exposed through configuration and is disabled by default;
 - no epsilon/delta accounting is performed;
 - the example noise level is too small to represent meaningful protection;
-- noise is currently also applied during evaluation;
+- configured training noise is disabled by `model.eval()`;
 - no reconstruction, membership-inference or attribute-inference evaluation is
   included.
 
@@ -316,9 +318,8 @@ tests.
 ### Evaluation and artifacts
 
 - `eval_every` is unused; evaluation occurs only after training.
-- Noise remains active in the client model during evaluation.
 - Undefined precision/recall cases are not handled explicitly.
-- Evaluation and checkpoint directories are not always created before writing.
+- Evaluation result directories are not always created before writing.
 - Checkpoints do not contain configuration, optimiser state, seed or dataset
   manifest.
 - The experiment cannot currently be resumed reliably.

@@ -1,7 +1,8 @@
 import torch
 
-from src.model.client_side_model import ClientSideModel
+from src.model.client_side_model import ClientSideModel, PrivacyLayer
 from src.model.server_side_model import ServerSideModel
+from src.model.speech_model import SpeechRecognitionModel
 from src.splitfed.fed_server import FedServer
 from src.utils.state import deserialize_state_dict, serialize_state_dict
 
@@ -75,3 +76,26 @@ def test_state_dict_bytes_round_trip_without_shared_tensor_storage():
     assert all(
         torch.equal(restored[key], value) for key, value in state_dict.items()
     )
+
+
+def test_complete_speech_model_produces_binary_logits():
+    model = SpeechRecognitionModel(
+        input_channels=3,
+        server_side_model_type="cnn_gap",
+    )
+
+    logits = model(torch.randn(2, 3, 64))
+
+    assert logits.shape == (2, 1)
+
+
+def test_privacy_noise_is_disabled_during_evaluation():
+    layer = PrivacyLayer(noise_std=1.0, noise_type="gauss")
+    inputs = torch.ones(2, 3)
+    layer.eval()
+
+    first = layer(inputs)
+    second = layer(inputs)
+
+    assert torch.equal(first, inputs)
+    assert torch.equal(second, inputs)

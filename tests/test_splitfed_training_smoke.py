@@ -4,6 +4,7 @@ import torch
 import torch.multiprocessing as mp
 
 from src.model.client_side_model import ClientSideModel
+from src.model.speech_model import SpeechRecognitionModel
 from src.schema import FedServerConfig, SplitServerConfig
 from src.splitfed.client import _extract_payload, _validate_global_update
 from src.splitfed.fed_server import _fed_server_worker
@@ -121,6 +122,46 @@ def _synthetic_client_worker(
     result_queue.put((client_id, local_steps))
 
 
+def _synthetic_federated_client_worker(
+    client_id,
+    fed_uplink,
+    fed_downlink,
+    result_queue,
+):
+    torch.set_num_threads(1)
+    torch.manual_seed(200 + int(client_id[-1]))
+    model = SpeechRecognitionModel(
+        input_channels=3,
+        server_side_model_type="cnn_gap",
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    criterion = torch.nn.BCEWithLogitsLoss()
+    model.train()
+    logits = model(torch.randn(1, 3, 64))
+    loss = criterion(logits, torch.tensor([[1.0]]))
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+
+    fed_uplink.send(
+        Message(
+            type="client_update",
+            sender=client_id,
+            round=1,
+            step=1,
+            payload={"state_dict": model.state_dict(), "dataset_size": 1},
+        )
+    )
+    update = fed_downlink.recv()
+    model.load_state_dict(
+        _validate_global_update(update, model.state_dict(), 1)
+    )
+    model.eval()
+    with torch.no_grad():
+        eval_logits = model(torch.zeros(1, 3, 64))
+    result_queue.put((client_id, tuple(eval_logits.shape)))
+
+
 def test_spawned_splitfed_training_cycle_with_unequal_client_steps():
     context = mp.get_context("spawn")
     stop_event = context.Event()
@@ -233,4 +274,73 @@ def test_spawned_splitfed_training_cycle_with_unequal_client_steps():
     assert all(not process.is_alive() for process in processes)
     assert all(process.exitcode == 0 for process in processes)
     assert deserialize_state_dict(split_payload)
+    assert deserialize_state_dict(fed_payload)
+
+
+def test_spawned_federated_cycle_uses_complete_models_without_split_server():
+    context = mp.get_context("spawn")
+    stop_event = context.Event()
+    fed_result_queue = context.Queue(maxsize=1)
+    client_result_queue = context.Queue(maxsize=2)
+    client_ids = ("client-0", "client-1")
+    channels = {
+        client_id: {
+            "uplink": SpawnQueueChannel(context),
+            "downlink": SpawnQueueChannel(context),
+        }
+        for client_id in client_ids
+    }
+    fed_config = FedServerConfig(
+        strategy="fedavg",
+        seed=42,
+        device="cpu",
+        aggregation_freq=1,
+        min_clients=2,
+        quorum_timeout_sec=10,
+        federated_uplink_channel="federated_uplink",
+        federated_downlink_channel="federated_downlink",
+    )
+    server = context.Process(
+        target=_fed_server_worker,
+        args=(fed_config, channels, 2, stop_event, fed_result_queue),
+        name="FederatedSmokeServer",
+    )
+    clients = [
+        context.Process(
+            target=_synthetic_federated_client_worker,
+            args=(
+                client_id,
+                channels[client_id]["uplink"],
+                channels[client_id]["downlink"],
+                client_result_queue,
+            ),
+            name=f"FederatedSmoke-{client_id}",
+        )
+        for client_id in client_ids
+    ]
+
+    try:
+        server.start()
+        for client in clients:
+            client.start()
+        for client in clients:
+            client.join(timeout=30)
+        assert all(not client.is_alive() for client in clients)
+        assert all(client.exitcode == 0 for client in clients)
+        results = {client_result_queue.get(timeout=2) for _ in clients}
+        assert results == {("client-0", (1, 1)), ("client-1", (1, 1))}
+    finally:
+        stop_event.set()
+        fed_payload = fed_result_queue.get(timeout=10)
+        server.join(timeout=10)
+        if server.is_alive():
+            server.terminate()
+            server.join(timeout=5)
+        for client in clients:
+            if client.is_alive():
+                client.terminate()
+                client.join(timeout=5)
+
+    assert not server.is_alive()
+    assert server.exitcode == 0
     assert deserialize_state_dict(fed_payload)

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from src.schema import TrainingMode
 from src.splitfed.client import (
     Client,
     _extract_payload,
@@ -116,6 +117,7 @@ class RecordingChannel:
 def test_client_treats_correlated_split_error_as_fatal():
     client = Client.__new__(Client)
     client.client_id = "client-0"
+    client.mode = TrainingMode.splitfed
     client.device = torch.device("cpu")
     client.cfg = SimpleNamespace(runtime=SimpleNamespace(local_steps=1))
     client.model = torch.nn.Linear(1, 1)
@@ -134,3 +136,20 @@ def test_client_treats_correlated_split_error_as_fatal():
 
     with pytest.raises(RuntimeError, match="invalid split gradient"):
         client.train_one_round(1)
+
+
+def test_federated_client_trains_complete_model_without_split_channels():
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.mode = TrainingMode.federated
+    client.device = torch.device("cpu")
+    client.cfg = SimpleNamespace(runtime=SimpleNamespace(local_steps=1))
+    client.model = torch.nn.Linear(2, 1)
+    client.criterion = torch.nn.BCEWithLogitsLoss()
+    client.optimizer = torch.optim.SGD(client.model.parameters(), lr=0.1)
+    client.train_loader = [(torch.ones(2, 2), torch.tensor([0.0, 1.0]))]
+    initial_weight = client.model.weight.detach().clone()
+
+    client.train_one_round(1)
+
+    assert not torch.equal(client.model.weight.detach(), initial_weight)

@@ -47,6 +47,7 @@ def main():
 
             experiment_name = config.experiment.name
             model_path = model_path / experiment_name
+            model_path.mkdir(parents=True, exist_ok=True)
             if controller.split_server is not None:
                 try:
                     controller.split_server.save(model_path)

@@ -1,20 +1,15 @@
 import torch
 import torch.optim as optim
+from sklearn.metrics import f1_score, precision_score, recall_score
 from torch.utils.data import DataLoader
-import torch.multiprocessing as mp
-
-from typing import Dict, Optional
 
 from ..dataset.dataset import ConflictEmotionalDataset
-from ..model.client_side_model import ClientSideModel
-from ..transport.base import Channel, Message
-from ..schema import ClientConfig, TrainingConfig
-from ..utils.training import set_seed
-
 from ..logger import logger
-
-from sklearn.metrics import f1_score, precision_score, recall_score
-from torch.utils.data import WeightedRandomSampler
+from ..model.client_side_model import ClientSideModel
+from ..model.speech_model import SpeechRecognitionModel
+from ..schema import ClientConfig, TrainingConfig, TrainingMode
+from ..transport.base import Channel, Message
+from ..utils.training import set_seed
 
 logger = logger.getChild("Client")
 
@@ -39,24 +34,17 @@ class Client:
         split_downlink_channel: Channel,
         fed_uplink_channel: Channel,
         fed_downlink_channel: Channel,
+        mode: TrainingMode = TrainingMode.splitfed,
     ):
         self.cfg = cfg
         self.client_id = cfg.client_id
         self.device = torch.device(cfg.runtime.device)
+        self.mode = mode
 
         # ==== DATASET ====
         self.dataset = ConflictEmotionalDataset(cfg.dataset)
 
         _pin = self.device.type == "cuda"
-
-        sample_weights = self.dataset.get_sample_weights()
-
-        # NOTE: sampler is defined but currently not used in DataLoader
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True,
-        )
 
         g = torch.Generator()
         g.manual_seed(self.cfg.runtime.seed)
@@ -79,16 +67,28 @@ class Client:
 
         if len(self.dataset.test_dataset) == 0:
             logger.warning(
-                "Client %s: test dataset is empty — evaluate() will return zero metrics.",
+                "Client %s: test dataset is empty — evaluate() will "
+                "return zero metrics.",
                 cfg.client_id,
             )
 
         # ==== CLIENT MODEL ====
-        self.model = ClientSideModel(
-            input_channels=self.dataset.train_dataset.data.shape[1],
-            noise_std=cfg.noise.std if cfg.noise else 0.0,
-            noise_type=cfg.noise.type if cfg.noise else None,
-        ).to(self.device)
+        input_channels = self.dataset.train_dataset.data.shape[1]
+        if mode is TrainingMode.federated:
+            self.model = SpeechRecognitionModel(
+                input_channels=input_channels,
+                server_side_model_type="cnn_birnn",
+                noise_std=cfg.noise.std if cfg.noise else 0.0,
+                noise_type=cfg.noise.type if cfg.noise else None,
+            ).to(self.device)
+            self.criterion = torch.nn.BCEWithLogitsLoss().to(self.device)
+        else:
+            self.model = ClientSideModel(
+                input_channels=input_channels,
+                noise=cfg.noise is not None,
+                noise_std=cfg.noise.std if cfg.noise else 0.0,
+                noise_type=cfg.noise.type if cfg.noise else "gauss",
+            ).to(self.device)
 
         self.optimizer = self._build_optimizer()
 
@@ -119,6 +119,10 @@ class Client:
         """
 
         self.model.train()
+
+        if self.mode is TrainingMode.federated:
+            self._train_federated_round()
+            return
 
         last_step = 0
         for step, (x, y) in enumerate(self.train_loader, start=1):
@@ -182,10 +186,25 @@ class Client:
             )
         )
 
+    def _train_federated_round(self) -> None:
+        for step, (x, y) in enumerate(self.train_loader, start=1):
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True).float().reshape(-1, 1)
+            logits = self.model(x)
+            if logits.shape != y.shape:
+                raise RuntimeError(
+                    f"Federated client {self.client_id}: logits/labels shape "
+                    f"mismatch {logits.shape} != {y.shape}"
+                )
+            loss = self.criterion(logits, y)
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            if step >= self.cfg.runtime.local_steps:
+                break
+
     def federative_aggregate(self, round: int) -> None:
-        """
-        Sends local model parameters to federated server and receives updated global weights.
-        """
+        """Exchange local parameters for validated global weights."""
 
         msg = Message(
             type="client_update",
@@ -217,7 +236,7 @@ class Client:
         )
 
     @torch.no_grad()
-    def evaluate(self, round: int = 0) -> Dict[str, float]:
+    def evaluate(self, round: int = 0) -> dict[str, float]:
         """
         Evaluates model on local test set.
 
@@ -245,40 +264,42 @@ class Client:
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
 
-            activations = self.model(x)
+            if self.mode is TrainingMode.federated:
+                logits = self.model(x).reshape(-1)
+            else:
+                activations = self.model(x)
 
-            # Send activations for server-side inference
-            self.to_server.send(
-                Message(
-                    type="eval_step",
-                    sender=self.client_id,
-                    round=round,
-                    step=step,
-                    payload={
-                        "activations": activations.cpu(),
-                        "labels": y.cpu(),
-                    },
+                # Send activations for server-side inference
+                self.to_server.send(
+                    Message(
+                        type="eval_step",
+                        sender=self.client_id,
+                        round=round,
+                        step=step,
+                        payload={
+                            "activations": activations.cpu(),
+                            "labels": y.cpu(),
+                        },
+                    )
                 )
-            )
+                response = self.from_server.recv()
 
-            response = self.from_server.recv()
-
-            logits = _extract_payload(
-                response,
-                "logits",
-                "logits",
-                self.client_id,
-                round,
-                step,
-            )
-
-            if logits is None:
-                raise RuntimeError(
-                    f"Client {self.client_id}: invalid split evaluation "
-                    f"response for round={round} step={step}"
+                logits = _extract_payload(
+                    response,
+                    "logits",
+                    "logits",
+                    self.client_id,
+                    round,
+                    step,
                 )
 
-            logits = logits.to(self.device).reshape(-1)
+                if logits is None:
+                    raise RuntimeError(
+                        f"Client {self.client_id}: invalid split evaluation "
+                        f"response for round={round} step={step}"
+                    )
+
+                logits = logits.to(self.device).reshape(-1)
 
             probs = torch.sigmoid(logits)
             preds = (probs > 0.5).long()
@@ -329,13 +350,13 @@ class Client:
 
 
 def _extract_payload(
-    response: Optional[Message],
+    response: Message | None,
     key: str,
     expected_type: str,
     client_id: str,
     round: int,
     step: int,
-) -> Optional[object]:
+) -> object | None:
     """
     Safely extracts a tensor from server response payload.
     """
@@ -468,6 +489,7 @@ def _client_worker(
             split_downlink_channel=split_downlink,
             fed_uplink_channel=fed_uplink,
             fed_downlink_channel=fed_downlink,
+            mode=training_cfg.mode,
         )
 
         logger.info(
@@ -489,7 +511,11 @@ def _client_worker(
             last_round = round_idx
             client.train_one_round(round_idx)
 
-            if round_idx % training_cfg.fed_every == 0:
+            if (
+                training_cfg.mode
+                in (TrainingMode.federated, TrainingMode.splitfed)
+                and round_idx % training_cfg.fed_every == 0
+            ):
                 client.federative_aggregate(round_idx)
 
         logger.info(
