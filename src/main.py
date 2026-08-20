@@ -47,15 +47,19 @@ def main():
 
             experiment_name = config.experiment.name
             model_path = model_path / experiment_name
-            try:
-                controller.split_server.save(model_path)
-            except RuntimeError as e:
-                logger.warning("Could not save split-server weights: %s", e)
+            if controller.split_server is not None:
+                try:
+                    controller.split_server.save(model_path)
+                except RuntimeError as e:
+                    logger.warning(
+                        "Could not save split-server weights: %s", e
+                    )
 
-            try:
-                controller.fed_server.save(model_path)
-            except RuntimeError as e:
-                logger.warning("Could not save fed-server weights: %s", e)
+            if controller.fed_server is not None:
+                try:
+                    controller.fed_server.save(model_path)
+                except RuntimeError as e:
+                    logger.warning("Could not save fed-server weights: %s", e)
 
 
 if __name__ == "__main__":

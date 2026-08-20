@@ -7,6 +7,7 @@ experiment:
   seed: &seed 42
 
 training:
+  mode: splitfed
   num_rounds: 89
   seed: *seed
   eval_every: 4
@@ -73,6 +74,7 @@ clients:
       std: 1e-10
 
 split_server:
+  model_scope: shared
   model:
     pos_weight: 3
     optimizer: adam

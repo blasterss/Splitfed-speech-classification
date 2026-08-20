@@ -160,6 +160,11 @@ workflow are still missing.
 ## Configuration invariants
 
 - Unknown fields are rejected in root and nested configuration models.
+- `training.mode` selects mode-specific server and channel requirements.
+  Controller setup creates only those roles; execution is currently available
+  only for `splitfed`, and other modes fail explicitly rather than partially.
+- `split_server.model_scope` supports `shared` and `personalized` in the schema;
+  SplitFed requires `shared` and personalized execution remains planned.
 - The root field is `models_save_path` (plural), not `model_save_path`.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.

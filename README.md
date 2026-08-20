@@ -147,6 +147,11 @@ there. The example expects the downloaded datasets in `../datasets`.
 Important configuration caveats:
 
 - unknown fields are rejected at every configuration level;
+- `training.mode` is typed as `centralized`, `federated`, `split` or
+  `splitfed`; mode-specific server/channel topology is validated, but only
+  `splitfed` has an execution worker in the current slice;
+- `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
+  `shared`, while personalized split execution is not implemented yet;
 - `training.fed_every` currently controls federated synchronization;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
@@ -164,8 +169,9 @@ Important configuration caveats:
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
 scheduling. Those capabilities are planned, not part of the current runtime.
-The planned training-mode matrix also includes federated-only training and
-split-only training with either a shared or personalized server model.
+The schema and controller setup model the planned training-mode matrix without
+creating unused roles or channels. Federated-only, centralized and split-only
+execution paths remain staged work and fail explicitly if started.
 
 ## Running
 

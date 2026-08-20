@@ -1,7 +1,7 @@
 import torch.multiprocessing as mp
 
 from ..logger import get_logger
-from ..schema import ConfigSchema
+from ..schema import ConfigSchema, TrainingMode
 from ..transport.base import ChannelFactory
 from .client import Client, _client_worker
 from .fed_server import FedServer
@@ -75,12 +75,17 @@ class TrainingController:
         Creates per-client communication channels.
         """
 
-        required = {
-            self.SPLIT_UPLINK,
-            self.SPLIT_DOWNLINK,
-            self.FED_UPLINK,
-            self.FED_DOWNLINK,
-        }
+        required = set()
+        if self.cfg.training.mode in (
+            TrainingMode.split,
+            TrainingMode.splitfed,
+        ):
+            required.update({self.SPLIT_UPLINK, self.SPLIT_DOWNLINK})
+        if self.cfg.training.mode in (
+            TrainingMode.federated,
+            TrainingMode.splitfed,
+        ):
+            required.update({self.FED_UPLINK, self.FED_DOWNLINK})
 
         for client_cfg in self.cfg.clients:
             cid = client_cfg.client_id
@@ -112,43 +117,49 @@ class TrainingController:
         Initializes SplitServer and FedServer instances.
         """
 
-        split_channels = {
-            cid: {
-                "uplink": self.channels[cid][self.SPLIT_UPLINK],
-                "downlink": self.channels[cid][self.SPLIT_DOWNLINK],
+        if self.cfg.split_server is not None:
+            split_channels = {
+                cid: {
+                    "uplink": self.channels[cid][self.SPLIT_UPLINK],
+                    "downlink": self.channels[cid][self.SPLIT_DOWNLINK],
+                }
+                for cid in self.channels
             }
-            for cid in self.channels
-        }
+            self.split_server = SplitServer(
+                config=self.cfg.split_server,
+                client_channels=split_channels,
+                stop_event=self._stop_event,
+            )
 
-        self.split_server = SplitServer(
-            config=self.cfg.split_server,
-            client_channels=split_channels,
-            stop_event=self._stop_event,
-        )
+            logger.info("SplitServer initialised")
 
-        logger.info("SplitServer initialised")
-
-        fed_channels = {
-            cid: {
-                "uplink": self.channels[cid][self.FED_UPLINK],
-                "downlink": self.channels[cid][self.FED_DOWNLINK],
+        if self.cfg.fed_server is not None:
+            fed_channels = {
+                cid: {
+                    "uplink": self.channels[cid][self.FED_UPLINK],
+                    "downlink": self.channels[cid][self.FED_DOWNLINK],
+                }
+                for cid in self.channels
             }
-            for cid in self.channels
-        }
+            self.fed_server = FedServer(
+                config=self.cfg.fed_server,
+                client_channels=fed_channels,
+                num_clients=len(self.cfg.clients),
+                stop_event=self._stop_event,
+            )
 
-        self.fed_server = FedServer(
-            config=self.cfg.fed_server,
-            client_channels=fed_channels,
-            num_clients=len(self.cfg.clients),
-            stop_event=self._stop_event,
-        )
-
-        logger.info("FedServer initialised")
+            logger.info("FedServer initialised")
 
     def start_training(self) -> None:
         """
         Starts distributed training across all clients and servers.
         """
+
+        if self.cfg.training.mode is not TrainingMode.splitfed:
+            raise NotImplementedError(
+                f"Execution for mode {self.cfg.training.mode.value} "
+                "is not implemented yet"
+            )
 
         if self.split_server is None or self.fed_server is None:
             raise RuntimeError("Call setup() before start_training().")

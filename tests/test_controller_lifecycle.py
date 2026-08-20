@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from src.schema import ConfigSchema
+from src.schema import ConfigSchema, TrainingMode
 from src.splitfed.controller import (
     TrainingController,
     _cancel_training,
@@ -153,6 +153,67 @@ def test_config_rejects_unknown_fields(tmp_path, path, unknown_key):
         ConfigSchema(**raw)
 
 
+def test_federated_mode_rejects_split_server_and_split_channels(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "federated"
+
+    with pytest.raises(ValidationError, match="split_server"):
+        ConfigSchema(**raw)
+
+
+def test_federated_mode_accepts_only_federated_topology(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "federated"
+    raw["split_server"] = None
+    raw["channels"].pop("split_uplink")
+    raw["channels"].pop("split_downlink")
+
+    config = ConfigSchema(**raw)
+
+    assert config.split_server is None
+
+
+def test_federated_setup_creates_only_federated_channels_and_server(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "federated"
+    raw["split_server"] = None
+    raw["channels"].pop("split_uplink")
+    raw["channels"].pop("split_downlink")
+    controller = TrainingController(ConfigSchema(**raw))
+
+    controller.setup()
+
+    assert set(controller.channels[0]) == {
+        "federated_uplink",
+        "federated_downlink",
+    }
+    assert controller.split_server is None
+    assert controller.fed_server is not None
+    controller.teardown()
+
+
+def test_split_personalized_rejects_federated_server_and_channels(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["mode"] = "split"
+    raw["split_server"]["model_scope"] = "personalized"
+    raw["fed_server"] = None
+    raw["channels"].pop("federated_uplink")
+    raw["channels"].pop("federated_downlink")
+
+    config = ConfigSchema(**raw)
+
+    assert config.split_server.model_scope.value == "personalized"
+    assert config.fed_server is None
+
+
+def test_splitfed_rejects_personalized_server_scope(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["split_server"]["model_scope"] = "personalized"
+
+    with pytest.raises(ValidationError, match="shared"):
+        ConfigSchema(**raw)
+
+
 class FakeProcess:
     def __init__(self, name, exitcode):
         self.name = name
@@ -296,7 +357,9 @@ def test_start_training_cancels_barriers_when_client_spawn_fails(monkeypatch):
     split_server = LifecycleServer()
     fed_server = LifecycleServer()
     controller = TrainingController.__new__(TrainingController)
-    controller.cfg = SimpleNamespace(training=object())
+    controller.cfg = SimpleNamespace(
+        training=SimpleNamespace(mode=TrainingMode.splitfed)
+    )
     controller.client_cfgs = [SimpleNamespace(client_id=0)]
     controller.split_server = split_server
     controller.fed_server = fed_server

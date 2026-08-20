@@ -45,6 +45,18 @@ class AggregationStrategy(str, Enum):
     weighted_fedavg = "weighted_fedavg"
 
 
+class TrainingMode(str, Enum):
+    centralized = "centralized"
+    federated = "federated"
+    split = "split"
+    splitfed = "splitfed"
+
+
+class ServerModelScope(str, Enum):
+    shared = "shared"
+    personalized = "personalized"
+
+
 class FeatureType(str, Enum):
     """Types of extracted features."""
 
@@ -312,6 +324,8 @@ class SplitServerConfig(StrictConfigModel):
         description="Server-side model configuration."
     )
 
+    model_scope: ServerModelScope = Field(default=ServerModelScope.shared)
+
     seed: int = Field(
         description="Seed for server-side randomness (e.g., client sampling)."
     )
@@ -382,6 +396,8 @@ class TrainingConfig(StrictConfigModel):
         gt=0, description="Total number of training rounds."
     )
 
+    mode: TrainingMode = Field(default=TrainingMode.splitfed)
+
     seed: int = Field(description="Seed for experiment reproducibility.")
 
     eval_every: int = Field(
@@ -449,12 +465,12 @@ class ConfigSchema(StrictConfigModel):
         description="List of client configurations.",
     )
 
-    split_server: SplitServerConfig = Field(
-        description="Split-learning server configuration."
+    split_server: Optional[SplitServerConfig] = Field(
+        default=None, description="Split-learning server configuration."
     )
 
-    fed_server: FedServerConfig = Field(
-        description="Federated server configuration."
+    fed_server: Optional[FedServerConfig] = Field(
+        default=None, description="Federated server configuration."
     )
 
     channels: Dict[str, Union[QueueChannelConfig, GRPCChannelConfig]] = Field(
@@ -467,17 +483,60 @@ class ConfigSchema(StrictConfigModel):
         if len(client_ids) != len(set(client_ids)):
             raise ValueError("Client IDs must be unique")
 
-        if self.fed_server.min_clients > len(self.clients):
+        mode = self.training.mode
+        needs_split = mode in (TrainingMode.split, TrainingMode.splitfed)
+        needs_fed = mode in (TrainingMode.federated, TrainingMode.splitfed)
+
+        if needs_split != (self.split_server is not None):
+            requirement = "required" if needs_split else "not allowed"
+            raise ValueError(
+                f"split_server is {requirement} for mode {mode.value}"
+            )
+        if needs_fed != (self.fed_server is not None):
+            requirement = "required" if needs_fed else "not allowed"
+            raise ValueError(
+                f"fed_server is {requirement} for mode {mode.value}"
+            )
+
+        if (
+            mode is TrainingMode.splitfed
+            and self.split_server.model_scope is not ServerModelScope.shared
+        ):
+            raise ValueError("splitfed requires shared server model scope")
+
+        if self.fed_server and self.fed_server.min_clients > len(self.clients):
             raise ValueError(
                 "fed_server.min_clients cannot exceed client count"
             )
 
-        channel_references = {
-            self.split_server.split_uplink_channel,
-            self.split_server.split_downlink_channel,
-            self.fed_server.federated_uplink_channel,
-            self.fed_server.federated_downlink_channel,
-        }
+        required_channels = set()
+        channel_references = set()
+        if self.split_server:
+            required_channels.update({"split_uplink", "split_downlink"})
+            channel_references.update(
+                {
+                    self.split_server.split_uplink_channel,
+                    self.split_server.split_downlink_channel,
+                }
+            )
+        if self.fed_server:
+            required_channels.update(
+                {"federated_uplink", "federated_downlink"}
+            )
+            channel_references.update(
+                {
+                    self.fed_server.federated_uplink_channel,
+                    self.fed_server.federated_downlink_channel,
+                }
+            )
+
+        configured_channels = set(self.channels)
+        if configured_channels != required_channels:
+            raise ValueError(
+                f"Mode {mode.value} requires exactly channels "
+                f"{sorted(required_channels)}"
+            )
+
         missing_channels = channel_references - self.channels.keys()
         if missing_channels:
             missing = ", ".join(sorted(missing_channels))
