@@ -160,7 +160,8 @@ workflow are still missing.
 ## Configuration invariants
 
 - The root field is `models_save_path` (plural), not `model_save_path`.
-- Every client ID should be unique, although the schema does not enforce it.
+- Client IDs must be unique. Server channel references and `min_clients` versus
+  configured client count are validated before controller setup.
 - Every client needs all four fixed channel names:
   `split_uplink`, `split_downlink`, `federated_uplink`, and
   `federated_downlink`.

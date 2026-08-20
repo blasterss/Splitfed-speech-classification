@@ -1,6 +1,8 @@
+import copy
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from src.schema import ConfigSchema
 from src.splitfed.controller import (
@@ -106,6 +108,30 @@ def test_controller_setup_and_teardown_manage_runtime_resources(tmp_path):
     controller.teardown()
 
     assert controller._manager is None
+
+
+def test_config_rejects_duplicate_client_ids_before_setup(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["clients"].append(copy.deepcopy(raw["clients"][0]))
+
+    with pytest.raises(ValidationError, match="Client IDs must be unique"):
+        ConfigSchema(**raw)
+
+
+def test_config_rejects_quorum_larger_than_client_count(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["fed_server"]["min_clients"] = 2
+
+    with pytest.raises(ValidationError, match="min_clients"):
+        ConfigSchema(**raw)
+
+
+def test_config_rejects_missing_server_channel_reference(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["channels"].pop("split_uplink")
+
+    with pytest.raises(ValidationError, match="split_uplink"):
+        ConfigSchema(**raw)
 
 
 class FakeProcess:

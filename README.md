@@ -153,7 +153,8 @@ Important configuration caveats:
   honoured by the worker;
 - channel names stored inside server configuration are not used by the
   controller, which relies on fixed names;
-- client IDs must be unique, although the schema does not yet enforce this.
+- client IDs must be unique; referenced server channels and feasible client
+  quorum are validated before controller setup.
 
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client
@@ -278,8 +279,8 @@ tests.
 ### Messages and aggregation
 
 - Client responses are not validated against sender, type, round and step.
-- Federated responses are passed directly to `load_state_dict`.
-- Payload shapes, dtypes and state-dict schemas are not validated.
+- Federated client/global updates validate sender, type, round, step, keys,
+  tensor shapes and dtypes before aggregation or `load_state_dict`.
 - `min_clients`, aggregation strategy and aggregation frequency are configured
   but not fully honoured by the worker.
 - Metrics are logged locally and are not collected by the federated worker.
@@ -321,7 +322,7 @@ tests.
 
 - normalise package imports and add a stable module/console entry point;
 - reject unknown configuration fields;
-- validate unique clients, channel references, paths and CUDA availability;
+- validate CUDA availability;
 - create artifact directories centrally;
 - save the resolved configuration and environment metadata per run.
 

@@ -9,7 +9,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Union
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================================
@@ -423,7 +423,8 @@ class ConfigSchema(BaseModel):
     )
 
     clients: List[ClientConfig] = Field(
-        description="List of client configurations."
+        min_length=1,
+        description="List of client configurations.",
     )
 
     split_server: SplitServerConfig = Field(
@@ -437,3 +438,29 @@ class ConfigSchema(BaseModel):
     channels: Dict[str, Union[QueueChannelConfig, GRPCChannelConfig]] = Field(
         description="Dictionary of communication channels used in the system."
     )
+
+    @model_validator(mode="after")
+    def validate_topology(self):
+        client_ids = [client.client_id for client in self.clients]
+        if len(client_ids) != len(set(client_ids)):
+            raise ValueError("Client IDs must be unique")
+
+        if self.fed_server.min_clients > len(self.clients):
+            raise ValueError(
+                "fed_server.min_clients cannot exceed client count"
+            )
+
+        channel_references = {
+            self.split_server.split_uplink_channel,
+            self.split_server.split_downlink_channel,
+            self.fed_server.federated_uplink_channel,
+            self.fed_server.federated_downlink_channel,
+        }
+        missing_channels = channel_references - self.channels.keys()
+        if missing_channels:
+            missing = ", ".join(sorted(missing_channels))
+            raise ValueError(
+                f"Undefined server channel reference(s): {missing}"
+            )
+
+        return self
