@@ -82,7 +82,11 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     artifact_path = tmp_path / "run"
     artifact_path.mkdir()
 
-    _save_run_metadata(config, artifact_path)
+    _save_run_metadata(
+        config,
+        artifact_path,
+        cli_overrides=["training.num_rounds=1"],
+    )
 
     metadata = read_yaml(artifact_path / "run_metadata.yaml")
     assert metadata["seed_tree"] == {
@@ -95,4 +99,7 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     assert metadata["environment"]["python"]
     assert metadata["environment"]["pytorch"]
     assert isinstance(metadata["environment"]["cuda_available"], bool)
+    assert metadata["configuration"]["cli_overrides"] == [
+        "training.num_rounds=1"
+    ]
     assert metadata["created_at_utc"].endswith("+00:00")

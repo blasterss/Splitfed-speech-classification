@@ -111,6 +111,11 @@ uv run secureasr --config-file configs/config.yaml
 uv run python -m src.main --config-file configs/config.yaml
 ```
 
+Use repeatable `--set PATH=VALUE` arguments for typed YAML-value overrides of
+existing fields (including numeric list indices such as
+`clients.0.runtime.batch_size`). Unknown paths are rejected before process
+creation, and applied overrides are recorded in `run_metadata.yaml`.
+
 Create local configuration and output directories:
 
 ```bash

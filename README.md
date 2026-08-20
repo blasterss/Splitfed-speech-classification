@@ -211,6 +211,16 @@ The equivalent module invocation is:
 uv run python -m src.main --config-file configs/config.yaml
 ```
 
+Existing configuration values can be overridden with repeatable, typed
+`--set PATH=VALUE` arguments. Values use YAML scalar/list syntax and unknown
+paths are rejected before controller setup, for example:
+
+```bash
+uv run secureasr --config-file configs/config.yaml \
+  --set training.num_rounds=1 \
+  --set clients.0.dataset.reduced=true
+```
+
 Start with reduced datasets and a small number of rounds. A full CUDA run should
 only be attempted after all clients load successfully and a one-round smoke test
 has completed.
@@ -222,7 +232,8 @@ Expected generated artifacts include:
 - centralized, server and global client checkpoints under the configured model
   directory;
 - the validated `resolved_config.yaml` beside model checkpoints.
-- `run_metadata.yaml` with environment provenance and the configured seed tree.
+- `run_metadata.yaml` with environment provenance, the configured seed tree,
+  and the applied CLI overrides.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes
