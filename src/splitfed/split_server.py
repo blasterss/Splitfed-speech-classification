@@ -12,6 +12,7 @@ from ..logger import logger
 from ..model.server_side_model import ServerSideModel
 from ..schema import ServerModelScope, SplitServerConfig
 from ..transport.base import Channel, Message
+from ..utils.checkpoint import save_checkpoint
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
 from ..utils.training_stats import _RoundStats
@@ -126,13 +127,24 @@ class SplitServer:
         if self.config.model_scope is ServerModelScope.personalized:
             for client_id, client_state in state_dict.items():
                 save_path = Path(path) / f"split_server_client_{client_id}.pt"
-                torch.save(client_state, save_path)
+                save_checkpoint(
+                    save_path,
+                    mode=getattr(self, "training_mode", "split"),
+                    server_model_scope="personalized",
+                    client_id=client_id,
+                    model_state_dict=client_state,
+                )
                 logger.info(
                     "Personalized SplitServer model saved to '%s'", save_path
                 )
         else:
             save_path = Path(path) / "split_server.pt"
-            torch.save(state_dict, save_path)
+            save_checkpoint(
+                save_path,
+                mode=getattr(self, "training_mode", "splitfed"),
+                server_model_scope="shared",
+                model_state_dict=state_dict,
+            )
             logger.info("SplitServer model saved to '%s'", save_path)
 
 

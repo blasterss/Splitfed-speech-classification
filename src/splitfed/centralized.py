@@ -10,6 +10,7 @@ from ..dataset.dataset import ConflictEmotionalDataset
 from ..logger import logger
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ConfigSchema
+from ..utils.checkpoint import save_checkpoint
 from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..utils.training import set_seed
 
@@ -102,7 +103,11 @@ class CentralizedTrainer:
 
     def save(self, path: str | Path) -> None:
         save_path = Path(path) / "centralized_model.pt"
-        torch.save(self.get_state_dict(), save_path)
+        save_checkpoint(
+            save_path,
+            mode="centralized",
+            model_state_dict=self.get_state_dict(),
+        )
         logger.info("Centralized model saved to '%s'", save_path)
 
 

@@ -137,6 +137,7 @@ class TrainingController:
                 client_channels=split_channels,
                 stop_event=self._stop_event,
             )
+            self.split_server.training_mode = self.cfg.training.mode.value
 
             logger.info("SplitServer initialised")
 
@@ -154,6 +155,7 @@ class TrainingController:
                 num_clients=len(self.cfg.clients),
                 stop_event=self._stop_event,
             )
+            self.fed_server.training_mode = self.cfg.training.mode.value
 
             logger.info("FedServer initialised")
 

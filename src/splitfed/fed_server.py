@@ -2,16 +2,16 @@ import copy
 import queue
 import time
 from pathlib import Path
+
 import torch
 import torch.multiprocessing as mp
 
-from ..transport.base import Channel, Message
-from ..utils.training import set_seed
-from ..utils.state import deserialize_state_dict, serialize_state_dict
-from ..schema import FedServerConfig
 from ..logger import logger
-
-from typing import Dict, List, Optional, Tuple
+from ..schema import FedServerConfig
+from ..transport.base import Channel, Message
+from ..utils.checkpoint import save_checkpoint
+from ..utils.state import deserialize_state_dict, serialize_state_dict
+from ..utils.training import set_seed
 
 
 class FedServer:
@@ -31,7 +31,7 @@ class FedServer:
     def __init__(
         self,
         config: FedServerConfig,
-        client_channels: Dict[str, Dict[str, Channel]],
+        client_channels: dict[str, dict[str, Channel]],
         num_clients: int,
         stop_event=None,
     ):
@@ -43,7 +43,7 @@ class FedServer:
 
         # Stores final aggregated model after shutdown
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
-        self._process: Optional[mp.Process] = None
+        self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
 
@@ -88,7 +88,8 @@ class FedServer:
 
             if self._process.is_alive():
                 logger.warning(
-                    "FedServer worker did not exit within timeout — terminating."
+                    "FedServer worker did not exit within timeout — "
+                    "terminating."
                 )
 
                 self._process.terminate()
@@ -126,7 +127,7 @@ class FedServer:
             raise RuntimeError(
                 "No state_dict available. Ensure stop() was called and "
                 "aggregation completed successfully."
-            )
+            ) from None
 
     def save(self, path: str) -> None:
         """
@@ -135,14 +136,18 @@ class FedServer:
         save_path = Path(path) / "global_client_model.pt"
         state_dict = self.get_state_dict()
 
-        torch.save(state_dict, save_path)
+        save_checkpoint(
+            save_path,
+            mode=getattr(self, "training_mode", "splitfed"),
+            model_state_dict=state_dict,
+        )
 
         logger.info("FedServer global model saved to '%s'", save_path)
 
     @staticmethod
     def aggregate(
-        client_params_list: List[dict],
-        client_sizes: List[int],
+        client_params_list: list[dict],
+        client_sizes: list[int],
     ) -> dict:
         """
         Performs Federated Averaging (FedAvg).
@@ -185,8 +190,8 @@ class FedServer:
 
     @staticmethod
     def aggregate_metrics(
-        eval_metrics: List[Tuple[int, Dict[str, float]]],
-    ) -> Dict[str, float]:
+        eval_metrics: list[tuple[int, dict[str, float]]],
+    ) -> dict[str, float]:
         """
         Computes weighted average of evaluation metrics across clients.
         """
@@ -207,7 +212,7 @@ class FedServer:
 
 def _fed_server_worker(
     config: FedServerConfig,
-    client_channels: Dict[str, Dict[str, Channel]],
+    client_channels: dict[str, dict[str, Channel]],
     num_clients: int,
     stop_event,
     result_queue: mp.Queue,
@@ -222,11 +227,11 @@ def _fed_server_worker(
 
     logger.info("FedServer worker ready, serving clients: %s", client_ids)
 
-    latest_params: Optional[dict] = None
+    latest_params: dict | None = None
     latest_round: int = 1
 
-    updates: Dict[str, dict] = {}
-    sizes: Dict[str, int] = {}
+    updates: dict[str, dict] = {}
+    sizes: dict[str, int] = {}
     active_round: int | None = None
     last_completed_round = 0
     expected_schema = None
@@ -256,7 +261,8 @@ def _fed_server_worker(
                         expected_schema=None,
                     )
                     logger.info(
-                        "Discarding late update from %s for completed round %d",
+                        "Discarding late update from %s for completed "
+                        "round %d",
                         client_id,
                         msg.round,
                     )

@@ -172,6 +172,9 @@ workflow are still missing.
 - The root field is `models_save_path` (plural), not `model_save_path`.
 - Runs with `models_save_path` persist the validated JSON-compatible
   `resolved_config.yaml` beside model checkpoints.
+- Model checkpoint schema v1 is written atomically and records mode, server
+  scope and personalized client identity. Loading validates ownership, keys,
+  shapes and dtypes; optimizer/RNG resume is not implemented yet.
 - Client IDs must be unique. Server channel references and `min_clients` versus
   configured client count are validated before controller setup.
 - Every client needs all four fixed channel names:
@@ -237,9 +240,7 @@ that start method explicitly.
 - Padding zeros can affect normalization statistics.
 - Actor split uses a hard-coded random state rather than the configured seed.
 - Class coverage is not validated before training.
-- A weighted sampler is created but not used by the training loader.
-- Noise is currently active during evaluation.
-- Precision and recall edge cases are not handled explicitly.
+- Client training currently shuffles without class-balanced sampling.
 - Checkpoint metadata does not include full configuration, seed, or optimizer
   state.
 - `GrpcChannel` and message byte serialization are unimplemented.

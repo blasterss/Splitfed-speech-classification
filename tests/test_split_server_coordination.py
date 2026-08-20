@@ -206,8 +206,16 @@ def test_personalized_server_saves_one_checkpoint_per_client(tmp_path):
     second = torch.load(
         tmp_path / "split_server_client_client-1.pt", weights_only=True
     )
-    assert torch.equal(first["weight"], torch.tensor([0.0]))
-    assert torch.equal(second["weight"], torch.tensor([1.0]))
+    assert first["mode"] == "split"
+    assert first["server_model_scope"] == "personalized"
+    assert first["client_id"] == "client-0"
+    assert second["client_id"] == "client-1"
+    assert torch.equal(
+        first["model_state_dict"]["weight"], torch.tensor([0.0])
+    )
+    assert torch.equal(
+        second["model_state_dict"]["weight"], torch.tensor([1.0])
+    )
 
 
 def test_parallel_client_gradient_uses_full_batch_loss():

@@ -208,6 +208,11 @@ Expected generated artifacts include:
   directory;
 - the validated `resolved_config.yaml` beside model checkpoints.
 
+Model files use checkpoint schema version 1 and record training mode, server
+model scope and personalized client identity where applicable. Checkpoint writes
+are atomic, and the loader rejects incompatible ownership plus mismatched tensor
+keys, shapes and dtypes before returning a state dict.
+
 If custom logging configuration does not create its parent directory, prepare
 the log directory before running:
 
@@ -297,7 +302,9 @@ tests.
   separately.
 - BatchNorm statistics from non-IID clients are averaged without an explicit
   policy.
-- Optimiser state is not federated or restored with model checkpoints.
+- Optimiser and RNG state are not restored with model checkpoints; schema v1
+  currently provides model ownership and tensor validation, not resume
+  equivalence.
 
 ### Messages and aggregation
 
@@ -327,8 +334,9 @@ tests.
 ### Evaluation and artifacts
 
 - `eval_every` is unused; evaluation occurs only after training.
-- Checkpoints do not contain configuration, optimiser state, seed or dataset
-  manifest.
+- Checkpoint envelopes contain mode/scope ownership but not optimiser state,
+  RNG state, resolved configuration or dataset manifest. Resolved configuration
+  is stored as a separate artifact.
 - The experiment cannot currently be resumed reliably.
 
 ### Packaging and unfinished modules
@@ -337,8 +345,9 @@ tests.
 - The microphone capture module contains undefined constants and empty methods.
 - The audio segmenter calls the audio loader with an incompatible signature.
 - Message byte serialization and `GrpcChannel` are stubs.
-- There is no CI workflow, real-data spawn smoke, checkpoint round-trip suite or
-  CUDA test matrix yet. The synthetic CPU spawn cycle is covered.
+- There is no CI workflow, resume-equivalence suite or CUDA test matrix yet.
+  Synthetic CPU spawn, reduced real-data smoke and checkpoint contract
+  round-trips are covered.
 
 ## Recommended improvement plan
 
@@ -387,7 +396,7 @@ tests.
 - unit tests for schemas, parsers, padding, models and FedAvg;
 - message contract and timeout tests;
 - a controller-level reduced real-data smoke and a separate CUDA smoke test;
-- checkpoint round-trip and deterministic-gradient tests;
+- resume-equivalence and deterministic-gradient tests;
 - Ruff, Black, mypy and pytest in CI.
 
 ## Experimental roadmap
