@@ -27,6 +27,7 @@ The repository currently provides:
 - a server-side CNN with either global pooling or a bidirectional RNN;
 - local multiprocessing channels based on `multiprocessing.Queue`;
 - synchronous split-learning forward/backward steps;
+- explicit per-client round completion for unequal local loader lengths;
 - weighted FedAvg for the client-side model;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
@@ -249,10 +250,10 @@ tests.
 
 ### Training and process lifecycle
 
-- The split server waits for every client at the same `(round, step)`. Different
-  numbers of client batches can deadlock training.
-- A stale partial batch is discarded without sending an error to clients already
-  waiting for gradients.
+- Clients send `round_end` after their final local step, allowing longer client
+  loaders to continue without waiting for an already-finished peer. A missing
+  or malformed completion message can still leave a partial batch until its
+  timeout, which is discarded without a correlated error response.
 - The controller has a polling supervision loop and propagates non-zero child
   exit codes. Client initialization and barrier failures now set the shared
   stop event and abort peer barriers, but queue timeouts and server failures are

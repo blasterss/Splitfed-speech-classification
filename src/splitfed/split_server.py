@@ -134,6 +134,7 @@ def _split_server_worker_batch(
     client_ids = list(client_channels.keys())
     pending_batches: Dict[tuple, Dict[str, Message]] = defaultdict(dict)
     pending_timestamps: Dict[tuple, float] = {}
+    completed_rounds = defaultdict(set)
 
     logger.info("SplitServer worker ready, serving clients: %s", client_ids)
 
@@ -168,6 +169,8 @@ def _split_server_worker_batch(
                         all_eval_probs,
                         all_eval_labels,
                     )
+                elif msg.type == "round_end":
+                    completed_rounds[msg.round].add(client_id)
                 elif msg.type == "train_step":
                     key = (msg.round, msg.step)
 
@@ -186,35 +189,41 @@ def _split_server_worker_batch(
                         len(client_ids),
                     )
 
-                    if len(pending_batches[key]) == len(client_ids):
-                        batch_msgs = pending_batches.pop(key)
-                        pending_timestamps.pop(key, None)
-
-                        batch_round = next(iter(batch_msgs.values())).round
-                        if batch_round != current_round:
-                            stats.log_and_reset(current_round)
-                            current_round = batch_round
-
-                        batch_type = _resolve_batch_type(batch_msgs, key)
-                        if batch_type is None:
-                            continue
-
-                        batch_loss = _handle_train_batch(
-                            batch_msgs,
-                            model,
-                            optimizer,
-                            criterion,
-                            device,
-                            client_channels,
-                        )
-                        if batch_loss is not None:
-                            stats.update(batch_loss)
                 else:
                     logger.warning(
                         "SplitServer: unknown msg type '%s' from %s - discarding.",
                         msg.type,
                         client_id,
                     )
+
+                ready_keys = [
+                    key
+                    for key, batch in pending_batches.items()
+                    if _batch_is_ready(
+                        batch,
+                        set(client_ids),
+                        completed_rounds[key[0]],
+                    )
+                ]
+                for key in ready_keys:
+                    batch_msgs = pending_batches.pop(key)
+                    pending_timestamps.pop(key, None)
+
+                    batch_round = next(iter(batch_msgs.values())).round
+                    if batch_round != current_round:
+                        stats.log_and_reset(current_round)
+                        current_round = batch_round
+
+                    batch_loss = _handle_train_batch(
+                        batch_msgs,
+                        model,
+                        optimizer,
+                        criterion,
+                        device,
+                        client_channels,
+                    )
+                    if batch_loss is not None:
+                        stats.update(batch_loss)
 
             _evict_stale_batches(pending_batches, pending_timestamps)
 
@@ -236,7 +245,7 @@ def _split_server_worker_batch(
 
 
 def _validate_message(msg: Message, client_id: str) -> bool:
-    if msg.type not in ("train_step", "eval_step"):
+    if msg.type not in ("train_step", "eval_step", "round_end"):
         logger.warning(
             "SplitServer: unknown message type '%s' from client %s — discarding.",
             msg.type,
@@ -251,6 +260,9 @@ def _validate_message(msg: Message, client_id: str) -> bool:
             msg.type,
         )
         return False
+
+    if msg.type == "round_end":
+        return True
 
     if "activations" not in msg.payload:
         logger.warning(
@@ -275,6 +287,15 @@ def _validate_message(msg: Message, client_id: str) -> bool:
         return False
 
     return True
+
+
+def _batch_is_ready(
+    batch: Dict[str, Message],
+    client_ids: set,
+    completed_clients: set,
+) -> bool:
+    missing_clients = client_ids - set(batch)
+    return missing_clients <= completed_clients
 
 
 def _resolve_batch_type(

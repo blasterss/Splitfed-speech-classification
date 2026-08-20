@@ -11,6 +11,7 @@ class MessageType(str, Enum):
     GRADIENTS = "gradients"
     EVAL_STEP = "eval_step"
     LOGITS = "logits"
+    ROUND_END = "round_end"
 
     # federated
     CLIENT_UPDATE = "client_update"

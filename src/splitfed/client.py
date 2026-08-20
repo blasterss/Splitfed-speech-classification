@@ -120,7 +120,9 @@ class Client:
 
         self.model.train()
 
+        last_step = 0
         for step, (x, y) in enumerate(self.train_loader, start=1):
+            last_step = step
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
 
@@ -167,6 +169,16 @@ class Client:
 
             if step >= self.cfg.runtime.local_steps:
                 break
+
+        self.to_server.send(
+            Message(
+                type="round_end",
+                sender=self.client_id,
+                round=round,
+                step=last_step + 1,
+                payload={},
+            )
+        )
 
     def federative_aggregate(self, round: int) -> None:
         """
