@@ -8,6 +8,7 @@ from src.schema import ConfigSchema
 from src.splitfed.centralized import (
     CentralizedTrainer,
     _centralized_training_worker,
+    _pad_feature_batch,
     _validate_centralized_shapes,
 )
 from src.utils.state import deserialize_state_dict, serialize_state_dict
@@ -66,9 +67,22 @@ def test_centralized_shapes_reject_incompatible_dataset_views():
     try:
         _validate_centralized_shapes([first, second])
     except ValueError as error:
-        assert "identical feature shapes" in str(error)
+        assert "identical feature counts" in str(error)
     else:
         raise AssertionError("Expected incompatible shapes to be rejected")
+
+
+def test_centralized_collate_pads_different_temporal_lengths():
+    features, labels = _pad_feature_batch(
+        [
+            (torch.ones(3, 4), torch.tensor(0.0)),
+            (torch.ones(3, 6), torch.tensor(1.0)),
+        ]
+    )
+
+    assert features.shape == (2, 3, 6)
+    assert torch.equal(features[0, :, 4:], torch.zeros(3, 2))
+    assert torch.equal(labels, torch.tensor([0.0, 1.0]))
 
 
 def test_centralized_wait_drains_state_before_join():
@@ -96,7 +110,13 @@ def test_spawned_centralized_complete_model_cycle(tmp_path):
                 torch.randn(4, 3, 64), torch.tensor([0.0, 1.0, 0.0, 1.0])
             ),
             TensorDataset(torch.randn(2, 3, 64), torch.tensor([0.0, 1.0])),
-        )
+        ),
+        (
+            TensorDataset(
+                torch.randn(4, 3, 80), torch.tensor([0.0, 1.0, 0.0, 1.0])
+            ),
+            TensorDataset(torch.randn(2, 3, 80), torch.tensor([0.0, 1.0])),
+        ),
     ]
     process = context.Process(
         target=_centralized_training_worker,
