@@ -177,6 +177,8 @@ def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
 
     assert len(broadcasts) == 3
     assert all(message.round == 2 for message in broadcasts)
+    assert broadcasts[0].request_id == updates["client-0"].request_id
+    assert broadcasts[1].request_id == updates["client-1"].request_id
     assert all(
         torch.equal(message.payload["weight"], torch.tensor([7.5]))
         for message in broadcasts

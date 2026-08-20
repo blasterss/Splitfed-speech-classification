@@ -126,10 +126,12 @@ the current Git revision and a SHA-256 of `uv.lock` in `run_metadata.yaml`.
 Unavailable checkout or lock information is recorded as null rather than
 preventing checkpoint persistence.
 
-Every local queue `Message` validates `secureasr.queue` protocol version 1,
-which is also persisted in run metadata. The current envelope still lacks
-request IDs and explicit deadlines; do not describe round/step matching as a
-complete distributed correlation contract.
+Every local queue `Message` validates `secureasr.queue` protocol version 2 and
+a bounded non-empty request ID, which are also represented in run metadata.
+Split responses and federated responses to accepted updates echo request IDs.
+The envelope still lacks explicit deadlines. With partial federated quorum, a
+client whose update was not accepted receives no correlated response for that
+request and must fail through the bounded lifecycle rather than loading it.
 
 Create local configuration and output directories:
 

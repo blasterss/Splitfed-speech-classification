@@ -163,6 +163,7 @@ class Client:
                 self.client_id,
                 round,
                 step,
+                msg.request_id,
             )
 
             if grad is None:
@@ -227,7 +228,10 @@ class Client:
 
         response = self.agg_from_server.recv()
         state_dict = _validate_global_update(
-            response, self.model.state_dict(), round
+            response,
+            self.model.state_dict(),
+            round,
+            msg.request_id,
         )
         self.model.load_state_dict(state_dict)
 
@@ -272,18 +276,17 @@ class Client:
                 activations = self.model(x)
 
                 # Send activations for server-side inference
-                self.to_server.send(
-                    Message(
-                        type="eval_step",
-                        sender=self.client_id,
-                        round=round,
-                        step=step,
-                        payload={
-                            "activations": activations.cpu(),
-                            "labels": y.cpu(),
-                        },
-                    )
+                request = Message(
+                    type="eval_step",
+                    sender=self.client_id,
+                    round=round,
+                    step=step,
+                    payload={
+                        "activations": activations.cpu(),
+                        "labels": y.cpu(),
+                    },
                 )
+                self.to_server.send(request)
                 response = self.from_server.recv()
 
                 logits = _extract_payload(
@@ -293,6 +296,7 @@ class Client:
                     self.client_id,
                     round,
                     step,
+                    request.request_id,
                 )
 
                 if logits is None:
@@ -383,6 +387,7 @@ def _extract_payload(
     client_id: str,
     round: int,
     step: int,
+    expected_request_id: str,
 ) -> object | None:
     """
     Safely extracts a tensor from server response payload.
@@ -402,6 +407,7 @@ def _extract_payload(
         or response.type != expected_type
         or response.round != round
         or response.step != step
+        or response.request_id != expected_request_id
     ):
         logger.error(
             "Client %s: uncorrelated server response "
@@ -457,6 +463,7 @@ def _validate_global_update(
     response: Message,
     expected_state: dict,
     round: int,
+    expected_request_id: str,
 ) -> dict:
     if response.sender != "fed_server":
         raise ValueError("Invalid global update sender")
@@ -466,6 +473,8 @@ def _validate_global_update(
         raise ValueError("Invalid global update round")
     if response.step != 1:
         raise ValueError("Invalid global update step")
+    if response.request_id != expected_request_id:
+        raise ValueError("Invalid global update request_id")
     if not isinstance(response.payload, dict):
         raise ValueError("Invalid global update payload")
     if response.payload.keys() != expected_state.keys():

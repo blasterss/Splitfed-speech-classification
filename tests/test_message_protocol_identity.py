@@ -12,13 +12,15 @@ def test_message_uses_current_protocol_identity_by_default():
 
     assert message.protocol == MESSAGE_PROTOCOL
     assert message.protocol_version == MESSAGE_PROTOCOL_VERSION
+    assert message.request_id
 
 
 @pytest.mark.parametrize(
     "overrides,match",
     [
         ({"protocol": "other"}, "protocol"),
-        ({"protocol_version": 2}, "version"),
+        ({"protocol_version": MESSAGE_PROTOCOL_VERSION + 1}, "version"),
+        ({"request_id": ""}, "request_id"),
     ],
 )
 def test_message_rejects_unsupported_protocol_identity(overrides, match):

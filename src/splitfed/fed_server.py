@@ -246,6 +246,7 @@ def _fed_server_worker(
 
     updates: dict[str, dict] = {}
     sizes: dict[str, int] = {}
+    request_ids: dict[str, str] = {}
     active_round: int | None = None
     last_completed_round = 0
     expected_schema = None
@@ -297,6 +298,7 @@ def _fed_server_worker(
 
                 updates[client_id] = state_dict
                 sizes[client_id] = dataset_size
+                request_ids[client_id] = msg.request_id
                 latest_round = active_round
 
                 logger.info(
@@ -358,12 +360,17 @@ def _fed_server_worker(
                             sender="fed_server",
                             round=latest_round,
                             step=1,
+                            request_id=request_ids.get(
+                                client_id,
+                                f"federated-round-{latest_round}",
+                            ),
                             payload=latest_params,
                         )
                     )
 
                 updates.clear()
                 sizes.clear()
+                request_ids.clear()
                 last_completed_round = active_round
                 active_round = None
                 expected_schema = None

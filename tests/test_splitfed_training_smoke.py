@@ -53,18 +53,17 @@ def _synthetic_client_worker(
         inputs = torch.randn(1, 3, 64)
         labels = torch.tensor([float(step % 2)])
         activations = model(inputs)
-        split_uplink.send(
-            Message(
-                type="train_step",
-                sender=client_id,
-                round=1,
-                step=step,
-                payload={
-                    "activations": activations.detach(),
-                    "labels": labels,
-                },
-            )
+        request = Message(
+            type="train_step",
+            sender=client_id,
+            round=1,
+            step=step,
+            payload={
+                "activations": activations.detach(),
+                "labels": labels,
+            },
         )
+        split_uplink.send(request)
         response = split_downlink.recv()
         gradients = _extract_payload(
             response,
@@ -73,6 +72,7 @@ def _synthetic_client_worker(
             client_id,
             1,
             step,
+            request.request_id,
         )
         if gradients is None:
             raise RuntimeError("Synthetic client received invalid gradients")
@@ -89,36 +89,42 @@ def _synthetic_client_worker(
             payload={},
         )
     )
-    fed_uplink.send(
-        Message(
-            type="client_update",
-            sender=client_id,
-            round=1,
-            step=1,
-            payload={
-                "state_dict": model.state_dict(),
-                "dataset_size": local_steps,
-            },
-        )
+    fed_request = Message(
+        type="client_update",
+        sender=client_id,
+        round=1,
+        step=1,
+        payload={
+            "state_dict": model.state_dict(),
+            "dataset_size": local_steps,
+        },
     )
+    fed_uplink.send(fed_request)
     global_update = fed_downlink.recv()
-    state_dict = _validate_global_update(global_update, model.state_dict(), 1)
+    state_dict = _validate_global_update(
+        global_update, model.state_dict(), 1, fed_request.request_id
+    )
     model.load_state_dict(state_dict)
 
     model.eval()
     with torch.no_grad():
         activations = model(torch.zeros(1, 3, 64))
-    split_uplink.send(
-        Message(
-            type="eval_step",
-            sender=client_id,
-            round=1,
-            step=1,
-            payload={"activations": activations, "labels": torch.zeros(1)},
-        )
+    eval_request = Message(
+        type="eval_step",
+        sender=client_id,
+        round=1,
+        step=1,
+        payload={"activations": activations, "labels": torch.zeros(1)},
     )
+    split_uplink.send(eval_request)
     logits = _extract_payload(
-        split_downlink.recv(), "logits", "logits", client_id, 1, 1
+        split_downlink.recv(),
+        "logits",
+        "logits",
+        client_id,
+        1,
+        1,
+        eval_request.request_id,
     )
     if logits is None or logits.shape != torch.Size([1]):
         raise RuntimeError("Synthetic client received invalid logits")
@@ -146,18 +152,19 @@ def _synthetic_federated_client_worker(
     optimizer.step()
     optimizer.zero_grad()
 
-    fed_uplink.send(
-        Message(
-            type="client_update",
-            sender=client_id,
-            round=1,
-            step=1,
-            payload={"state_dict": model.state_dict(), "dataset_size": 1},
-        )
+    request = Message(
+        type="client_update",
+        sender=client_id,
+        round=1,
+        step=1,
+        payload={"state_dict": model.state_dict(), "dataset_size": 1},
     )
+    fed_uplink.send(request)
     update = fed_downlink.recv()
     model.load_state_dict(
-        _validate_global_update(update, model.state_dict(), 1)
+        _validate_global_update(
+            update, model.state_dict(), 1, request.request_id
+        )
     )
     model.eval()
     with torch.no_grad():
@@ -178,18 +185,17 @@ def _synthetic_personalized_client_worker(
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     for step in range(1, local_steps + 1):
         activations = model(torch.randn(1, 3, 64))
-        split_uplink.send(
-            Message(
-                type="train_step",
-                sender=client_id,
-                round=1,
-                step=step,
-                payload={
-                    "activations": activations.detach(),
-                    "labels": torch.tensor([float(step % 2)]),
-                },
-            )
+        request = Message(
+            type="train_step",
+            sender=client_id,
+            round=1,
+            step=step,
+            payload={
+                "activations": activations.detach(),
+                "labels": torch.tensor([float(step % 2)]),
+            },
         )
+        split_uplink.send(request)
         gradients = _extract_payload(
             split_downlink.recv(),
             "gradients",
@@ -197,6 +203,7 @@ def _synthetic_personalized_client_worker(
             client_id,
             1,
             step,
+            request.request_id,
         )
         if gradients is None:
             raise RuntimeError("Missing personalized split gradients")

@@ -246,8 +246,9 @@ Expected generated artifacts include:
   Git/lock values are null when the corresponding source is unavailable.
 
 Queue messages carry and validate protocol identity `secureasr.queue` version
-1 at envelope construction. Request IDs and deadline fields are not yet part of
-that envelope; round/step matching remains the current correlation mechanism.
+2 plus a bounded non-empty request ID. Split responses and accepted federated
+updates must echo the originating request ID in addition to matching sender,
+type, round and step. Explicit envelope deadlines are not yet implemented.
 
 Model files use checkpoint schema version 1 and record training mode, server
 model scope and personalized client identity where applicable. Checkpoint writes

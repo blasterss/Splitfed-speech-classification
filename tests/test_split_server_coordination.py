@@ -113,6 +113,7 @@ def test_stale_batch_sends_correlated_error_to_waiting_clients(monkeypatch):
     error = downlink.messages[0]
     assert error.type is MessageType.ERROR
     assert (error.round, error.step) == (2, 3)
+    assert error.request_id == message.request_id
 
 
 def test_batch_becomes_ready_when_missing_client_finished_round():

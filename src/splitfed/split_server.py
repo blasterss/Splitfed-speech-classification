@@ -597,6 +597,7 @@ def _evict_stale_batches(
                     sender="split_server",
                     round=message.round,
                     step=message.step,
+                    request_id=message.request_id,
                     payload={"reason": "split_batch_timeout"},
                 )
             )
@@ -654,6 +655,7 @@ def _handle_train_batch(
                 sender="split_server",
                 round=msg.round,
                 step=msg.step,
+                request_id=msg.request_id,
                 payload={"gradients": grads_per_client[client_id]},
             )
         )
@@ -817,6 +819,7 @@ def _handle_eval_single(
             sender="split_server",
             round=msg.round,
             step=msg.step,
+            request_id=msg.request_id,
             payload={"logits": logits.cpu()},
         )
     )

@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 MESSAGE_PROTOCOL = "secureasr.queue"
-MESSAGE_PROTOCOL_VERSION = 1
+MESSAGE_PROTOCOL_VERSION = 2
 
 
 class MessageType(str, Enum):
@@ -34,6 +35,7 @@ class Message:
     payload: dict[str, Any] = field(default_factory=dict)
     protocol: str = MESSAGE_PROTOCOL
     protocol_version: int = MESSAGE_PROTOCOL_VERSION
+    request_id: str = field(default_factory=lambda: uuid4().hex)
 
     def __post_init__(self) -> None:
         if not isinstance(self.type, MessageType):
@@ -45,6 +47,10 @@ class Message:
                 "Unsupported message protocol version "
                 f"{self.protocol_version!r}"
             )
+        if not isinstance(self.request_id, str) or not self.request_id:
+            raise ValueError("Message request_id must be a non-empty string")
+        if len(self.request_id) > 128:
+            raise ValueError("Message request_id exceeds 128 characters")
 
     # ------------------------------------------------------------------
     # Serialization (stubs for future gRPC transport)
@@ -61,5 +67,6 @@ class Message:
         return (
             f"Message(type={self.type.value!r}, sender={self.sender!r}, "
             f"round={self.round}, step={self.step}, "
+            f"request_id={self.request_id!r}, "
             f"payload_keys={payload_keys})"
         )

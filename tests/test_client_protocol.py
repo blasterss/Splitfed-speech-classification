@@ -25,13 +25,15 @@ def _response(**overrides):
 
 
 def test_extract_payload_accepts_correlated_split_response():
+    response = _response(request_id="split-request")
     tensor = _extract_payload(
-        _response(),
+        response,
         "gradients",
         "gradients",
         "client-0",
         2,
         3,
+        "split-request",
     )
 
     assert torch.equal(tensor, torch.ones(1))
@@ -47,14 +49,31 @@ def test_extract_payload_accepts_correlated_split_response():
     ],
 )
 def test_extract_payload_rejects_uncorrelated_response(overrides):
+    response = _response(request_id="split-request", **overrides)
     assert (
         _extract_payload(
-            _response(**overrides),
+            response,
             "gradients",
             "gradients",
             "client-0",
             2,
             3,
+            "split-request",
+        )
+        is None
+    )
+
+
+def test_extract_payload_rejects_mismatched_request_id():
+    assert (
+        _extract_payload(
+            _response(request_id="other-request"),
+            "gradients",
+            "gradients",
+            "client-0",
+            2,
+            3,
+            "expected-request",
         )
         is None
     )
@@ -67,6 +86,7 @@ def _global_response(state_dict, **overrides):
         "round": 2,
         "step": 1,
         "payload": state_dict,
+        "request_id": "fed-request",
     }
     values.update(overrides)
     return Message(**values)
@@ -77,7 +97,12 @@ def test_global_update_accepts_matching_state_schema():
     received = {"weight": torch.zeros(2, dtype=torch.float32)}
 
     assert (
-        _validate_global_update(_global_response(received), expected, 2)
+        _validate_global_update(
+            _global_response(received, request_id="fed-request"),
+            expected,
+            2,
+            "fed-request",
+        )
         is received
     )
 
@@ -99,7 +124,19 @@ def test_global_update_rejects_invalid_envelope_or_state(response, match):
     expected = {"weight": torch.ones(2, dtype=torch.float32)}
 
     with pytest.raises(ValueError, match=match):
-        _validate_global_update(response, expected, 2)
+        _validate_global_update(response, expected, 2, "fed-request")
+
+
+def test_global_update_rejects_mismatched_request_id():
+    expected = {"weight": torch.ones(2, dtype=torch.float32)}
+
+    with pytest.raises(ValueError, match="request_id"):
+        _validate_global_update(
+            _global_response(expected, request_id="other-request"),
+            expected,
+            2,
+            "fed-request",
+        )
 
 
 class RecordingChannel:
