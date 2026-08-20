@@ -1,5 +1,6 @@
 import copy
 import queue
+import time
 from pathlib import Path
 import torch
 import torch.multiprocessing as mp
@@ -216,6 +217,7 @@ def _fed_server_worker(
     active_round: int | None = None
     last_completed_round = 0
     expected_schema = None
+    round_started_at: float | None = None
 
     try:
         while not stop_event.is_set():
@@ -233,10 +235,23 @@ def _fed_server_worker(
 
                 served_any = True
 
+                if msg.round <= last_completed_round:
+                    _validate_client_update(
+                        msg,
+                        expected_client_id=client_id,
+                        expected_round=msg.round,
+                        expected_schema=None,
+                    )
+                    logger.info(
+                        "Discarding late update from %s for completed round %d",
+                        client_id,
+                        msg.round,
+                    )
+                    continue
+
                 if active_round is None:
-                    if msg.round <= last_completed_round:
-                        raise ValueError("Invalid client update stale round")
                     active_round = msg.round
+                    round_started_at = time.monotonic()
 
                 state_dict, dataset_size = _validate_client_update(
                     msg,
@@ -258,9 +273,29 @@ def _fed_server_worker(
                     sizes[client_id],
                 )
 
-            if len(updates) >= num_clients:
-                params_list = [updates[cid] for cid in client_ids]
-                sizes_list = [sizes[cid] for cid in client_ids]
+            if active_round is not None:
+                assert round_started_at is not None
+                elapsed = time.monotonic() - round_started_at
+                decision = _quorum_decision(
+                    update_count=len(updates),
+                    client_count=num_clients,
+                    min_clients=config.min_clients,
+                    elapsed=elapsed,
+                    timeout=config.quorum_timeout_sec,
+                )
+            else:
+                decision = "wait"
+
+            if decision == "fail":
+                raise RuntimeError(
+                    f"Federated quorum timeout for round {active_round}: "
+                    f"received {len(updates)}/{config.min_clients} required"
+                )
+
+            if decision == "aggregate":
+                participant_ids = [cid for cid in client_ids if cid in updates]
+                params_list = [updates[cid] for cid in participant_ids]
+                sizes_list = [sizes[cid] for cid in participant_ids]
 
                 try:
                     latest_params = FedServer.aggregate(
@@ -273,9 +308,7 @@ def _fed_server_worker(
                         exc,
                         exc_info=True,
                     )
-                    updates.clear()
-                    sizes.clear()
-                    continue
+                    raise
 
                 logger.info(
                     "Aggregated %d client updates (round=%d)",
@@ -301,6 +334,7 @@ def _fed_server_worker(
                 last_completed_round = active_round
                 active_round = None
                 expected_schema = None
+                round_started_at = None
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
@@ -331,6 +365,22 @@ def _state_schema(state_dict: dict) -> dict:
     return {
         key: (value.shape, value.dtype) for key, value in state_dict.items()
     }
+
+
+def _quorum_decision(
+    update_count: int,
+    client_count: int,
+    min_clients: int,
+    elapsed: float,
+    timeout: float,
+) -> str:
+    if update_count >= client_count:
+        return "aggregate"
+    if elapsed < timeout:
+        return "wait"
+    if update_count >= min_clients:
+        return "aggregate"
+    return "fail"
 
 
 def _validate_client_update(

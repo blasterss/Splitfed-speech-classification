@@ -89,6 +89,7 @@ fed_server:
   device: cpu
   aggregation_freq: 1
   min_clients: 2
+  quorum_timeout_sec: 30
   federated_uplink_channel: federated_uplink
   federated_downlink_channel: federated_downlink
 

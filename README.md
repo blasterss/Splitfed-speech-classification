@@ -29,6 +29,7 @@ The repository currently provides:
 - synchronous split-learning forward/backward steps;
 - explicit per-client round completion for unequal local loader lengths;
 - weighted FedAvg for the client-side model;
+- bounded partial-quorum FedAvg windows with global broadcast to all clients;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
 
@@ -150,8 +151,9 @@ Important configuration caveats:
 - `split_server.model.gradient_accumulation_steps` controls how many server
   batches are averaged per optimizer update; each round flushes its remainder;
 - `training.eval_every` is defined but not used by the training loop;
-- `fed_server.strategy`, `aggregation_freq` and `min_clients` are currently not
-  honoured by the worker;
+- `fed_server.min_clients` and `quorum_timeout_sec` control partial aggregation;
+- `fed_server.strategy` variants are not behaviourally distinct yet, and
+  `aggregation_freq` does not control worker cadence;
 - channel names stored inside server configuration are not used by the
   controller, which relies on fixed names;
 - client IDs must be unique; referenced server channels and feasible client
@@ -282,8 +284,12 @@ tests.
 - Client responses are not validated against sender, type, round and step.
 - Federated client/global updates validate sender, type, round, step, keys,
   tensor shapes and dtypes before aggregation or `load_state_dict`.
-- `min_clients`, aggregation strategy and aggregation frequency are configured
-  but not fully honoured by the worker.
+- Partial quorum uses an arrival window, not a fairness-aware cohort scheduler.
+  Late authenticated updates are discarded after their round completes, while
+  the global model is broadcast to all clients. A client that falls behind many
+  rounds can still exhaust its bounded downlink queue and fail the run.
+- Aggregation strategy variants and `aggregation_freq` are configured but not
+  behaviourally implemented by the worker.
 - Metrics are logged locally and are not collected by the federated worker.
 
 ### Data pipeline

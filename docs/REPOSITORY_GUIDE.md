@@ -175,8 +175,12 @@ workflow are still missing.
 - `split_server.model.gradient_accumulation_steps` controls averaged server
   optimizer updates. Client activation gradients are not scaled by this value,
   and incomplete accumulation windows flush at the completed round boundary.
-- `fed_server.strategy`, `aggregation_freq`, and `min_clients` are currently
-  configured but not fully honoured by the worker.
+- `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
+  aggregation window. The completed global state is broadcast to all clients;
+  validated late updates for that round are discarded.
+- Partial quorum is arrival-window based and does not yet provide fairness or
+  leases. `strategy` variants and `aggregation_freq` are not behaviourally
+  implemented by the worker.
 - The controller uses fixed channel constants rather than the channel names
   stored in server configuration.
 

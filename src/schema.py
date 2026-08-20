@@ -349,6 +349,12 @@ class FedServerConfig(StrictConfigModel):
         description="Minimum number of clients required to perform aggregation.",
     )
 
+    quorum_timeout_sec: float = Field(
+        default=30.0,
+        gt=0,
+        description="Maximum aggregation window after the first update.",
+    )
+
     federated_uplink_channel: str = Field(
         description="Channel name for receiving parameters from client models."
     )

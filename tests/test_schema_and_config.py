@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from src.schema import (
     DatasetConfig,
     DatasetType,
+    FedServerConfig,
     SplitServerModelConfig,
     TrainingConfig,
 )
@@ -59,4 +60,18 @@ def test_split_server_requires_positive_gradient_accumulation_steps():
             lr=0.001,
             device="cpu",
             gradient_accumulation_steps=0,
+        )
+
+
+def test_fed_server_requires_positive_quorum_timeout():
+    with pytest.raises(ValidationError, match="quorum_timeout_sec"):
+        FedServerConfig(
+            strategy="fedavg",
+            seed=42,
+            device="cpu",
+            aggregation_freq=1,
+            min_clients=1,
+            quorum_timeout_sec=0,
+            federated_uplink_channel="federated_uplink",
+            federated_downlink_channel="federated_downlink",
         )
