@@ -90,6 +90,16 @@ class ConflictEmotionalDataset:
 
         # Load raw features and metadata
         data, metadata = loader.load()
+        self.extraction_report = getattr(
+            loader,
+            "last_load_report",
+            {
+                "discovered": len(data),
+                "loaded": len(data),
+                "failed": 0,
+                "failure_reasons": {},
+            },
+        )
 
         if not data or not metadata or len(data) != len(metadata):
             raise ValueError(
@@ -165,6 +175,7 @@ class ConflictEmotionalDataset:
         self.test_valid_frames = tuple(test_valid_frames.tolist())
 
         logger.info("Dataset coverage: %s", self.coverage)
+        logger.info("Dataset extraction report: %s", self.extraction_report)
 
     def get_sample_weights(self) -> np.ndarray:
         """

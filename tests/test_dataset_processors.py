@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from src.dataset.dataset import ConflictEmotionalDataset
+from src.dataset.processors.base_processor import BaseDatasetLoader
 from src.dataset.processors.crema_d_processor import CremaDLoader
 from src.dataset.processors.factory import DatasetLoaderFactory
 from src.dataset.processors.ravdess_processor import RavdessLoader
@@ -142,3 +143,46 @@ def test_training_split_rejects_missing_binary_class(tmp_path, monkeypatch):
                 test_size=0.5,
             )
         )
+
+
+class _ReportingLoader(BaseDatasetLoader):
+    def parse_label(self, filename):
+        return 1 if "good" in filename else 0
+
+    def parse_actor_id(self, filename):
+        return filename.split("_")[0]
+
+    def parse_sex(self, filename):
+        return "M"
+
+
+def test_loader_accounts_for_extraction_failure_reasons(tmp_path, monkeypatch):
+    (tmp_path / "actor-0_bad.wav").touch()
+    (tmp_path / "actor-1_good.wav").touch()
+
+    def load_audio(path, **kwargs):
+        if "bad" in path.name:
+            raise ValueError("corrupt audio")
+        return np.ones(16), 16000
+
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        load_audio,
+    )
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureExtraction.get_all_features",
+        lambda *args, **kwargs: np.ones((3, 4)),
+    )
+    loader = _ReportingLoader(
+        DatasetConfig(name=DatasetType.savee, root=str(tmp_path))
+    )
+
+    data, metadata = loader.load()
+
+    assert len(data) == len(metadata) == 1
+    assert loader.last_load_report == {
+        "discovered": 2,
+        "loaded": 1,
+        "failed": 1,
+        "failure_reasons": {"ValueError": 1},
+    }

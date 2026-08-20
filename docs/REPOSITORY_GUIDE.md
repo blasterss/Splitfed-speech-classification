@@ -243,6 +243,8 @@ that start method explicitly.
 - Actor-disjoint splits expose actor/sample/class counts and reject a training
   split missing either binary class. One-class test splits remain supported.
 - Client training currently shuffles without class-balanced sampling.
+- Dataset instances expose a bounded extraction report with discovered/loaded/
+  failed counts and failure reason types; failed paths are not persisted.
 - Checkpoint metadata does not include full configuration, seed, or optimizer
   state.
 - `GrpcChannel` and message byte serialization are unimplemented.

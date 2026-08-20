@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,7 @@ class BaseDatasetLoader(ABC):
         iterator = tqdm(files, desc=f"Loading {self.config.name}", unit="file")
 
         failed_files = []
+        failure_reasons = Counter()
 
         for file_path in iterator:
             try:
@@ -94,9 +96,14 @@ class BaseDatasetLoader(ABC):
             except Exception as e:
                 logger.warning(f"Error: {file_path.name} - {e}")
                 failed_files.append(str(file_path))
+                failure_reasons[type(e).__name__] += 1
 
         if failed_files:
-            logger.warning(f"Failed to load {len(failed_files)} files")
+            logger.warning(
+                "Failed to load %d files: %s",
+                len(failed_files),
+                dict(sorted(failure_reasons.items())),
+            )
 
         if feature_mode == "stacked":
             padded_data = self._pad_stacked(data)
@@ -104,6 +111,12 @@ class BaseDatasetLoader(ABC):
             padded_data = data
 
         logger.info(f"Loading completed. Total files: {len(padded_data)}")
+        self.last_load_report = {
+            "discovered": len(files),
+            "loaded": len(padded_data),
+            "failed": len(failed_files),
+            "failure_reasons": dict(sorted(failure_reasons.items())),
+        }
 
         if padded_data:
             first = padded_data[0]

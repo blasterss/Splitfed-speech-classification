@@ -330,8 +330,9 @@ tests.
   after normalization.
 - Actor-disjoint splits record per-split actor/sample/class coverage and reject
   training partitions that do not contain both binary classes.
-- Per-file feature extraction errors are skipped and can hide systematic data
-  loss.
+- Per-file feature extraction failures are skipped but recorded as discovered,
+  loaded and failed counts grouped by exception type; raw paths are not
+  persisted in the report.
 - Spectral-contrast failures fall back to zero features.
 - Multi-channel utilities are incomplete and inconsistent with the main path.
 
