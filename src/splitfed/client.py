@@ -336,7 +336,8 @@ class Client:
         results_dir = Path("experiments/results")
         results_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(
-            results_dir / f"Client{self.client_id}_eval.csv", index=False
+            results_dir / f"Client{self.client_id}_round_{round}_eval.csv",
+            index=False,
         )
 
         f1 = f1_score(
@@ -543,19 +544,25 @@ def _client_worker(
                 and round_idx % training_cfg.fed_every == 0
             ):
                 client.federative_aggregate(round_idx)
+            if _should_evaluate(
+                round_idx,
+                training_cfg.num_rounds,
+                training_cfg.eval_every,
+            ):
+                _evaluate_at_barrier(
+                    client,
+                    round_idx,
+                    eval_barrier,
+                    training_cfg.barrier_timeout_sec,
+                )
 
-        logger.info(
-            "Client %s: training finished — waiting at eval_barrier.",
-            cfg.client_id,
-        )
-        eval_barrier.wait(timeout=training_cfg.barrier_timeout_sec)
-
-        logger.info(
-            "Client %s: eval_barrier passed — starting evaluation.",
-            cfg.client_id,
-        )
-        metrics = client.evaluate(round=last_round)
-        logger.info("Client %s final metrics: %s", client.client_id, metrics)
+        if last_round == 0:
+            _evaluate_at_barrier(
+                client,
+                0,
+                eval_barrier,
+                training_cfg.barrier_timeout_sec,
+            )
 
     except BaseException as exc:
         stop_event.set()
@@ -564,6 +571,30 @@ def _client_worker(
             "Client %s crashed: %s", cfg.client_id, exc, exc_info=True
         )
         raise
+
+
+def _should_evaluate(round_idx: int, num_rounds: int, eval_every: int) -> bool:
+    return round_idx % eval_every == 0 or round_idx == num_rounds
+
+
+def _evaluate_at_barrier(
+    client: Client,
+    round_idx: int,
+    eval_barrier,
+    timeout: float,
+) -> None:
+    logger.info(
+        "Client %s: waiting to evaluate round %d", client.client_id, round_idx
+    )
+    eval_barrier.wait(timeout=timeout)
+    metrics = client.evaluate(round=round_idx)
+    logger.info(
+        "Client %s round %d metrics: %s",
+        client.client_id,
+        round_idx,
+        metrics,
+    )
+    eval_barrier.wait(timeout=timeout)
 
 
 def _abort_barriers(barriers: tuple[object, ...]) -> None:

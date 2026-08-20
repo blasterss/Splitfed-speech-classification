@@ -156,6 +156,9 @@ def _centralized_training_worker(
         shuffle=True,
         generator=generator,
     )
+    test_loader = DataLoader(
+        ConcatDataset(test_parts), batch_size=owner.runtime.batch_size
+    )
 
     for round_idx in range(1, config.training.num_rounds + 1):
         model.train()
@@ -178,13 +181,26 @@ def _centralized_training_worker(
             sum(losses) / len(losses) if losses else 0.0,
             len(losses),
         )
+        if round_idx % config.training.eval_every == 0 or round_idx == (
+            config.training.num_rounds
+        ):
+            accuracy, sample_count = _evaluate_centralized(
+                model, test_loader, device
+            )
+            logger.info(
+                "Centralized round %d evaluation accuracy=%.6f samples=%d",
+                round_idx,
+                accuracy,
+                sample_count,
+            )
+    state = {key: value.cpu() for key, value in model.state_dict().items()}
+    result_queue.put(serialize_state_dict(state), timeout=5)
 
+
+def _evaluate_centralized(model, test_loader, device) -> tuple[float, int]:
     model.eval()
     correct = 0
     total = 0
-    test_loader = DataLoader(
-        ConcatDataset(test_parts), batch_size=owner.runtime.batch_size
-    )
     with torch.no_grad():
         for features, labels in test_loader:
             logits = model(features.to(device)).reshape(-1)
@@ -192,13 +208,7 @@ def _centralized_training_worker(
             labels = labels.long().reshape(-1)
             correct += (predictions == labels).sum().item()
             total += labels.numel()
-    logger.info(
-        "Centralized evaluation accuracy=%.6f samples=%d",
-        correct / total if total else 0.0,
-        total,
-    )
-    state = {key: value.cpu() for key, value in model.state_dict().items()}
-    result_queue.put(serialize_state_dict(state), timeout=5)
+    return (correct / total if total else 0.0), total
 
 
 def _validate_centralized_shapes(datasets: list) -> int:

@@ -159,7 +159,8 @@ Important configuration caveats:
 - `split_server.model.gradient_accumulation_steps` controls how many server
   batches are averaged per optimizer update; each round flushes its remainder;
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
-- `training.eval_every` is defined but not used by the training loop;
+- `training.eval_every` schedules synchronized evaluation snapshots; the final
+  round is always evaluated;
 - `fed_server.min_clients` and `quorum_timeout_sec` control partial aggregation;
 - `fed_server.strategy: fedavg` assigns equal weight to every accepted client;
   `weighted_fedavg` weights floating tensors by dataset size. Non-floating
@@ -345,7 +346,9 @@ tests.
 
 ### Evaluation and artifacts
 
-- `eval_every` is unused; evaluation occurs only after training.
+- Evaluation runs every `eval_every` rounds and always on the final round.
+  Per-round client CSV names prevent later snapshots from overwriting earlier
+  results.
 - Evaluation metrics include sample, positive-label and positive-prediction
   denominators and remain finite for one-class test partitions.
 - Checkpoint envelopes contain mode/scope ownership but not optimiser state,

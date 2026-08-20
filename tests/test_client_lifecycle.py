@@ -39,6 +39,18 @@ class NoOpClient:
         return {}
 
 
+class RecordingClient(NoOpClient):
+    trained_rounds = []
+    evaluated_rounds = []
+
+    def train_one_round(self, round):
+        self.trained_rounds.append(round)
+
+    def evaluate(self, round):
+        self.evaluated_rounds.append(round)
+        return {}
+
+
 def _barrier_waiter(barrier, ready_queue, result_queue):
     ready_queue.put("ready")
     try:
@@ -98,8 +110,41 @@ def test_client_barrier_waits_use_configured_timeout(monkeypatch):
     _client_worker(*_worker_args(stop_event, ready_barrier, eval_barrier))
 
     assert ready_barrier.wait_timeouts == [0.25]
-    assert eval_barrier.wait_timeouts == [0.25]
+    assert eval_barrier.wait_timeouts == [0.25, 0.25]
     assert not stop_event.set_called
+
+
+def test_client_evaluates_on_cadence_and_final_round(monkeypatch):
+    RecordingClient.trained_rounds = []
+    RecordingClient.evaluated_rounds = []
+    stop_event = FakeStopEvent()
+    ready_barrier = FakeBarrier()
+    eval_barrier = FakeBarrier()
+    monkeypatch.setattr("src.splitfed.client.Client", RecordingClient)
+    cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=3,
+        eval_every=2,
+        fed_every=1,
+        mode=TrainingMode.split,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        None,
+        None,
+        stop_event,
+        ready_barrier,
+        eval_barrier,
+    )
+
+    assert RecordingClient.trained_rounds == [1, 2, 3]
+    assert RecordingClient.evaluated_rounds == [2, 3]
+    assert eval_barrier.wait_timeouts == [0.25] * 4
 
 
 def test_spawned_barrier_waiter_exits_after_cancellation():

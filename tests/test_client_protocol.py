@@ -178,4 +178,6 @@ def test_federated_evaluation_creates_results_directory(tmp_path, monkeypatch):
         "num_positive_labels": 0,
         "num_positive_predictions": 0,
     }
-    assert (tmp_path / "experiments/results/Clientclient-0_eval.csv").is_file()
+    assert (
+        tmp_path / "experiments/results/Clientclient-0_round_0_eval.csv"
+    ).is_file()

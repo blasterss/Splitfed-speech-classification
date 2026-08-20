@@ -185,8 +185,8 @@ workflow are still missing.
 - Client, split-server, and federated-server device choices must match the
   installed runtime; syntax, CUDA availability and indexed device bounds are
   validated before controller setup.
-- `training.fed_every` is used by training; `training.eval_every` is currently
-  not used by the training loop.
+- `training.fed_every` controls aggregation cadence. `training.eval_every`
+  schedules synchronized snapshots and the final round is always evaluated.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
 - `split_server.model.gradient_accumulation_steps` controls averaged server
   optimizer updates. Client activation gradients are not scaled by this value,
