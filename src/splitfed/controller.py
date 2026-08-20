@@ -37,6 +37,7 @@ class TrainingController:
         self.channels: dict[str, dict] = {}
         self._client_processes: list[mp.Process] = []
         self._manager: mp.managers.SyncManager | None = None
+        self._stop_event = None
         self._stop_events: dict[str, mp.Event] = {}
 
     def setup(self) -> None:
@@ -46,6 +47,7 @@ class TrainingController:
         logger.info("=== TRAINING CONTROLLER SETUP ===")
 
         self._manager = mp.Manager()
+        self._stop_event = self._manager.Event()
 
         logger.info("Initialising channels...")
         self._init_channels()
@@ -60,8 +62,11 @@ class TrainingController:
         Gracefully shuts down multiprocessing manager.
         """
         if self._manager is not None:
+            if self._stop_event is not None:
+                self._stop_event.set()
             self._manager.shutdown()
             self._manager = None
+            self._stop_event = None
 
     def _init_channels(self) -> None:
         """
@@ -116,7 +121,7 @@ class TrainingController:
         self.split_server = SplitServer(
             config=self.cfg.split_server,
             client_channels=split_channels,
-            stop_event=self._manager.Event(),
+            stop_event=self._stop_event,
         )
 
         logger.info("SplitServer initialised")
@@ -133,7 +138,7 @@ class TrainingController:
             config=self.cfg.fed_server,
             client_channels=fed_channels,
             num_clients=len(self.cfg.clients),
-            stop_event=self._manager.Event(),
+            stop_event=self._stop_event,
         )
 
         logger.info("FedServer initialised")
@@ -148,6 +153,9 @@ class TrainingController:
 
         if self._manager is None:
             raise RuntimeError("Manager is not running — was setup() called?")
+
+        if self._stop_event is None:
+            raise RuntimeError("Stop event is not initialized — call setup().")
 
         logger.info("=== STARTING TRAINING ===")
 
@@ -166,8 +174,7 @@ class TrainingController:
             cid = client_cfg.client_id
             ch = self.channels[cid]
 
-            stop_event = self._manager.Event()
-            self._stop_events[cid] = stop_event
+            self._stop_events[cid] = self._stop_event
 
             p = mp.Process(
                 target=_client_worker,
@@ -178,7 +185,7 @@ class TrainingController:
                     ch[self.SPLIT_DOWNLINK],
                     ch[self.FED_UPLINK],
                     ch[self.FED_DOWNLINK],
-                    stop_event,
+                    self._stop_event,
                     ready_barrier,
                     eval_barrier,
                 ),

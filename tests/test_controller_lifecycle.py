@@ -92,6 +92,8 @@ def test_controller_setup_and_teardown_manage_runtime_resources(tmp_path):
     }
     assert controller.split_server is not None
     assert controller.fed_server is not None
+    assert controller._stop_event is controller.split_server._stop_event
+    assert controller._stop_event is controller.fed_server._stop_event
 
     controller.teardown()
 
