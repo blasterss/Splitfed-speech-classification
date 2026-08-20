@@ -200,6 +200,7 @@ def test_worker_aggregates_partial_quorum_and_catches_up_late_client():
     }
     config = SimpleNamespace(
         seed=42,
+        device="cpu",
         min_clients=2,
         quorum_timeout_sec=0,
         strategy=AggregationStrategy.weighted_fedavg,
@@ -233,6 +234,7 @@ def test_worker_rejects_replayed_federated_request():
     }
     config = SimpleNamespace(
         seed=42,
+        device="cpu",
         min_clients=1,
         quorum_timeout_sec=0,
         strategy=AggregationStrategy.fedavg,

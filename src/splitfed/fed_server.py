@@ -160,6 +160,7 @@ class FedServer:
         client_params_list: list[dict],
         client_sizes: list[int],
         strategy: AggregationStrategy = AggregationStrategy.weighted_fedavg,
+        device: torch.device | str = "cpu",
     ) -> dict:
         """
         Performs Federated Averaging (FedAvg).
@@ -189,6 +190,7 @@ class FedServer:
         else:
             raise ValueError(f"Unsupported aggregation strategy: {strategy}")
 
+        aggregation_device = torch.device(device)
         new_params = copy.deepcopy(client_params_list[0])
         largest_client = max(
             range(len(client_sizes)), key=client_sizes.__getitem__
@@ -201,9 +203,10 @@ class FedServer:
                 torch.is_floating_point(value) or torch.is_complex(value)
             ):
                 new_params[key] = sum(
-                    client_params_list[i][key] * weights[i]
+                    client_params_list[i][key].to(aggregation_device)
+                    * weights[i]
                     for i in range(len(client_params_list))
-                )
+                ).cpu()
             else:
                 new_params[key] = client_params_list[largest_client][key]
 
@@ -366,7 +369,10 @@ def _fed_server_worker(
 
                 try:
                     latest_params = FedServer.aggregate(
-                        params_list, sizes_list, config.strategy
+                        params_list,
+                        sizes_list,
+                        config.strategy,
+                        device=config.device,
                     )
                 except Exception as exc:
                     logger.error(
