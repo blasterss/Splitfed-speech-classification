@@ -9,6 +9,7 @@ from src.splitfed.fed_server import (
     _validate_client_update,
 )
 from src.transport.message import Message
+from src.utils.state import deserialize_state_dict
 
 
 def _update(**overrides):
@@ -174,4 +175,5 @@ def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
         torch.equal(message.payload["weight"], torch.tensor([7.5]))
         for message in broadcasts
     )
-    assert torch.equal(result_queue.value["weight"], torch.tensor([7.5]))
+    saved_state = deserialize_state_dict(result_queue.value)
+    assert torch.equal(saved_state["weight"], torch.tensor([7.5]))

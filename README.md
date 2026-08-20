@@ -213,9 +213,10 @@ padding, models/FedAvg, queue transport and controller lifecycle. Run them with:
 uv run pytest
 ```
 
-There is no CI workflow yet, and the suite does not replace a real-data,
-multi-process or CUDA smoke test. Use a reduced dataset and one round before
-starting a long experiment.
+The suite includes a synthetic CPU `spawn` smoke cycle with two unequal clients,
+real split/federated workers, training, FedAvg and evaluation. It does not
+replace a reduced real-data or CUDA smoke test. Use a reduced dataset and one
+round before starting a long experiment.
 
 ## Dataset and evaluation assumptions
 
@@ -328,8 +329,8 @@ tests.
 - The microphone capture module contains undefined constants and empty methods.
 - The audio segmenter calls the audio loader with an incompatible signature.
 - Message byte serialization and `GrpcChannel` are stubs.
-- There is no CI workflow, multi-process spawn smoke suite, checkpoint round-trip
-  suite or CUDA test matrix yet.
+- There is no CI workflow, real-data spawn smoke, checkpoint round-trip suite or
+  CUDA test matrix yet. The synthetic CPU spawn cycle is covered.
 
 ## Recommended improvement plan
 
@@ -377,8 +378,7 @@ tests.
 
 - unit tests for schemas, parsers, padding, models and FedAvg;
 - message contract and timeout tests;
-- multiprocessing tests using the Windows `spawn` method;
-- a synthetic CPU smoke test and a separate CUDA smoke test;
+- a controller-level reduced real-data smoke and a separate CUDA smoke test;
 - checkpoint round-trip and deterministic-gradient tests;
 - Ruff, Black, mypy and pytest in CI.
 

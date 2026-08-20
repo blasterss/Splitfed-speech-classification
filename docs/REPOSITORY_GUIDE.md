@@ -153,7 +153,9 @@ uv run python -c "from src.schema import ConfigSchema; from src.utils.common imp
 ```
 
 The repository has focused tests for schemas/configuration, dataset parsers,
-padding, models/FedAvg, queue transport and controller lifecycle. Run them with
+padding, models/FedAvg, queue transport and controller lifecycle. It also has a
+synthetic CPU `spawn` cycle covering unequal client steps, split training,
+FedAvg, evaluation, clean process exit and state handoff. Run them with
 `uv run pytest`. A real-data multi-process smoke test, CUDA matrix and CI
 workflow are still missing.
 

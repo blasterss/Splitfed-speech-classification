@@ -7,6 +7,7 @@ import torch.multiprocessing as mp
 
 from ..transport.base import Channel, Message
 from ..utils.training import set_seed
+from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..schema import FedServerConfig
 from ..logger import logger
 
@@ -44,6 +45,7 @@ class FedServer:
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
         self._process: Optional[mp.Process] = None
         self._last_exitcode: int | None = None
+        self._last_state_dict: dict | None = None
 
     def start(self) -> None:
         """
@@ -76,6 +78,12 @@ class FedServer:
         self._stop_event.set()
 
         if self._process is not None:
+            try:
+                payload = self._result_queue.get(timeout=30)
+                if payload is not None:
+                    self._last_state_dict = deserialize_state_dict(payload)
+            except queue.Empty:
+                logger.warning("FedServer produced no final state_dict")
             self._process.join(timeout=30)
 
             if self._process.is_alive():
@@ -108,7 +116,12 @@ class FedServer:
         Must be called after stop().
         """
         try:
-            return self._result_queue.get_nowait()
+            if self._last_state_dict is not None:
+                return self._last_state_dict
+            payload = self._result_queue.get_nowait()
+            if payload is None:
+                raise RuntimeError("No federated aggregation completed.")
+            return deserialize_state_dict(payload)
         except queue.Empty:
             raise RuntimeError(
                 "No state_dict available. Ensure stop() was called and "
@@ -342,9 +355,8 @@ def _fed_server_worker(
     finally:
         if latest_params is not None:
             try:
-                result_queue.put_nowait(
-                    {k: v.cpu() for k, v in latest_params.items()}
-                )
+                state_dict = {k: v.cpu() for k, v in latest_params.items()}
+                result_queue.put_nowait(serialize_state_dict(state_dict))
 
                 logger.info(
                     "FedServer worker exiting — final state_dict saved"
@@ -356,6 +368,10 @@ def _fed_server_worker(
                 )
 
         else:
+            try:
+                result_queue.put_nowait(None)
+            except queue.Full:
+                pass
             logger.warning(
                 "FedServer worker exiting — no aggregation completed"
             )

@@ -10,6 +10,7 @@ from ..utils.training_stats import _RoundStats
 from ..model.server_side_model import ServerSideModel
 from ..transport.base import Channel, Message
 from ..utils.training import set_seed
+from ..utils.state import deserialize_state_dict, serialize_state_dict
 from ..schema import SplitServerConfig
 from ..logger import logger
 
@@ -49,6 +50,7 @@ class SplitServer:
         self._result_queue: mp.Queue = mp.Queue(maxsize=1)
         self._process: Optional[mp.Process] = None
         self._last_exitcode: int | None = None
+        self._last_state_dict: dict | None = None
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -72,6 +74,11 @@ class SplitServer:
         """Signal the worker to finish and wait for it to exit."""
         self._stop_event.set()
         if self._process is not None:
+            try:
+                payload = self._result_queue.get(timeout=30)
+                self._last_state_dict = deserialize_state_dict(payload)
+            except queue.Empty:
+                logger.warning("SplitServer produced no final state_dict")
             self._process.join(timeout=30)
             if self._process.is_alive():
                 logger.warning(
@@ -99,7 +106,9 @@ class SplitServer:
         Must be called *after* stop().
         """
         try:
-            return self._result_queue.get_nowait()
+            if self._last_state_dict is not None:
+                return self._last_state_dict
+            return deserialize_state_dict(self._result_queue.get_nowait())
         except queue.Empty:
             raise RuntimeError(
                 "No state_dict available. Either stop() has not been called yet "
@@ -276,7 +285,7 @@ def _split_server_worker_batch(
         stats.log_and_reset(current_round)
         state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         try:
-            result_queue.put_nowait(state_dict)
+            result_queue.put_nowait(serialize_state_dict(state_dict))
             logger.info(
                 "SplitServer worker exiting — state_dict pushed to result queue"
             )

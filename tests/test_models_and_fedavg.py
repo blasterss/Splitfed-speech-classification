@@ -3,6 +3,7 @@ import torch
 from src.model.client_side_model import ClientSideModel
 from src.model.server_side_model import ServerSideModel
 from src.splitfed.fed_server import FedServer
+from src.utils.state import deserialize_state_dict, serialize_state_dict
 
 
 def test_client_model_produces_split_activations_on_cpu():
@@ -60,3 +61,17 @@ def test_fedavg_preserves_integer_buffer_from_largest_client():
     assert torch.equal(aggregated["weight"], torch.tensor([4.0]))
     assert aggregated["counter"].dtype == torch.int64
     assert torch.equal(aggregated["counter"], torch.tensor(8))
+
+
+def test_state_dict_bytes_round_trip_without_shared_tensor_storage():
+    state_dict = {
+        "weight": torch.tensor([1.5], dtype=torch.float32),
+        "counter": torch.tensor(2, dtype=torch.int64),
+    }
+
+    restored = deserialize_state_dict(serialize_state_dict(state_dict))
+
+    assert restored.keys() == state_dict.keys()
+    assert all(
+        torch.equal(restored[key], value) for key, value in state_dict.items()
+    )
