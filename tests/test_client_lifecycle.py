@@ -6,7 +6,7 @@ import torch.multiprocessing as mp
 
 from src.schema import TrainingMode
 from src.splitfed.client import _client_worker
-from src.splitfed.controller import _cancel_training
+from src.splitfed.lifecycle import _cancel_training
 
 
 class FakeStopEvent:

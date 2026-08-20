@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from src.schema import ConfigSchema, TrainingMode
-from src.splitfed.controller import (
-    TrainingController,
+from src.splitfed.controller import TrainingController
+from src.splitfed.lifecycle import (
     _cancel_training,
     _raise_for_failed_processes,
     _raise_for_failed_servers,

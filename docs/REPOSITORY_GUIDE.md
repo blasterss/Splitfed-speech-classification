@@ -41,7 +41,8 @@ directory can make valid repository-relative paths fail.
   `DatasetLoaderFactory`.
 - `src/model/`: client-side and server-side PyTorch models.
 - `src/splitfed/`: clients, split server, federated server, and
-  `TrainingController`.
+  `TrainingController`; `lifecycle.py` owns shared process supervision,
+  cancellation and bounded shutdown helpers.
 - `src/transport/`: `Message`, queue channel, channel factory, and the
   unimplemented gRPC channel.
 - `src/utils/`: YAML helpers, training utilities, statistics, and feature

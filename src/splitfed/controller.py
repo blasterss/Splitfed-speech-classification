@@ -8,8 +8,13 @@ from ..transport.base import ChannelFactory
 from ..utils.artifacts import ArtifactPaths
 from ..utils.failures import FailureRecord
 from .centralized import CentralizedTrainer
-from .client import Client, _client_worker
+from .client import _client_worker
 from .fed_server import FedServer
+from .lifecycle import (
+    _cancel_training,
+    _shutdown_processes,
+    _wait_for_training_processes,
+)
 from .split_server import SplitServer
 
 logger = get_logger(__name__)
@@ -389,133 +394,3 @@ class TrainingController:
         self.first_failure = FailureRecord.from_exception(
             component="controller", exception=fallback
         ).as_dict()
-
-
-def _raise_for_failed_processes(processes: list[mp.Process]) -> None:
-    failures = [
-        f"{process.name} (exitcode={process.exitcode})"
-        for process in processes
-        if process.exitcode not in (None, 0)
-    ]
-
-    if failures:
-        message = "Client process failure: " + ", ".join(failures)
-        logger.error(message)
-        raise RuntimeError(message)
-
-
-def _raise_for_failed_servers(servers: tuple[object, ...]) -> None:
-    failures = [
-        f"{type(server).__name__} (exitcode={server.exitcode})"
-        for server in servers
-        if server.exitcode not in (None, 0)
-    ]
-
-    if failures:
-        message = "Server process failure: " + ", ".join(failures)
-        logger.error(message)
-        raise RuntimeError(message)
-
-
-def _wait_for_training_processes(
-    processes: list[mp.Process],
-    servers: tuple[object, ...],
-    poll_timeout: float,
-) -> None:
-    remaining = list(processes)
-
-    while remaining:
-        _raise_for_failed_servers(servers)
-
-        for process in remaining[:]:
-            process.join(timeout=poll_timeout)
-
-            if not process.is_alive():
-                remaining.remove(process)
-
-        _raise_for_failed_processes(
-            [process for process in processes if not process.is_alive()]
-        )
-
-    _raise_for_failed_servers(servers)
-
-
-def _cancel_training(stop_event, barriers: tuple[object, ...]) -> None:
-    stop_event.set()
-
-    for barrier in barriers:
-        try:
-            barrier.abort()
-        except Exception as exc:
-            logger.debug("Could not abort training barrier: %s", exc)
-
-
-def _shutdown_processes(
-    processes: list[mp.Process], join_timeout: float
-) -> None:
-    for process in processes:
-        process.join(timeout=join_timeout)
-
-    alive_processes = [process for process in processes if process.is_alive()]
-
-    for process in alive_processes:
-        process.terminate()
-
-    for process in alive_processes:
-        process.join(timeout=join_timeout)
-
-    killed_processes = []
-    for process in alive_processes:
-        if process.is_alive():
-            process.kill()
-            killed_processes.append(process)
-
-    for process in killed_processes:
-        process.join(timeout=join_timeout)
-
-    unreaped = [
-        process.name for process in killed_processes if process.is_alive()
-    ]
-    if unreaped:
-        raise RuntimeError(
-            "Processes remained alive after kill: " + ", ".join(unreaped)
-        )
-
-    def evaluate_all(self) -> None:
-        """
-        Runs evaluation on all clients sequentially and aggregates results.
-        """
-
-        results = []
-
-        for client_cfg in self.client_cfgs:
-            cid = client_cfg.client_id
-            ch = self.channels[cid]
-
-            client = Client(
-                cfg=client_cfg,
-                split_uplink_channel=ch[self.SPLIT_UPLINK],
-                split_downlink_channel=ch[self.SPLIT_DOWNLINK],
-                fed_uplink_channel=ch[self.FED_UPLINK],
-                fed_downlink_channel=ch[self.FED_DOWNLINK],
-            )
-
-            try:
-                metrics = client.evaluate()
-
-                dataset_size = len(client.dataset.test_dataset)
-
-                results.append((dataset_size, metrics))
-
-                logger.info("Client '%s' eval: %s", cid, metrics)
-
-            except Exception as e:
-                logger.error(
-                    "Client '%s' eval error: %s", cid, e, exc_info=True
-                )
-
-        if results:
-            agg = FedServer.aggregate_metrics(results)
-            logger.info("Aggregated eval metrics: %s", agg)
-        else:
-            logger.warning("No evaluation results collected")
