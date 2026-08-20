@@ -213,6 +213,9 @@ def _fed_server_worker(
 
     updates: Dict[str, dict] = {}
     sizes: Dict[str, int] = {}
+    active_round: int | None = None
+    last_completed_round = 0
+    expected_schema = None
 
     try:
         while not stop_event.is_set():
@@ -230,29 +233,23 @@ def _fed_server_worker(
 
                 served_any = True
 
-                if msg.type != "client_update":
-                    logger.warning(
-                        "Expected 'client_update' from %s, got '%s'",
-                        client_id,
-                        msg.type,
-                    )
-                    continue
+                if active_round is None:
+                    if msg.round <= last_completed_round:
+                        raise ValueError("Invalid client update stale round")
+                    active_round = msg.round
 
-                if (
-                    not isinstance(msg.payload, dict)
-                    or "state_dict" not in msg.payload
-                    or "dataset_size" not in msg.payload
-                ):
-                    logger.warning(
-                        "Malformed payload from client %s (round=%d)",
-                        client_id,
-                        msg.round,
-                    )
-                    continue
+                state_dict, dataset_size = _validate_client_update(
+                    msg,
+                    expected_client_id=client_id,
+                    expected_round=active_round,
+                    expected_schema=expected_schema,
+                )
+                if expected_schema is None:
+                    expected_schema = _state_schema(state_dict)
 
-                updates[client_id] = msg.payload["state_dict"]
-                sizes[client_id] = msg.payload["dataset_size"]
-                latest_round = msg.round
+                updates[client_id] = state_dict
+                sizes[client_id] = dataset_size
+                latest_round = active_round
 
                 logger.info(
                     "Received update from client %s (round=%d, samples=%d)",
@@ -301,6 +298,9 @@ def _fed_server_worker(
 
                 updates.clear()
                 sizes.clear()
+                last_completed_round = active_round
+                active_round = None
+                expected_schema = None
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
@@ -325,3 +325,52 @@ def _fed_server_worker(
             logger.warning(
                 "FedServer worker exiting — no aggregation completed"
             )
+
+
+def _state_schema(state_dict: dict) -> dict:
+    return {
+        key: (value.shape, value.dtype) for key, value in state_dict.items()
+    }
+
+
+def _validate_client_update(
+    message: Message,
+    expected_client_id,
+    expected_round: int | None,
+    expected_schema: dict | None,
+) -> tuple[dict, int]:
+    if message.sender != expected_client_id:
+        raise ValueError("Invalid client update sender")
+    if message.type != "client_update":
+        raise ValueError("Invalid client update type")
+    if expected_round is not None and message.round != expected_round:
+        raise ValueError("Invalid client update round")
+    if message.round <= 0 or message.step != 1:
+        raise ValueError("Invalid client update round or step")
+    if not isinstance(message.payload, dict):
+        raise ValueError("Invalid client update payload")
+
+    state_dict = message.payload.get("state_dict")
+    dataset_size = message.payload.get("dataset_size")
+    if not isinstance(dataset_size, int) or isinstance(dataset_size, bool):
+        raise ValueError("Invalid client update dataset_size")
+    if dataset_size <= 0:
+        raise ValueError("Invalid client update dataset_size")
+    if not isinstance(state_dict, dict) or not state_dict:
+        raise ValueError("Invalid client update state_dict")
+    if not all(
+        isinstance(value, torch.Tensor) for value in state_dict.values()
+    ):
+        raise ValueError("Invalid client update state tensor")
+
+    if expected_schema is not None:
+        if state_dict.keys() != expected_schema.keys():
+            raise ValueError("Invalid client update state keys")
+        for key, value in state_dict.items():
+            shape, dtype = expected_schema[key]
+            if value.shape != shape:
+                raise ValueError(f"Invalid client update shape for {key}")
+            if value.dtype != dtype:
+                raise ValueError(f"Invalid client update dtype for {key}")
+
+    return state_dict, dataset_size
