@@ -1,6 +1,9 @@
 import argparse
 import copy
+import hashlib
+import json
 import platform
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,6 +94,7 @@ def main():
             _save_run_metadata(
                 config,
                 model_path,
+                resolved_config_sha256=_config_sha256(config),
                 configuration_provenance=config_provenance,
             )
             if controller.split_server is not None:
@@ -120,6 +124,44 @@ def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:
         artifact_path / "resolved_config.yaml",
         config.model_dump(mode="json", by_alias=True),
     )
+
+
+def _config_sha256(config: ConfigSchema | dict) -> str:
+    """Return a stable hash of a validated config or raw mapping."""
+    if isinstance(config, ConfigSchema):
+        value = config.model_dump(mode="json", by_alias=True)
+    else:
+        value = config
+    canonical = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _file_sha256(path: Path) -> str | None:
+    """Hash an optional file without making artifact writes depend on it."""
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_revision() -> str | None:
+    """Return the current Git revision when running inside a checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
 
 
 def apply_cli_overrides(raw_config: dict, overrides: list[str]) -> dict:
@@ -234,6 +276,7 @@ def _save_run_metadata(
     *,
     cli_overrides: list[str] | None = None,
     configuration_provenance: dict | None = None,
+    resolved_config_sha256: str | None = None,
 ) -> None:
     """Persist environment provenance and the configured seed tree."""
     seed_tree = {
@@ -251,6 +294,13 @@ def _save_run_metadata(
         ),
         "fed_server": config.fed_server.seed if config.fed_server else None,
     }
+    configuration = copy.deepcopy(configuration_provenance) or {
+        "profile": None,
+        "cli_overrides": cli_overrides or [],
+    }
+    configuration["resolved_config_sha256"] = (
+        resolved_config_sha256 or _config_sha256(config)
+    )
     save_yaml(
         artifact_path / "run_metadata.yaml",
         {
@@ -263,10 +313,11 @@ def _save_run_metadata(
                 "cuda_runtime": (
                     str(torch.version.cuda) if torch.version.cuda else None
                 ),
+                "git_revision": _git_revision(),
+                "dependency_lock_sha256": _file_sha256(Path("uv.lock")),
             },
             "seed_tree": seed_tree,
-            "configuration": configuration_provenance
-            or {"profile": None, "cli_overrides": cli_overrides or []},
+            "configuration": configuration,
         },
     )
 

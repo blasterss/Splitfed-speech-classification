@@ -1,4 +1,9 @@
-from src.main import _save_resolved_config, _save_run_metadata
+from src.main import (
+    _config_sha256,
+    _file_sha256,
+    _save_resolved_config,
+    _save_run_metadata,
+)
 from src.schema import ConfigSchema
 from src.utils.common import read_yaml
 
@@ -90,6 +95,7 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     _save_run_metadata(
         config,
         artifact_path,
+        resolved_config_sha256=_config_sha256(config),
         configuration_provenance={
             "profile": {"name": "smoke", "version": "1"},
             "cli_overrides": ["training.num_rounds=1"],
@@ -110,5 +116,23 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
     assert metadata["configuration"] == {
         "profile": {"name": "smoke", "version": "1"},
         "cli_overrides": ["training.num_rounds=1"],
+        "resolved_config_sha256": _config_sha256(config),
     }
+    assert "git_revision" in metadata["environment"]
+    assert "dependency_lock_sha256" in metadata["environment"]
     assert metadata["created_at_utc"].endswith("+00:00")
+
+
+def test_config_hash_is_canonical_and_sensitive_to_values(tmp_path):
+    first = {"training": {"num_rounds": 1, "seed": 42}}
+    reordered = {"training": {"seed": 42, "num_rounds": 1}}
+    changed = {"training": {"seed": 42, "num_rounds": 2}}
+
+    assert _config_sha256(first) == _config_sha256(reordered)
+    assert _config_sha256(first) != _config_sha256(changed)
+
+    lock_file = tmp_path / "uv.lock"
+    lock_file.write_bytes(b"locked\n")
+    assert _file_sha256(lock_file) == (
+        "3a52732e0c98263090a2cd2509e7d2244d7194bd65f78b29e6ef6448e8143666"
+    )

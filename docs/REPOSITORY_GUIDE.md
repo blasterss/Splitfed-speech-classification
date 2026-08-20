@@ -121,6 +121,11 @@ Resolution precedence is `profile < YAML < --set`; it intentionally does not
 invent dataset roots or force a topology. Configure reduced datasets, CPU
 devices and the desired clients in the YAML used for a smoke run.
 
+Run artifacts include a canonical SHA-256 of the validated resolved config,
+the current Git revision and a SHA-256 of `uv.lock` in `run_metadata.yaml`.
+Unavailable checkout or lock information is recorded as null rather than
+preventing checkpoint persistence.
+
 Create local configuration and output directories:
 
 ```bash
