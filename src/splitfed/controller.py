@@ -161,9 +161,6 @@ class TrainingController:
 
         logger.info("=== STARTING TRAINING ===")
 
-        self.split_server.start()
-        self.fed_server.start()
-
         num_clients = len(self.client_cfgs)
 
         # Barrier: ensures all clients are ready before training begins
@@ -172,37 +169,40 @@ class TrainingController:
         # Barrier: ensures all clients finish training before evaluation
         eval_barrier = self._manager.Barrier(num_clients)
 
-        for client_cfg in self.client_cfgs:
-            cid = client_cfg.client_id
-            ch = self.channels[cid]
-
-            self._stop_events[cid] = self._stop_event
-
-            p = mp.Process(
-                target=_client_worker,
-                args=(
-                    client_cfg,
-                    self.cfg.training,
-                    ch[self.SPLIT_UPLINK],
-                    ch[self.SPLIT_DOWNLINK],
-                    ch[self.FED_UPLINK],
-                    ch[self.FED_DOWNLINK],
-                    self._stop_event,
-                    ready_barrier,
-                    eval_barrier,
-                ),
-                daemon=False,
-                name=f"Client-{cid}",
-            )
-
-            p.start()
-            self._client_processes.append(p)
-
-            logger.info("Client '%s' process started (pid=%d)", cid, p.pid)
-
         training_error: BaseException | None = None
 
         try:
+            self.split_server.start()
+            self.fed_server.start()
+
+            for client_cfg in self.client_cfgs:
+                cid = client_cfg.client_id
+                ch = self.channels[cid]
+
+                self._stop_events[cid] = self._stop_event
+
+                p = mp.Process(
+                    target=_client_worker,
+                    args=(
+                        client_cfg,
+                        self.cfg.training,
+                        ch[self.SPLIT_UPLINK],
+                        ch[self.SPLIT_DOWNLINK],
+                        ch[self.FED_UPLINK],
+                        ch[self.FED_DOWNLINK],
+                        self._stop_event,
+                        ready_barrier,
+                        eval_barrier,
+                    ),
+                    daemon=False,
+                    name=f"Client-{cid}",
+                )
+
+                p.start()
+                self._client_processes.append(p)
+
+                logger.info("Client '%s' process started (pid=%d)", cid, p.pid)
+
             _wait_for_training_processes(
                 self._client_processes,
                 (self.split_server, self.fed_server),
@@ -216,6 +216,7 @@ class TrainingController:
                 "Exception while waiting for clients: %s", exc, exc_info=True
             )
 
+            _cancel_training(self._stop_event, (ready_barrier, eval_barrier))
             _shutdown_processes(
                 self._client_processes, self.PROCESS_SHUTDOWN_TIMEOUT
             )
@@ -279,6 +280,16 @@ def _wait_for_training_processes(
         )
 
     _raise_for_failed_servers(servers)
+
+
+def _cancel_training(stop_event, barriers: tuple[object, ...]) -> None:
+    stop_event.set()
+
+    for barrier in barriers:
+        try:
+            barrier.abort()
+        except Exception as exc:
+            logger.debug("Could not abort training barrier: %s", exc)
 
 
 def _shutdown_processes(

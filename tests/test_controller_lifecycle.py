@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 import pytest
 
 from src.schema import ConfigSchema
 from src.splitfed.controller import (
     TrainingController,
+    _cancel_training,
     _raise_for_failed_processes,
     _raise_for_failed_servers,
     _shutdown_processes,
@@ -143,6 +146,54 @@ class FakeServer:
         self.exitcode = exitcode
 
 
+class LifecycleServer(FakeServer):
+    def __init__(self):
+        super().__init__(None)
+        self.start_called = False
+        self.stop_called = False
+
+    def start(self):
+        self.start_called = True
+
+    def stop(self):
+        self.stop_called = True
+
+
+class FakeStopEvent:
+    def __init__(self):
+        self.set_called = False
+
+    def set(self):
+        self.set_called = True
+
+
+class FakeBarrier:
+    def __init__(self, error=None):
+        self.abort_called = False
+        self.error = error
+
+    def abort(self):
+        self.abort_called = True
+        if self.error is not None:
+            raise self.error
+
+
+class FakeManager:
+    def __init__(self, barriers):
+        self.barriers = iter(barriers)
+
+    def Barrier(self, parties):
+        return next(self.barriers)
+
+
+class FailingStartProcess:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        raise RuntimeError("spawn failed")
+
+
 def test_failed_client_process_is_propagated():
     processes = [FakeProcess("Client-0", 0), FakeProcess("Client-1", 1)]
 
@@ -179,3 +230,52 @@ def test_shutdown_processes_terminates_alive_processes():
 
     assert process.terminate_called
     assert not process.is_alive()
+
+
+def test_cancel_training_sets_stop_event_and_aborts_all_barriers():
+    stop_event = FakeStopEvent()
+    broken_barrier = FakeBarrier(RuntimeError("already broken"))
+    waiting_barrier = FakeBarrier()
+
+    _cancel_training(stop_event, (broken_barrier, waiting_barrier))
+
+    assert stop_event.set_called
+    assert broken_barrier.abort_called
+    assert waiting_barrier.abort_called
+
+
+def test_start_training_cancels_barriers_when_client_spawn_fails(monkeypatch):
+    stop_event = FakeStopEvent()
+    ready_barrier = FakeBarrier()
+    eval_barrier = FakeBarrier()
+    split_server = LifecycleServer()
+    fed_server = LifecycleServer()
+    controller = TrainingController.__new__(TrainingController)
+    controller.cfg = SimpleNamespace(training=object())
+    controller.client_cfgs = [SimpleNamespace(client_id=0)]
+    controller.split_server = split_server
+    controller.fed_server = fed_server
+    controller.channels = {
+        0: {
+            controller.SPLIT_UPLINK: object(),
+            controller.SPLIT_DOWNLINK: object(),
+            controller.FED_UPLINK: object(),
+            controller.FED_DOWNLINK: object(),
+        }
+    }
+    controller._client_processes = []
+    controller._manager = FakeManager((ready_barrier, eval_barrier))
+    controller._stop_event = stop_event
+    controller._stop_events = {}
+    monkeypatch.setattr(
+        "src.splitfed.controller.mp.Process", FailingStartProcess
+    )
+
+    with pytest.raises(RuntimeError, match="spawn failed"):
+        controller.start_training()
+
+    assert stop_event.set_called
+    assert ready_barrier.abort_called
+    assert eval_barrier.abort_called
+    assert split_server.stop_called
+    assert fed_server.stop_called
