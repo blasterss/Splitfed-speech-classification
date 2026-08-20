@@ -252,6 +252,10 @@ Expected generated artifacts include:
   selected profile name/version, applied CLI overrides, canonical resolved
   config SHA-256, Git revision, `uv.lock` SHA-256 and message protocol identity.
   Git/lock values are null when the corresponding source is unavailable.
+- `dataset_manifest.yaml` in the same metadata directory with per-client
+  extraction counts/failure reasons, split seed, feature ordering,
+  actor-disjoint IDs and train/test sample/actor/class coverage. Missing client
+  reports are explicit and mark the manifest incomplete.
 
 Queue messages carry and validate protocol identity `secureasr.queue` version
 3 plus a bounded non-empty request ID. Split responses and accepted federated
@@ -401,7 +405,7 @@ tests.
   denominators and remain finite for one-class test partitions.
 - Checkpoint envelopes contain mode/scope ownership but not optimiser state,
   RNG state, resolved configuration or dataset manifest. Resolved configuration
-  is stored as a separate artifact.
+  and the bounded dataset manifest are stored as separate metadata artifacts.
 - The experiment cannot currently be resumed reliably.
 
 ### Packaging and unfinished modules

@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
 
-from src.dataset.dataset import ConflictEmotionalDataset
+from src.dataset.dataset import (
+    ConflictEmotionalDataset,
+    build_dataset_manifest,
+)
 from src.dataset.processors.base_processor import BaseDatasetLoader
 from src.dataset.processors.crema_d_processor import CremaDLoader
 from src.dataset.processors.factory import DatasetLoaderFactory
@@ -116,6 +119,20 @@ def test_actor_split_uses_configured_seed_and_remains_disjoint(
     assert dataset.coverage == {
         "train": {"samples": 2, "actors": 2, "class_0": 1, "class_1": 1},
         "test": {"samples": 2, "actors": 2, "class_0": 1, "class_1": 1},
+    }
+    assert build_dataset_manifest(config, dataset) == {
+        "dataset": "SAVEE",
+        "split_seed": 123,
+        "feature_names": ["mfcc", "rms", "zcr"],
+        "extraction": {
+            "discovered": 4,
+            "loaded": 4,
+            "failed": 0,
+            "failure_reasons": {},
+        },
+        "coverage": dataset.coverage,
+        "train_actor_ids": ["actor-0", "actor-1"],
+        "test_actor_ids": ["actor-2", "actor-3"],
     }
 
 

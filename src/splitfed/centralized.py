@@ -6,7 +6,7 @@ import torch.multiprocessing as mp
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader
 
-from ..dataset.dataset import ConflictEmotionalDataset
+from ..dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
 from ..logger import logger
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ConfigSchema
@@ -18,7 +18,13 @@ from ..utils.training import set_seed
 class CentralizedTrainer:
     """Own the single complete model used by the centralized baseline."""
 
-    def __init__(self, config: ConfigSchema, stop_event=None, mp_context=None):
+    def __init__(
+        self,
+        config: ConfigSchema,
+        stop_event=None,
+        mp_context=None,
+        dataset_report_queue=None,
+    ):
         self.config = config
         self._mp_context = mp_context or mp.get_context("spawn")
         self._stop_event = (
@@ -28,12 +34,19 @@ class CentralizedTrainer:
         self._process: mp.Process | None = None
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
+        self._dataset_report_queue = dataset_report_queue
 
     def start(self) -> None:
         self._stop_event.clear()
         self._process = self._mp_context.Process(
             target=_centralized_training_worker,
-            args=(self.config, self._stop_event, self._result_queue),
+            args=(
+                self.config,
+                self._stop_event,
+                self._result_queue,
+                None,
+                self._dataset_report_queue,
+            ),
             daemon=False,
             name="CentralizedTrainer",
         )
@@ -128,6 +141,7 @@ def _centralized_training_worker(
     datasets: (
         list[tuple[torch.utils.data.Dataset, torch.utils.data.Dataset]] | None
     ) = None,
+    dataset_report_queue=None,
 ) -> None:
     """Train and evaluate one complete model over the combined dataset view."""
     set_seed(config.training.seed)
@@ -136,6 +150,19 @@ def _centralized_training_worker(
             ConflictEmotionalDataset(client.dataset)
             for client in config.clients
         ]
+        if dataset_report_queue is not None:
+            for client_config, dataset in zip(
+                config.clients, loaded, strict=True
+            ):
+                dataset_report_queue.put(
+                    {
+                        "client_id": client_config.client_id,
+                        **build_dataset_manifest(
+                            client_config.dataset, dataset
+                        ),
+                    },
+                    timeout=5,
+                )
         datasets = [
             (dataset.train_dataset, dataset.test_dataset) for dataset in loaded
         ]

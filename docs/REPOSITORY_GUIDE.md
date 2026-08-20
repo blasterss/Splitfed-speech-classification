@@ -206,6 +206,10 @@ workflow are still missing.
   `resolved_config.yaml` in the experiment `metadata/` directory.
 - The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA details
   and experiment, training, dataset, client and server seeds.
+- `dataset_manifest.yaml` records each reporting client's dataset name,
+  extraction loss/reasons, split seed, feature ordering, train/test actor IDs
+  and sample/actor/class coverage. Missing client reports are listed and set
+  `complete: false`; raw WAV paths and tensors are not persisted.
 - Model checkpoint schema v1 is written atomically and records mode, server
   scope and personalized client identity. Loading validates ownership, keys,
   shapes and dtypes; optimizer/RNG resume is not implemented yet.

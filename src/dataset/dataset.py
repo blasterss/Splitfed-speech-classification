@@ -199,6 +199,25 @@ class ConflictEmotionalDataset:
         return sample_weights
 
 
+def build_dataset_manifest(
+    config: DatasetConfig, dataset: ConflictEmotionalDataset
+) -> dict:
+    """Build a bounded, serializable summary without raw sample paths."""
+    return {
+        "dataset": config.name.value,
+        "split_seed": config.split_seed,
+        "feature_names": (
+            None
+            if config.feature_names is None
+            else [feature.value for feature in config.feature_names]
+        ),
+        "extraction": dataset.extraction_report,
+        "coverage": dataset.coverage,
+        "train_actor_ids": list(dataset.train_actor_ids),
+        "test_actor_ids": list(dataset.test_actor_ids),
+    }
+
+
 def _coverage(labels: np.ndarray, actors: np.ndarray) -> dict:
     return {
         "samples": int(len(labels)),

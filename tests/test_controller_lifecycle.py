@@ -1,4 +1,5 @@
 import copy
+import queue
 from types import SimpleNamespace
 
 import pytest
@@ -451,6 +452,19 @@ def test_cancel_training_sets_stop_event_and_aborts_all_barriers():
     assert stop_event.set_called
     assert broken_barrier.abort_called
     assert waiting_barrier.abort_called
+
+
+def test_controller_drains_bounded_dataset_reports_by_client_id():
+    controller = TrainingController.__new__(TrainingController)
+    controller._dataset_report_queue = queue.Queue()
+    controller.dataset_manifests = {}
+    controller._dataset_report_queue.put({"client_id": 2, "dataset": "SAVEE"})
+
+    controller._drain_dataset_reports()
+
+    assert controller.dataset_manifests == {
+        2: {"client_id": 2, "dataset": "SAVEE"}
+    }
 
 
 def test_start_training_cancels_barriers_when_client_spawn_fails(monkeypatch):

@@ -142,6 +142,11 @@ def _finalize_run(
         resolved_config_sha256=_config_sha256(config),
         configuration_provenance=configuration_provenance,
     )
+    _save_dataset_manifest(
+        artifact_paths.metadata,
+        expected_client_ids=[client.client_id for client in config.clients],
+        client_manifests=controller.dataset_manifests,
+    )
     if controller.split_server is not None:
         try:
             controller.split_server.save(artifact_paths.checkpoints)
@@ -166,6 +171,28 @@ def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:
     save_yaml(
         artifact_path / "resolved_config.yaml",
         config.model_dump(mode="json", by_alias=True),
+    )
+
+
+def _save_dataset_manifest(
+    artifact_path: Path,
+    *,
+    expected_client_ids: list[int],
+    client_manifests: dict[int, dict],
+) -> None:
+    """Persist bounded per-client dataset summaries and missing reports."""
+    missing = sorted(set(expected_client_ids) - set(client_manifests))
+    save_yaml(
+        artifact_path / "dataset_manifest.yaml",
+        {
+            "schema_version": 1,
+            "complete": not missing,
+            "missing_client_ids": missing,
+            "clients": [
+                client_manifests[client_id]
+                for client_id in sorted(client_manifests)
+            ],
+        },
     )
 
 

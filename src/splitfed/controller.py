@@ -1,3 +1,5 @@
+import queue
+
 import torch.multiprocessing as mp
 
 from ..logger import get_logger
@@ -45,6 +47,8 @@ class TrainingController:
         self._manager: mp.managers.SyncManager | None = None
         self._stop_event = None
         self._stop_events: dict[str, mp.Event] = {}
+        self._dataset_report_queue = None
+        self.dataset_manifests: dict[int, dict] = {}
 
     def setup(self) -> None:
         """
@@ -54,6 +58,7 @@ class TrainingController:
 
         self._manager = self._mp_context.Manager()
         self._stop_event = self._manager.Event()
+        self._dataset_report_queue = self._mp_context.Queue()
 
         logger.info("Initialising channels...")
         self._init_channels()
@@ -66,6 +71,7 @@ class TrainingController:
                 self.cfg,
                 stop_event=self._stop_event,
                 mp_context=self._mp_context,
+                dataset_report_queue=self._dataset_report_queue,
             )
 
         logger.info("=== SETUP COMPLETE ===")
@@ -74,6 +80,16 @@ class TrainingController:
         """
         Gracefully shuts down multiprocessing manager.
         """
+        report_queue = getattr(self, "_dataset_report_queue", None)
+        if report_queue is not None:
+            close = getattr(report_queue, "close", None)
+            if close is not None:
+                close()
+            join_thread = getattr(report_queue, "join_thread", None)
+            if join_thread is not None:
+                join_thread()
+            self._dataset_report_queue = None
+
         if self._manager is not None:
             if self._stop_event is not None:
                 self._stop_event.set()
@@ -173,7 +189,10 @@ class TrainingController:
         """
 
         if self.cfg.training.mode is TrainingMode.centralized:
-            self._start_centralized_training()
+            try:
+                self._start_centralized_training()
+            finally:
+                self._drain_dataset_reports()
             return
         if (
             self.cfg.training.mode
@@ -245,6 +264,7 @@ class TrainingController:
                         ready_barrier,
                         eval_barrier,
                         metrics_path,
+                        getattr(self, "_dataset_report_queue", None),
                     ),
                     daemon=False,
                     name=f"Client-{cid}",
@@ -285,6 +305,7 @@ class TrainingController:
             if self.fed_server is not None:
                 self.fed_server.stop()
 
+            self._drain_dataset_reports()
             self._client_processes.clear()
 
         if training_error is not None:
@@ -303,6 +324,24 @@ class TrainingController:
             raise
         finally:
             self.centralized_trainer.stop()
+
+    def _drain_dataset_reports(self) -> None:
+        report_queue = getattr(self, "_dataset_report_queue", None)
+        if report_queue is None:
+            return
+        while True:
+            try:
+                report = report_queue.get_nowait()
+            except queue.Empty:
+                break
+            client_id = report.get("client_id")
+            if not isinstance(client_id, int):
+                raise ValueError("Dataset report has invalid client_id")
+            if client_id in self.dataset_manifests:
+                raise ValueError(
+                    f"Duplicate dataset report for client {client_id}"
+                )
+            self.dataset_manifests[client_id] = report
 
 
 def _raise_for_failed_processes(processes: list[mp.Process]) -> None:

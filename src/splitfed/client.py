@@ -5,7 +5,7 @@ import torch.optim as optim
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch.utils.data import DataLoader
 
-from ..dataset.dataset import ConflictEmotionalDataset
+from ..dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
 from ..logger import logger
 from ..model.client_side_model import ClientSideModel
 from ..model.speech_model import SpeechRecognitionModel
@@ -49,6 +49,9 @@ class Client:
 
         # ==== DATASET ====
         self.dataset = ConflictEmotionalDataset(cfg.dataset)
+        self.dataset_manifest = build_dataset_manifest(
+            cfg.dataset, self.dataset
+        )
 
         _pin = self.device.type == "cuda"
 
@@ -518,6 +521,7 @@ def _client_worker(
     ready_barrier,
     eval_barrier,
     metrics_path=None,
+    dataset_report_queue=None,
 ) -> None:
     """
     Persistent client process.
@@ -544,6 +548,11 @@ def _client_worker(
             mode=training_cfg.mode,
             metrics_path=metrics_path,
         )
+        if dataset_report_queue is not None:
+            dataset_report_queue.put(
+                {"client_id": cfg.client_id, **client.dataset_manifest},
+                timeout=5,
+            )
 
         logger.info(
             "Client %s: dataset loaded — waiting at ready_barrier.",
