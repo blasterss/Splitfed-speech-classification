@@ -370,9 +370,22 @@ def _shutdown_processes(
     for process in alive_processes:
         process.join(timeout=join_timeout)
 
+    killed_processes = []
     for process in alive_processes:
         if process.is_alive():
             process.kill()
+            killed_processes.append(process)
+
+    for process in killed_processes:
+        process.join(timeout=join_timeout)
+
+    unreaped = [
+        process.name for process in killed_processes if process.is_alive()
+    ]
+    if unreaped:
+        raise RuntimeError(
+            "Processes remained alive after kill: " + ", ".join(unreaped)
+        )
 
     def evaluate_all(self) -> None:
         """

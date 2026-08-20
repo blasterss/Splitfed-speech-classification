@@ -194,7 +194,8 @@ one shared SplitServer; SplitFed adds client-partition FedAvg.
 manager, queues and child processes; callers do not need to set a global start
 method before using the controller API. The CLI always tears down the manager
 after stopping workers and persisting available artifacts, including setup,
-training and artifact failures.
+training and artifact failures. Forced process shutdown performs a final
+bounded join after kill and reports a process that still cannot be reaped.
 
 Centralized dataset views must use identical model, batch size, device, noise,
 feature ordering and target sample-rate settings. The first client entry owns

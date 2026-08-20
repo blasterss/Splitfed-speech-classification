@@ -53,6 +53,13 @@ class CentralizedTrainer:
             if self._process.is_alive():
                 self._process.terminate()
                 self._process.join(timeout=5)
+            if self._process.is_alive():
+                self._process.kill()
+                self._process.join(timeout=5)
+                if self._process.is_alive():
+                    raise RuntimeError(
+                        "Centralized trainer remained alive after kill"
+                    )
             self._last_exitcode = self._process.exitcode
             self._process = None
         if self._last_state_dict is None and self._last_exitcode == 0:

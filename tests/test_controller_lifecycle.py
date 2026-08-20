@@ -322,6 +322,23 @@ class StubbornProcess(PollProcess):
         pass
 
 
+class ReapedOnlyAfterKillProcess(PollProcess):
+    def __init__(self, name):
+        super().__init__(name, alive=True)
+        self.join_calls = 0
+
+    def join(self, timeout=None):
+        self.join_calls += 1
+        if self.kill_called:
+            self.alive = False
+
+    def terminate(self):
+        self.terminate_called = True
+
+    def kill(self):
+        self.kill_called = True
+
+
 class FakeServer:
     def __init__(self, exitcode):
         self.exitcode = exitcode
@@ -410,6 +427,17 @@ def test_shutdown_processes_terminates_alive_processes():
     _shutdown_processes([process], join_timeout=0)
 
     assert process.terminate_called
+    assert not process.is_alive()
+
+
+def test_shutdown_processes_joins_after_killing_stubborn_process():
+    process = ReapedOnlyAfterKillProcess("Client-0")
+
+    _shutdown_processes([process], join_timeout=0)
+
+    assert process.terminate_called
+    assert process.kill_called
+    assert process.join_calls == 3
     assert not process.is_alive()
 
 

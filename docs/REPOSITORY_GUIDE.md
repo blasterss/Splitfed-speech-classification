@@ -276,7 +276,8 @@ an import test. `TrainingController` explicitly constructs its manager, queues
 and processes from a `spawn` context; `src/main.py` also sets that method for
 other multiprocessing code. The CLI attempts to stop every configured server
 and always tears down the manager, including setup, training, stop and artifact
-failures.
+failures. Controller and server shutdown paths perform a final bounded join
+after kill and raise if a child still remains alive.
 
 ## Known implementation hazards
 

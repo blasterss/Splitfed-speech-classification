@@ -98,6 +98,11 @@ class SplitServer:
                 self._process.join(timeout=5)
                 if self._process.is_alive():
                     self._process.kill()
+                    self._process.join(timeout=5)
+                    if self._process.is_alive():
+                        raise RuntimeError(
+                            "SplitServer worker remained alive after kill"
+                        )
 
             self._last_exitcode = self._process.exitcode
 
