@@ -196,8 +196,10 @@ workflow are still missing.
   aggregation window. The completed global state is broadcast to all clients;
   validated late updates for that round are discarded.
 - Partial quorum is arrival-window based and does not yet provide fairness or
-  leases. `strategy` variants and `aggregation_freq` are not behaviourally
-  implemented by the worker.
+  leases. `fedavg` uses uniform accepted-client weights; `weighted_fedavg` uses
+  dataset-size weights for floating tensors. Non-floating buffers come from the
+  largest accepted dataset. `aggregation_freq` must match
+  `training.fed_every`, the single client/server synchronization cadence.
 - The controller uses fixed channel constants rather than the channel names
   stored in server configuration.
 

@@ -3,6 +3,7 @@ import torch
 from src.model.client_side_model import ClientSideModel, PrivacyLayer
 from src.model.server_side_model import ServerSideModel
 from src.model.speech_model import SpeechRecognitionModel
+from src.schema import AggregationStrategy
 from src.splitfed.fed_server import FedServer
 from src.utils.state import deserialize_state_dict, serialize_state_dict
 
@@ -40,7 +41,7 @@ def test_server_models_produce_binary_logits_on_cpu():
         assert logits.device.type == "cpu"
 
 
-def test_fedavg_weights_floating_parameters_by_dataset_size():
+def test_weighted_fedavg_weights_floating_parameters_by_dataset_size():
     client_params = [
         {"weight": torch.tensor([0.0])},
         {"weight": torch.tensor([10.0])},
@@ -49,6 +50,19 @@ def test_fedavg_weights_floating_parameters_by_dataset_size():
     aggregated = FedServer.aggregate(client_params, [1, 3])
 
     assert torch.equal(aggregated["weight"], torch.tensor([7.5]))
+
+
+def test_uniform_fedavg_does_not_weight_by_dataset_size():
+    client_params = [
+        {"weight": torch.tensor([0.0])},
+        {"weight": torch.tensor([10.0])},
+    ]
+
+    aggregated = FedServer.aggregate(
+        client_params, [1, 99], AggregationStrategy.fedavg
+    )
+
+    assert torch.equal(aggregated["weight"], torch.tensor([5.0]))
 
 
 def test_fedavg_preserves_integer_buffer_from_largest_client():

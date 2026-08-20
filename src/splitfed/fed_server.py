@@ -7,7 +7,7 @@ import torch
 import torch.multiprocessing as mp
 
 from ..logger import logger
-from ..schema import FedServerConfig
+from ..schema import AggregationStrategy, FedServerConfig
 from ..transport.base import Channel, Message
 from ..utils.checkpoint import save_checkpoint
 from ..utils.state import deserialize_state_dict, serialize_state_dict
@@ -148,6 +148,7 @@ class FedServer:
     def aggregate(
         client_params_list: list[dict],
         client_sizes: list[int],
+        strategy: AggregationStrategy = AggregationStrategy.weighted_fedavg,
     ) -> dict:
         """
         Performs Federated Averaging (FedAvg).
@@ -160,12 +161,22 @@ class FedServer:
             Aggregated global state_dict
         """
 
-        total_samples = sum(client_sizes)
-
-        if total_samples == 0:
+        if not client_params_list or len(client_params_list) != len(
+            client_sizes
+        ):
             raise ValueError(
-                "FedAvg: total sample count is zero — cannot aggregate."
+                "FedAvg requires matching non-empty parameter and size lists"
             )
+        if any(size <= 0 for size in client_sizes):
+            raise ValueError("FedAvg client sample counts must be positive")
+
+        if strategy is AggregationStrategy.fedavg:
+            weights = [1.0 / len(client_params_list)] * len(client_params_list)
+        elif strategy is AggregationStrategy.weighted_fedavg:
+            total_samples = sum(client_sizes)
+            weights = [size / total_samples for size in client_sizes]
+        else:
+            raise ValueError(f"Unsupported aggregation strategy: {strategy}")
 
         new_params = copy.deepcopy(client_params_list[0])
         largest_client = max(
@@ -179,8 +190,7 @@ class FedServer:
                 torch.is_floating_point(value) or torch.is_complex(value)
             ):
                 new_params[key] = sum(
-                    client_params_list[i][key]
-                    * (client_sizes[i] / total_samples)
+                    client_params_list[i][key] * weights[i]
                     for i in range(len(client_params_list))
                 )
             else:
@@ -318,7 +328,7 @@ def _fed_server_worker(
 
                 try:
                     latest_params = FedServer.aggregate(
-                        params_list, sizes_list
+                        params_list, sizes_list, config.strategy
                     )
                 except Exception as exc:
                     logger.error(

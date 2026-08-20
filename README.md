@@ -161,8 +161,10 @@ Important configuration caveats:
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
 - `training.eval_every` is defined but not used by the training loop;
 - `fed_server.min_clients` and `quorum_timeout_sec` control partial aggregation;
-- `fed_server.strategy` variants are not behaviourally distinct yet, and
-  `aggregation_freq` does not control worker cadence;
+- `fed_server.strategy: fedavg` assigns equal weight to every accepted client;
+  `weighted_fedavg` weights floating tensors by dataset size. Non-floating
+  buffers come from the largest accepted dataset. `aggregation_freq` must equal
+  `training.fed_every`, which is the single synchronization cadence;
 - channel names stored inside server configuration are not used by the
   controller, which relies on fixed names;
 - client IDs must be unique; referenced server channels and feasible client
@@ -318,8 +320,8 @@ tests.
   Late authenticated updates are discarded after their round completes, while
   the global model is broadcast to all clients. A client that falls behind many
   rounds can still exhaust its bounded downlink queue and fail the run.
-- Aggregation strategy variants and `aggregation_freq` are configured but not
-  behaviourally implemented by the worker.
+- `aggregation_freq` and `training.fed_every` are required to match; clients use
+  that cadence to trigger server aggregation.
 - Metrics are logged locally and are not collected by the federated worker.
 
 ### Data pipeline

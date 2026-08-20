@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from src.schema import AggregationStrategy
 from src.splitfed.fed_server import (
     _fed_server_worker,
     _quorum_decision,
@@ -164,7 +165,12 @@ def test_worker_aggregates_partial_quorum_and_broadcasts_to_all_clients():
         }
         for client_id, message in updates.items()
     }
-    config = SimpleNamespace(seed=42, min_clients=2, quorum_timeout_sec=0)
+    config = SimpleNamespace(
+        seed=42,
+        min_clients=2,
+        quorum_timeout_sec=0,
+        strategy=AggregationStrategy.weighted_fedavg,
+    )
     result_queue = FakeResultQueue()
 
     _fed_server_worker(config, channels, 3, stop_event, result_queue)

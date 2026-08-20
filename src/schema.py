@@ -544,6 +544,13 @@ class ConfigSchema(StrictConfigModel):
             raise ValueError(
                 "fed_server.min_clients cannot exceed client count"
             )
+        if (
+            self.fed_server
+            and self.fed_server.aggregation_freq != self.training.fed_every
+        ):
+            raise ValueError(
+                "fed_server.aggregation_freq must equal training.fed_every"
+            )
 
         required_channels = set()
         channel_references = set()

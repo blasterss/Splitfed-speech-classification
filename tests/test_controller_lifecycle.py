@@ -161,6 +161,15 @@ def test_federated_mode_rejects_split_server_and_split_channels(tmp_path):
         ConfigSchema(**raw)
 
 
+def test_federated_cadence_fields_must_match(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["training"]["fed_every"] = 2
+    raw["fed_server"]["aggregation_freq"] = 1
+
+    with pytest.raises(ValidationError, match="aggregation_freq"):
+        ConfigSchema(**raw)
+
+
 def test_federated_mode_accepts_only_federated_topology(tmp_path):
     raw = make_config(tmp_path).model_dump(by_alias=True)
     raw["training"]["mode"] = "federated"

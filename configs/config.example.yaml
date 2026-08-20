@@ -93,7 +93,7 @@ fed_server:
   strategy: fedavg
   seed: *seed
   device: cpu
-  aggregation_freq: 1
+  aggregation_freq: 10
   min_clients: 2
   quorum_timeout_sec: 30
   federated_uplink_channel: federated_uplink
