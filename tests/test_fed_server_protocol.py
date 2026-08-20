@@ -6,10 +6,10 @@ import pytest
 import torch
 
 from src.schema import AggregationStrategy
-from src.splitfed.fed_server import (
-    _fed_server_worker,
-    _quorum_decision,
-    _validate_client_update,
+from src.splitfed.fed_server import _fed_server_worker
+from src.splitfed.fed_server.protocol import (
+    quorum_decision,
+    validate_client_update,
 )
 from src.transport.message import Message
 from src.utils.state import deserialize_state_dict
@@ -36,7 +36,7 @@ def _update(**overrides):
 def test_client_update_accepts_matching_round_and_schema():
     message = _update()
 
-    state, size = _validate_client_update(
+    state, size = validate_client_update(
         message,
         expected_client_id="client-0",
         expected_round=2,
@@ -49,7 +49,7 @@ def test_client_update_accepts_matching_round_and_schema():
 
 def test_client_update_rejects_expired_deadline():
     with pytest.raises(TimeoutError, match="deadline"):
-        _validate_client_update(
+        validate_client_update(
             _update(deadline_at=time.time() - 1),
             expected_client_id="client-0",
             expected_round=2,
@@ -84,7 +84,7 @@ def test_client_update_rejects_expired_deadline():
 )
 def test_client_update_rejects_invalid_protocol(message, match):
     with pytest.raises(ValueError, match=match):
-        _validate_client_update(
+        validate_client_update(
             message,
             expected_client_id="client-0",
             expected_round=2,
@@ -103,7 +103,7 @@ def test_client_update_rejects_invalid_protocol(message, match):
 )
 def test_partial_quorum_decision(updates, clients, minimum, elapsed, expected):
     assert (
-        _quorum_decision(
+        quorum_decision(
             update_count=updates,
             client_count=clients,
             min_clients=minimum,

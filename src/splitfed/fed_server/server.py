@@ -6,15 +6,20 @@ from pathlib import Path
 import torch
 import torch.multiprocessing as mp
 
-from ..logger import logger
-from ..schema import AggregationStrategy, FedServerConfig
-from ..transport.base import Channel, Message
-from ..transport.replay import ReplayGuard
-from ..utils.checkpoint import save_checkpoint
-from ..utils.failures import FailureRecord, publish_failure
-from ..utils.process import ignore_parent_interrupts
-from ..utils.state import deserialize_state_dict, serialize_state_dict
-from ..utils.training import set_seed
+from ...logger import logger
+from ...schema import AggregationStrategy, FedServerConfig
+from ...transport.base import Channel, Message
+from ...transport.replay import ReplayGuard
+from ...utils.checkpoint import save_checkpoint
+from ...utils.failures import FailureRecord, publish_failure
+from ...utils.process import ignore_parent_interrupts
+from ...utils.state import deserialize_state_dict, serialize_state_dict
+from ...utils.training import set_seed
+from .protocol import (
+    quorum_decision,
+    state_schema,
+    validate_client_update,
+)
 
 
 class FedServer:
@@ -294,7 +299,7 @@ def _fed_server_worker(
                 replay_guard.accept(msg.request_id)
 
                 if msg.round <= last_completed_round:
-                    _validate_client_update(
+                    validate_client_update(
                         msg,
                         expected_client_id=client_id,
                         expected_round=msg.round,
@@ -333,14 +338,14 @@ def _fed_server_worker(
                     active_round = msg.round
                     round_started_at = time.monotonic()
 
-                state_dict, dataset_size = _validate_client_update(
+                state_dict, dataset_size = validate_client_update(
                     msg,
                     expected_client_id=client_id,
                     expected_round=active_round,
                     expected_schema=expected_schema,
                 )
                 if expected_schema is None:
-                    expected_schema = _state_schema(state_dict)
+                    expected_schema = state_schema(state_dict)
 
                 updates[client_id] = state_dict
                 sizes[client_id] = dataset_size
@@ -357,7 +362,7 @@ def _fed_server_worker(
             if active_round is not None:
                 assert round_started_at is not None
                 elapsed = time.monotonic() - round_started_at
-                decision = _quorum_decision(
+                decision = quorum_decision(
                     update_count=len(updates),
                     client_count=num_clients,
                     min_clients=config.min_clients,
@@ -462,69 +467,3 @@ def _fed_server_worker(
             logger.warning(
                 "FedServer worker exiting — no aggregation completed"
             )
-
-
-def _state_schema(state_dict: dict) -> dict:
-    return {
-        key: (value.shape, value.dtype) for key, value in state_dict.items()
-    }
-
-
-def _quorum_decision(
-    update_count: int,
-    client_count: int,
-    min_clients: int,
-    elapsed: float,
-    timeout: float,
-) -> str:
-    if update_count >= client_count:
-        return "aggregate"
-    if elapsed < timeout:
-        return "wait"
-    if update_count >= min_clients:
-        return "aggregate"
-    return "fail"
-
-
-def _validate_client_update(
-    message: Message,
-    expected_client_id,
-    expected_round: int | None,
-    expected_schema: dict | None,
-) -> tuple[dict, int]:
-    message.validate_for_receive()
-    if message.sender != expected_client_id:
-        raise ValueError("Invalid client update sender")
-    if message.type != "client_update":
-        raise ValueError("Invalid client update type")
-    if expected_round is not None and message.round != expected_round:
-        raise ValueError("Invalid client update round")
-    if message.round <= 0 or message.step != 1:
-        raise ValueError("Invalid client update round or step")
-    if not isinstance(message.payload, dict):
-        raise ValueError("Invalid client update payload")
-
-    state_dict = message.payload.get("state_dict")
-    dataset_size = message.payload.get("dataset_size")
-    if not isinstance(dataset_size, int) or isinstance(dataset_size, bool):
-        raise ValueError("Invalid client update dataset_size")
-    if dataset_size <= 0:
-        raise ValueError("Invalid client update dataset_size")
-    if not isinstance(state_dict, dict) or not state_dict:
-        raise ValueError("Invalid client update state_dict")
-    if not all(
-        isinstance(value, torch.Tensor) for value in state_dict.values()
-    ):
-        raise ValueError("Invalid client update state tensor")
-
-    if expected_schema is not None:
-        if state_dict.keys() != expected_schema.keys():
-            raise ValueError("Invalid client update state keys")
-        for key, value in state_dict.items():
-            shape, dtype = expected_schema[key]
-            if value.shape != shape:
-                raise ValueError(f"Invalid client update shape for {key}")
-            if value.dtype != dtype:
-                raise ValueError(f"Invalid client update dtype for {key}")
-
-    return state_dict, dataset_size

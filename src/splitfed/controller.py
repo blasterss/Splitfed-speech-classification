@@ -9,12 +9,12 @@ from ..utils.artifacts import ArtifactPaths
 from ..utils.failures import FailureRecord
 from .centralized import CentralizedTrainer
 from .client import _client_worker
-from .fed_server import FedServer
-from .lifecycle import (
+from .common.lifecycle import (
     _cancel_training,
     _shutdown_processes,
     _wait_for_training_processes,
 )
+from .fed_server import FedServer
 from .split_server import SplitServer
 
 logger = get_logger(__name__)
