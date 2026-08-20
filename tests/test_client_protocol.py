@@ -1,7 +1,13 @@
+from types import SimpleNamespace
+
 import pytest
 import torch
 
-from src.splitfed.client import _extract_payload, _validate_global_update
+from src.splitfed.client import (
+    Client,
+    _extract_payload,
+    _validate_global_update,
+)
 from src.transport.message import Message
 
 
@@ -93,3 +99,38 @@ def test_global_update_rejects_invalid_envelope_or_state(response, match):
 
     with pytest.raises(ValueError, match=match):
         _validate_global_update(response, expected, 2)
+
+
+class RecordingChannel:
+    def __init__(self, response=None):
+        self.response = response
+        self.messages = []
+
+    def send(self, message):
+        self.messages.append(message)
+
+    def recv(self):
+        return self.response
+
+
+def test_client_treats_correlated_split_error_as_fatal():
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.device = torch.device("cpu")
+    client.cfg = SimpleNamespace(runtime=SimpleNamespace(local_steps=1))
+    client.model = torch.nn.Linear(1, 1)
+    client.optimizer = torch.optim.SGD(client.model.parameters(), lr=0.1)
+    client.train_loader = [(torch.ones(1, 1), torch.ones(1))]
+    client.to_server = RecordingChannel()
+    client.from_server = RecordingChannel(
+        Message(
+            type="error",
+            sender="split_server",
+            round=1,
+            step=1,
+            payload={"reason": "split_batch_timeout"},
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="invalid split gradient"):
+        client.train_one_round(1)

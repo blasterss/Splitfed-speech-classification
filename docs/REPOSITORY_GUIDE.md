@@ -175,6 +175,8 @@ workflow are still missing.
 - `split_server.model.gradient_accumulation_steps` controls averaged server
   optimizer updates. Client activation gradients are not scaled by this value,
   and incomplete accumulation windows flush at the completed round boundary.
+- `split_server.model.batch_timeout_sec` bounds incomplete split batches;
+  waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
   aggregation window. The completed global state is broadcast to all clients;
   validated late updates for that round are discarded.

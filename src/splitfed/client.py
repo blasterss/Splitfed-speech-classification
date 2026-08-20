@@ -160,13 +160,10 @@ class Client:
             )
 
             if grad is None:
-                logger.error(
-                    "Client %s: skipping backward pass r=%d s=%d — invalid server response.",
-                    self.client_id,
-                    round,
-                    step,
+                raise RuntimeError(
+                    f"Client {self.client_id}: invalid split gradient "
+                    f"response for round={round} step={step}"
                 )
-                continue
 
             activations.backward(grad.to(self.device))
             self.optimizer.step()
@@ -276,13 +273,10 @@ class Client:
             )
 
             if logits is None:
-                logger.error(
-                    "Client %s: skipping eval step r=%d s=%d — invalid server response.",
-                    self.client_id,
-                    round,
-                    step,
+                raise RuntimeError(
+                    f"Client {self.client_id}: invalid split evaluation "
+                    f"response for round={round} step={step}"
                 )
-                continue
 
             logits = logits.to(self.device).reshape(-1)
 

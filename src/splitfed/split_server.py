@@ -17,9 +17,6 @@ from typing import Dict, Optional
 from collections import defaultdict
 import time
 
-# How long (seconds) a partial batch can linger before it is discarded.
-_BATCH_TIMEOUT_SECONDS = 30.0
-
 logger = logger.getChild("SplitServer")
 
 
@@ -265,7 +262,12 @@ def _split_server_worker_batch(
                         accumulated_batches = 0
                     completed_rounds.pop(completed_round, None)
 
-            _evict_stale_batches(pending_batches, pending_timestamps)
+            _evict_stale_batches(
+                pending_batches,
+                pending_timestamps,
+                client_channels,
+                config.model.batch_timeout_sec,
+            )
 
             if not served_any:
                 stop_event.wait(timeout=0.001)
@@ -397,23 +399,35 @@ def _resolve_batch_type(
 def _evict_stale_batches(
     pending_batches: Dict[tuple, Dict[str, Message]],
     pending_timestamps: Dict[tuple, float],
+    client_channels: Dict[str, Dict[str, Channel]],
+    timeout_seconds: float,
 ) -> None:
     now = time.monotonic()
     stale_keys = [
         key
         for key, ts in pending_timestamps.items()
-        if now - ts > _BATCH_TIMEOUT_SECONDS
+        if now - ts > timeout_seconds
     ]
     for key in stale_keys:
         batch = pending_batches.pop(key, {})
         pending_timestamps.pop(key, None)
+        for client_id, message in batch.items():
+            client_channels[client_id]["downlink"].send(
+                Message(
+                    type="error",
+                    sender="split_server",
+                    round=message.round,
+                    step=message.step,
+                    payload={"reason": "split_batch_timeout"},
+                )
+            )
         logger.warning(
             "SplitServer: evicting stale batch key=%s "
             "(received from %d client(s): %s, timeout=%gs).",
             key,
             len(batch),
             list(batch.keys()),
-            _BATCH_TIMEOUT_SECONDS,
+            timeout_seconds,
         )
 
 

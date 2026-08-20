@@ -3,6 +3,7 @@ import torch
 
 from src.splitfed.split_server import (
     _batch_is_ready,
+    _evict_stale_batches,
     _forward_parallel,
     _step_accumulated_gradients,
     _store_pending_batch,
@@ -76,6 +77,39 @@ def test_duplicate_split_step_is_rejected_as_replay():
 
     with pytest.raises(ValueError, match="Duplicate split step"):
         _store_pending_batch(pending, message, "client-0")
+
+
+class RecordingDownlink:
+    def __init__(self):
+        self.messages = []
+
+    def send(self, message):
+        self.messages.append(message)
+
+
+def test_stale_batch_sends_correlated_error_to_waiting_clients(monkeypatch):
+    message = _split_message(round=2, step=3)
+    pending = {(2, 3): {"client-0": message}}
+    timestamps = {(2, 3): 0.0}
+    downlink = RecordingDownlink()
+    channels = {"client-0": {"downlink": downlink}}
+    monkeypatch.setattr(
+        "src.splitfed.split_server.time.monotonic", lambda: 10.0
+    )
+
+    _evict_stale_batches(
+        pending,
+        timestamps,
+        channels,
+        timeout_seconds=5.0,
+    )
+
+    assert pending == {}
+    assert timestamps == {}
+    assert len(downlink.messages) == 1
+    error = downlink.messages[0]
+    assert error.type is MessageType.ERROR
+    assert (error.round, error.step) == (2, 3)
 
 
 def test_batch_becomes_ready_when_missing_client_finished_round():

@@ -151,6 +151,7 @@ Important configuration caveats:
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
   batches are averaged per optimizer update; each round flushes its remainder;
+- `split_server.model.batch_timeout_sec` bounds incomplete split batches;
 - `training.eval_every` is defined but not used by the training loop;
 - `fed_server.min_clients` and `quorum_timeout_sec` control partial aggregation;
 - `fed_server.strategy` variants are not behaviourally distinct yet, and
@@ -259,8 +260,8 @@ tests.
 
 - Clients send `round_end` after their final local step, allowing longer client
   loaders to continue without waiting for an already-finished peer. A missing
-  or malformed completion message can still leave a partial batch until its
-  timeout, which is discarded without a correlated error response.
+  completion message leaves a partial batch only until its configured timeout;
+  the server then sends correlated errors to clients already waiting for it.
 - The controller has a polling supervision loop and propagates non-zero child
   exit codes. Client initialization and barrier failures now set the shared
   stop event and abort peer barriers, but queue timeouts and server failures are

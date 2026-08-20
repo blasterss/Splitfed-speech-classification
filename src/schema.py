@@ -298,6 +298,12 @@ class SplitServerModelConfig(StrictConfigModel):
         description="Server batches averaged per optimizer update.",
     )
 
+    batch_timeout_sec: float = Field(
+        default=30.0,
+        gt=0,
+        description="Maximum wait for missing peers in a split batch.",
+    )
+
 
 class SplitServerConfig(StrictConfigModel):
     """Configuration for the split-learning server."""

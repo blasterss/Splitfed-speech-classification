@@ -63,6 +63,17 @@ def test_split_server_requires_positive_gradient_accumulation_steps():
         )
 
 
+def test_split_server_requires_positive_batch_timeout():
+    with pytest.raises(ValidationError, match="batch_timeout_sec"):
+        SplitServerModelConfig(
+            pos_weight=1,
+            optimizer="adam",
+            lr=0.001,
+            device="cpu",
+            batch_timeout_sec=0,
+        )
+
+
 def test_fed_server_requires_positive_quorum_timeout():
     with pytest.raises(ValidationError, match="quorum_timeout_sec"):
         FedServerConfig(
