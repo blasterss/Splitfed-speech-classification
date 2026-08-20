@@ -152,6 +152,22 @@ def test_config_rejects_swapped_federated_channel_roles(tmp_path):
         ConfigSchema(**raw)
 
 
+def test_config_rejects_grpc_stub_before_setup(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["experiment"]["transport"] = "grpc"
+
+    with pytest.raises(ValidationError, match="grpc is a stub"):
+        ConfigSchema(**raw)
+
+
+def test_config_rejects_ignored_queue_compression(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["channels"]["split_uplink"]["compression"] = "gzip"
+
+    with pytest.raises(ValidationError, match="compression"):
+        ConfigSchema(**raw)
+
+
 @pytest.mark.parametrize(
     ("path", "unknown_key"),
     [

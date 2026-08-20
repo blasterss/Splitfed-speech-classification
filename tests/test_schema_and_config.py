@@ -5,9 +5,11 @@ import yaml
 from pydantic import ValidationError
 
 from src.schema import (
+    ClientModelConfig,
     DatasetConfig,
     DatasetType,
     FedServerConfig,
+    NoiseConfig,
     SplitServerModelConfig,
     TrainingConfig,
     _validate_device_available,
@@ -107,3 +109,13 @@ def test_device_validation_rejects_missing_cuda_index(monkeypatch):
 
     with pytest.raises(ValueError, match="only 1"):
         _validate_device_available("cuda:1", "client.device")
+
+
+def test_schema_rejects_unsupported_optimizer():
+    with pytest.raises(ValidationError, match="optimizer"):
+        ClientModelConfig(lr=0.001, optimizer="sgd")
+
+
+def test_schema_rejects_unsupported_noise_type():
+    with pytest.raises(ValidationError, match="type"):
+        NoiseConfig(type="uniform", std=0.1)

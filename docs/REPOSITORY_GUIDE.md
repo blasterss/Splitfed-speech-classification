@@ -203,6 +203,8 @@ workflow are still missing.
   `training.fed_every`, the single client/server synchronization cadence.
 - Server channel references are validated against the controller's four
   canonical logical roles before setup.
+- Only queue transport without compression is operational. gRPC/compression
+  selections and unknown optimizer/noise names fail schema validation.
 
 ## Architecture and process boundaries
 

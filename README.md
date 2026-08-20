@@ -171,6 +171,9 @@ Important configuration caveats:
   quorum are validated before controller setup.
 - device values must be `cpu`, `cuda`, or `cuda:N`; requested CUDA devices are
   checked for availability before any child process is spawned.
+- optimizer and noise distribution names are typed registries. gRPC and channel
+  compression selections are rejected before setup because those paths remain
+  stubs.
 
 The repository also contains a forward-looking research plan for named launch
 profiles, simulation, isolated client containers and throughput-aware client

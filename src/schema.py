@@ -44,6 +44,15 @@ class AggregationStrategy(str, Enum):
     weighted_fedavg = "weighted_fedavg"
 
 
+class OptimizerType(str, Enum):
+    adam = "adam"
+
+
+class NoiseType(str, Enum):
+    gauss = "gauss"
+    laplace = "laplace"
+
+
 class TrainingMode(str, Enum):
     centralized = "centralized"
     federated = "federated"
@@ -161,7 +170,7 @@ class ClientModelConfig(StrictConfigModel):
     #     description="Padding size for the client model."
     # )
 
-    optimizer: str = Field(
+    optimizer: OptimizerType = Field(
         default="adam", description="Optimization algorithm."
     )
 
@@ -192,7 +201,7 @@ class ClientRuntimeConfig(StrictConfigModel):
 class NoiseConfig(StrictConfigModel):
     """Noise injection configuration (for secure / robust SFL)."""
 
-    type: str = Field(description="Noise type (gauss, laplace, etc.).")
+    type: NoiseType = Field(description="Supported perturbation distribution.")
 
     std: float = Field(gt=0, description="Standard deviation of the noise.")
 
@@ -294,7 +303,7 @@ class SplitServerModelConfig(StrictConfigModel):
         ),
     )
 
-    optimizer: str = Field(
+    optimizer: OptimizerType = Field(
         default="adam",
         description="Optimization algorithm for the server-side model.",
     )
@@ -491,6 +500,20 @@ class ConfigSchema(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_topology(self):
+        if self.experiment.transport is not TransportType.queue:
+            raise ValueError(
+                "Only queue transport is operational; grpc is a stub"
+            )
+        for channel_name, channel in self.channels.items():
+            if channel.transport is not TransportType.queue:
+                raise ValueError(
+                    f"Channel {channel_name!r} selects non-operational grpc"
+                )
+            if channel.compression is not None:
+                raise ValueError(
+                    f"Channel {channel_name!r} compression is not implemented"
+                )
+
         device_fields = [
             (
                 f"clients[{client.client_id}].runtime.device",
