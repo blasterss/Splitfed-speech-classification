@@ -19,6 +19,12 @@ from ...utils.process import ignore_parent_interrupts
 from ...utils.state import deserialize_state_dict, serialize_state_dict
 from ...utils.training import set_seed
 from ...utils.training_stats import _RoundStats
+from .protocol import (
+    _batch_is_ready,
+    _evict_stale_batches,
+    _store_pending_batch,
+    _validate_message,
+)
 
 logger = logger.getChild("SplitServer")
 
@@ -515,164 +521,6 @@ def _split_server_worker_batch(
                 "SplitServer result queue was already full — state_dict "
                 "NOT pushed."
             )
-
-
-def _validate_message(msg: Message, client_id: str) -> bool:
-    try:
-        msg.validate_for_receive()
-    except (ValueError, TimeoutError) as exc:
-        logger.warning("SplitServer: invalid message deadline: %s", exc)
-        return False
-
-    if msg.sender != client_id:
-        logger.warning(
-            "SplitServer: sender mismatch on client %s channel (got %s)",
-            client_id,
-            msg.sender,
-        )
-        return False
-
-    if msg.type not in ("train_step", "eval_step", "round_end"):
-        logger.warning(
-            "SplitServer: unknown message type '%s' from client %s — "
-            "discarding.",
-            msg.type,
-            client_id,
-        )
-        return False
-
-    if msg.round <= 0 or msg.step <= 0:
-        logger.warning(
-            "SplitServer: invalid correlation from client %s "
-            "(round=%d step=%d)",
-            client_id,
-            msg.round,
-            msg.step,
-        )
-        return False
-
-    if not isinstance(msg.payload, dict):
-        logger.warning(
-            "SplitServer: payload is not a dict (client %s, type %s) — "
-            "discarding.",
-            client_id,
-            msg.type,
-        )
-        return False
-
-    if msg.type == "round_end":
-        return True
-
-    if "activations" not in msg.payload:
-        logger.warning(
-            "SplitServer: missing 'activations' in payload (client %s) — "
-            "discarding.",
-            client_id,
-        )
-        return False
-
-    if "labels" not in msg.payload:
-        logger.warning(
-            "SplitServer: missing 'labels' in payload (client %s) — "
-            "discarding.",
-            client_id,
-        )
-        return False
-
-    act = msg.payload["activations"]
-    if not isinstance(act, torch.Tensor) or act.dim() < 1:
-        logger.warning(
-            "SplitServer: 'activations' is not a valid tensor "
-            "(client %s) — discarding.",
-            client_id,
-        )
-        return False
-
-    labels = msg.payload["labels"]
-    if (
-        not isinstance(labels, torch.Tensor)
-        or labels.dim() < 1
-        or labels.shape[0] != act.shape[0]
-    ):
-        logger.warning(
-            "SplitServer: invalid labels for activation batch (client %s)",
-            client_id,
-        )
-        return False
-
-    return True
-
-
-def _batch_is_ready(
-    batch: dict[str, Message],
-    client_ids: set,
-    completed_clients: set,
-) -> bool:
-    missing_clients = client_ids - set(batch)
-    return missing_clients <= completed_clients
-
-
-def _store_pending_batch(
-    pending_batches: dict[tuple, dict[str, Message]],
-    message: Message,
-    client_id: str,
-) -> None:
-    key = (message.round, message.step)
-    if client_id in pending_batches.setdefault(key, {}):
-        raise ValueError(
-            f"Duplicate split step from client {client_id} for key {key}"
-        )
-    pending_batches[key][client_id] = message
-
-
-def _resolve_batch_type(
-    batch_msgs: dict[str, Message], key: tuple
-) -> str | None:
-    types = {msg.type for msg in batch_msgs.values()}
-    if len(types) == 1:
-        return types.pop()
-    logger.warning(
-        "SplitServer: mixed message types %s for key %s — discarding batch.",
-        types,
-        key,
-    )
-    return None
-
-
-def _evict_stale_batches(
-    pending_batches: dict[tuple, dict[str, Message]],
-    pending_timestamps: dict[tuple, float],
-    client_channels: dict[str, dict[str, Channel]],
-    timeout_seconds: float,
-) -> None:
-    now = time.monotonic()
-    stale_keys = [
-        key
-        for key, ts in pending_timestamps.items()
-        if now - ts > timeout_seconds
-    ]
-    for key in stale_keys:
-        batch = pending_batches.pop(key, {})
-        pending_timestamps.pop(key, None)
-        for client_id, message in batch.items():
-            client_channels[client_id]["downlink"].send(
-                Message(
-                    type="error",
-                    sender="split_server",
-                    round=message.round,
-                    step=message.step,
-                    request_id=message.request_id,
-                    payload={"reason": "split_batch_timeout"},
-                )
-            )
-        logger.warning(
-            "SplitServer: evicting stale batch key=%s "
-            "(received from %d client(s): %s, timeout=%gs).",
-            key,
-            len(batch),
-            list(batch.keys()),
-            timeout_seconds,
-        )
 
 
 def _handle_train_batch(

@@ -183,7 +183,7 @@ def test_stale_batch_sends_correlated_error_to_waiting_clients(monkeypatch):
     downlink = RecordingDownlink()
     channels = {"client-0": {"downlink": downlink}}
     monkeypatch.setattr(
-        "src.splitfed.split_server.server.time.monotonic", lambda: 10.0
+        "src.splitfed.split_server.protocol.time.monotonic", lambda: 10.0
     )
 
     _evict_stale_batches(
