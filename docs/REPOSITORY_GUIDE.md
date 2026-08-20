@@ -140,6 +140,10 @@ transport/aggregation policy versions are also explicit. Unavailable checkout
 or lock information is recorded as null rather than preventing checkpoint
 persistence; scheduler policy and container image digest are null for the
 current local runtime.
+Captured client/controller failures additionally produce the bounded versioned
+artifact `diagnostics/first_failure.yaml`. Server workers do not publish their
+own structured records yet, so server exit failures currently use controller
+fallback context.
 
 Every local queue `Message` validates `secureasr.queue` protocol version 3 and
 a bounded non-empty request ID, which are also represented in run metadata.
@@ -302,8 +306,8 @@ stage. Client construction, training, evaluation and bounded barrier waits
 share one worker failure boundary; failures set the shared stop event and abort
 peer barriers. Remaining limitations include:
 
-- server exit codes are checked, but recovery and structured error propagation
-  are incomplete;
+- client/controller first failures are structured, but server-originated
+  context, typed cancellation delivery and recovery remain incomplete;
 - joins use a polling loop and bounded terminate/kill fallback, but there is no
   recovery protocol;
 - local queue receive waits participate in the shared cancellation event, but

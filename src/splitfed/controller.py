@@ -6,6 +6,7 @@ from ..logger import get_logger
 from ..schema import ConfigSchema, TrainingMode
 from ..transport.base import ChannelFactory
 from ..utils.artifacts import ArtifactPaths
+from ..utils.failures import FailureRecord
 from .centralized import CentralizedTrainer
 from .client import Client, _client_worker
 from .fed_server import FedServer
@@ -48,7 +49,9 @@ class TrainingController:
         self._stop_event = None
         self._stop_events: dict[str, mp.Event] = {}
         self._dataset_report_queue = None
+        self._failure_queue = None
         self.dataset_manifests: dict[int, dict] = {}
+        self.first_failure: dict | None = None
 
     def setup(self) -> None:
         """
@@ -59,6 +62,9 @@ class TrainingController:
         self._manager = self._mp_context.Manager()
         self._stop_event = self._manager.Event()
         self._dataset_report_queue = self._mp_context.Queue()
+        self._failure_queue = self._mp_context.Queue(
+            maxsize=len(self.client_cfgs) + 3
+        )
 
         logger.info("Initialising channels...")
         self._init_channels()
@@ -89,6 +95,16 @@ class TrainingController:
             if join_thread is not None:
                 join_thread()
             self._dataset_report_queue = None
+
+        failure_queue = getattr(self, "_failure_queue", None)
+        if failure_queue is not None:
+            close = getattr(failure_queue, "close", None)
+            if close is not None:
+                close()
+            join_thread = getattr(failure_queue, "join_thread", None)
+            if join_thread is not None:
+                join_thread()
+            self._failure_queue = None
 
         if self._manager is not None:
             if self._stop_event is not None:
@@ -193,6 +209,9 @@ class TrainingController:
         if self.cfg.training.mode is TrainingMode.centralized:
             try:
                 self._start_centralized_training()
+            except BaseException as exc:
+                self._capture_first_failure(exc)
+                raise
             finally:
                 self._drain_dataset_reports()
             return
@@ -267,6 +286,7 @@ class TrainingController:
                         eval_barrier,
                         metrics_path,
                         getattr(self, "_dataset_report_queue", None),
+                        getattr(self, "_failure_queue", None),
                     ),
                     daemon=False,
                     name=f"Client-{cid}",
@@ -306,6 +326,7 @@ class TrainingController:
             _shutdown_processes(
                 self._client_processes, self.PROCESS_SHUTDOWN_TIMEOUT
             )
+            self._capture_first_failure(exc)
 
         finally:
             logger.info("=== TRAINING COMPLETE — stopping servers ===")
@@ -352,6 +373,20 @@ class TrainingController:
                     f"Duplicate dataset report for client {client_id}"
                 )
             self.dataset_manifests[client_id] = report
+
+    def _capture_first_failure(self, fallback: BaseException) -> None:
+        if getattr(self, "first_failure", None) is not None:
+            return
+        failure_queue = getattr(self, "_failure_queue", None)
+        if failure_queue is not None:
+            try:
+                self.first_failure = failure_queue.get_nowait()
+                return
+            except queue.Empty:
+                pass
+        self.first_failure = FailureRecord.from_exception(
+            component="controller", exception=fallback
+        ).as_dict()
 
 
 def _raise_for_failed_processes(processes: list[mp.Process]) -> None:

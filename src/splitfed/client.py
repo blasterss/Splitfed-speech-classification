@@ -1,3 +1,4 @@
+import queue
 from pathlib import Path
 
 import torch
@@ -11,6 +12,7 @@ from ..model.client_side_model import ClientSideModel
 from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ClientConfig, TrainingConfig, TrainingMode
 from ..transport.base import Channel, ChannelCancelled, Message
+from ..utils.failures import FailureRecord
 from ..utils.process import ignore_parent_interrupts
 from ..utils.training import set_seed
 
@@ -523,6 +525,7 @@ def _client_worker(
     eval_barrier,
     metrics_path=None,
     dataset_report_queue=None,
+    failure_queue=None,
 ) -> None:
     """
     Persistent client process.
@@ -539,6 +542,7 @@ def _client_worker(
 
     ignore_parent_interrupts()
 
+    current_round = None
     try:
         set_seed(cfg.runtime.seed + int(cfg.client_id))
 
@@ -574,6 +578,7 @@ def _client_worker(
                 return
 
             last_round = round_idx
+            current_round = round_idx
             client.train_one_round(round_idx)
 
             should_aggregate = (
@@ -626,6 +631,18 @@ def _client_worker(
             return
         raise
     except BaseException as exc:
+        if failure_queue is not None:
+            try:
+                failure_queue.put_nowait(
+                    FailureRecord.from_exception(
+                        component="client",
+                        client_id=cfg.client_id,
+                        round=current_round,
+                        exception=exc,
+                    ).as_dict()
+                )
+            except queue.Full:
+                pass
         stop_event.set()
         _abort_barriers((ready_barrier, eval_barrier))
         logger.error(

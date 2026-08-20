@@ -467,6 +467,28 @@ def test_controller_drains_bounded_dataset_reports_by_client_id():
     }
 
 
+def test_controller_keeps_worker_first_failure_over_fallback():
+    controller = TrainingController.__new__(TrainingController)
+    controller.first_failure = None
+    controller._failure_queue = queue.Queue(maxsize=1)
+    controller._failure_queue.put(
+        {
+            "schema_version": 1,
+            "component": "client",
+            "message": "dataset load failed",
+        }
+    )
+
+    controller._capture_first_failure(RuntimeError("exitcode=1"))
+    controller._capture_first_failure(RuntimeError("later failure"))
+
+    assert controller.first_failure == {
+        "schema_version": 1,
+        "component": "client",
+        "message": "dataset load failed",
+    }
+
+
 def test_start_training_cancels_barriers_when_client_spawn_fails(monkeypatch):
     stop_event = FakeStopEvent()
     ready_barrier = FakeBarrier()

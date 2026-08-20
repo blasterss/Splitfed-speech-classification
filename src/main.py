@@ -135,6 +135,10 @@ def _finalize_run(
         expected_client_ids=[client.client_id for client in config.clients],
         client_manifests=controller.dataset_manifests,
     )
+    _save_first_failure(
+        controller.first_failure,
+        artifact_paths.diagnostics,
+    )
     if controller.split_server is not None:
         try:
             controller.split_server.save(artifact_paths.checkpoints)
@@ -152,6 +156,13 @@ def _finalize_run(
             controller.centralized_trainer.save(artifact_paths.checkpoints)
         except RuntimeError as exc:
             logger.warning("Could not save centralized weights: %s", exc)
+
+
+def _save_first_failure(failure: dict | None, diagnostics_path: Path) -> None:
+    """Persist the first bounded structured failure, when one exists."""
+    if failure is None:
+        return
+    save_yaml(diagnostics_path / "first_failure.yaml", failure)
 
 
 def _save_resolved_config(config: ConfigSchema, artifact_path: Path) -> None:

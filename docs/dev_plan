@@ -601,8 +601,9 @@ virtual clock, no-raw-data debug policy, profile merge/override tests.
 
 ### Этап 2. Structured failure и cancellation protocol
 
-**Задачи:** добавить typed error/cancellation channel, first-failure record с
-component/round/step/traceback, единый deadline budget для queue/barrier/quorum,
+**Задачи:** распространить реализованный bounded first-failure record клиентов
+и controller fallback на SplitServer/FedServer; добавить typed
+error/cancellation channel, единый deadline budget для queue/barrier/quorum,
 идемпотентный shutdown report и явный failed run status. Сохранить текущие
 shared event, barrier abort, bounded join/terminate/kill как локальный backend.
 

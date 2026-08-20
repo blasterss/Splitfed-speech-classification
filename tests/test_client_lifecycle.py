@@ -1,3 +1,4 @@
+import queue
 from types import SimpleNamespace
 
 import pytest
@@ -105,6 +106,31 @@ def test_client_initialization_failure_cancels_peer_waits(monkeypatch):
     assert stop_event.set_called
     assert ready_barrier.abort_called
     assert eval_barrier.abort_called
+
+
+def test_client_initialization_failure_reports_structured_context(monkeypatch):
+    failure_queue = queue.Queue(maxsize=1)
+
+    def fail_client(**kwargs):
+        raise RuntimeError("dataset load failed")
+
+    monkeypatch.setattr("src.splitfed.client.Client", fail_client)
+
+    with pytest.raises(RuntimeError, match="dataset load failed"):
+        _client_worker(
+            *_worker_args(FakeStopEvent(), FakeBarrier(), FakeBarrier()),
+            failure_queue=failure_queue,
+        )
+
+    failure = failure_queue.get_nowait()
+    assert failure["schema_version"] == 1
+    assert failure["component"] == "client"
+    assert failure["client_id"] == 0
+    assert failure["round"] is None
+    assert failure["step"] is None
+    assert failure["exception_type"] == "RuntimeError"
+    assert failure["message"] == "dataset load failed"
+    assert "RuntimeError: dataset load failed" in failure["traceback"]
 
 
 def test_client_barrier_waits_use_configured_timeout(monkeypatch):

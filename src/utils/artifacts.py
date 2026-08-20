@@ -10,6 +10,7 @@ class ArtifactPaths:
     metadata: Path
     checkpoints: Path
     metrics: Path
+    diagnostics: Path
 
     @classmethod
     def from_root(cls, artifact_root: str | Path, experiment_name: str):
@@ -19,8 +20,14 @@ class ArtifactPaths:
             metadata=root / "metadata",
             checkpoints=root / "checkpoints",
             metrics=root / "metrics",
+            diagnostics=root / "diagnostics",
         )
 
     def mkdir(self) -> None:
-        for path in (self.metadata, self.checkpoints, self.metrics):
+        for path in (
+            self.metadata,
+            self.checkpoints,
+            self.metrics,
+            self.diagnostics,
+        ):
             path.mkdir(parents=True, exist_ok=True)

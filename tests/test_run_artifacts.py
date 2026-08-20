@@ -1,6 +1,7 @@
 from src.main import (
     _config_sha256,
     _file_sha256,
+    _save_first_failure,
     _save_resolved_config,
     _save_run_metadata,
 )
@@ -168,3 +169,21 @@ def test_config_hash_is_canonical_and_sensitive_to_values(tmp_path):
     assert _file_sha256(lock_file) == (
         "3a52732e0c98263090a2cd2509e7d2244d7194bd65f78b29e6ef6448e8143666"
     )
+
+
+def test_first_failure_artifact_is_versioned_and_structured(tmp_path):
+    failure = {
+        "schema_version": 1,
+        "timestamp_utc": "2026-08-21T00:00:00+00:00",
+        "component": "client",
+        "client_id": 2,
+        "round": 3,
+        "step": None,
+        "exception_type": "RuntimeError",
+        "message": "failed",
+        "traceback": "RuntimeError: failed\n",
+    }
+
+    _save_first_failure(failure, tmp_path)
+
+    assert read_yaml(tmp_path / "first_failure.yaml") == failure

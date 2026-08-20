@@ -285,6 +285,9 @@ Expected generated artifacts include:
   extraction counts/failure reasons, split seed, feature ordering,
   actor-disjoint IDs and train/test sample/actor/class coverage. Missing client
   reports are explicit and mark the manifest incomplete.
+- `diagnostics/first_failure.yaml` after a captured client or controller
+  failure, with a bounded versioned record containing component, optional
+  client/round/step context, exception type/message and traceback.
 
 Queue messages carry and validate protocol identity `secureasr.queue` version
 3 plus a bounded non-empty request ID. Split responses and accepted federated
@@ -376,10 +379,11 @@ tests.
   the server then sends correlated errors to clients already waiting for it.
 - The controller has a polling supervision loop and propagates non-zero child
   exit codes. Client initialization and barrier failures now set the shared
-  stop event and abort peer barriers, but queue timeouts and server failures are
-  not yet one complete cancellation protocol.
-- Split and federated server exit codes are monitored, but failure reporting and
-  recovery are not yet fault-tolerant or restartable.
+  stop event, abort peer barriers and publish a bounded first-failure record,
+  but queue timeouts and server failures are not yet one complete cancellation
+  protocol.
+- Split and federated server exit codes are monitored, but server-side
+  structured failure reporting and recovery are not yet implemented.
 - Queue timeouts can still leave peers waiting in some failure paths.
 
 ### Numerical correctness
@@ -457,21 +461,22 @@ work, in delivery order, is:
 
 1. Add the typed policy registry, deterministic heterogeneous simulator and
    remaining named research profiles.
-2. Persist a structured first-failure report and unify queue, quorum, barrier
-   and shutdown deadlines under one cancellation protocol.
-3. Add the non-root Compose reference topology with isolated clients, probes,
-   limits, scoped mounts and graceful failure handling.
-4. Implement `ClientLoadController` telemetry, leases, fairness debt,
+2. Extend the client/controller first-failure report to servers and unify
+   queue, quorum, barrier and shutdown deadlines under one cancellation
+   protocol.
+3. Implement `ClientLoadController` telemetry, leases, fairness debt,
    quarantine and replayable cohort policies.
-5. Bound dataset memory use, freeze input manifests and decide a typed
+4. Bound dataset memory use, freeze input manifests and decide a typed
    class-balance sampling policy.
-6. Extend checkpoints with optimizer/RNG/round/config/manifest state and prove
+5. Extend checkpoints with optimizer/RNG/round/config/manifest state and prove
    resume equivalence.
-7. Persist process resource/transport telemetry and aggregate per-client,
+6. Persist process resource/transport telemetry and aggregate per-client,
    per-dataset and worst-client metrics.
-8. Add multi-seed and leave-one-dataset-out experiments plus CI/static gates.
-9. Only after P0 stability, implement and test privacy accounting/leakage
+7. Add multi-seed and leave-one-dataset-out experiments plus CI/static gates.
+8. Only after P0 stability, implement and test privacy accounting/leakage
    baselines and the protobuf/gRPC/TLS deployment path.
+9. Add the non-root Compose reference topology after the research runtime,
+   policies and artifact contracts are stable.
 
 ## Experimental roadmap
 
