@@ -50,6 +50,8 @@ directory can make valid repository-relative paths fail.
 - `src/splitfed/controller/`: `TrainingController` supervision plus isolated
   runtime-topology construction and diagnostic queue/report handling; the
   controller remains the owner of process startup, cancellation, and cleanup.
+- `src/splitfed/centralized/`: centralized process facade, child-process
+  training loop, and variable-length dataset collation/shape validation.
 - `src/transport/`: `Message`, queue channel, channel factory, and the
   unimplemented gRPC channel.
 - `src/utils/`: YAML helpers, training utilities, statistics, and feature
