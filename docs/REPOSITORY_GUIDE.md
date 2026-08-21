@@ -53,8 +53,9 @@ directory can make valid repository-relative paths fail.
   operations, `split_server/worker/` separates shared and personalized child
   processes, and `common/` owns shared process lifecycle helpers.
 - `src/splitfed/client/`: client data/model runtime, response validation, and
-  child-process lifecycle separated into `client.py`, `protocol.py`, and
-  `worker.py` while preserving the `src.splitfed.client` import surface.
+  child-process lifecycle separated into `client.py`, `evaluation.py`,
+  `protocol.py`, and `worker.py` while preserving the
+  `src.splitfed.client` import surface.
 - `src/splitfed/controller/`: `TrainingController` supervision plus isolated
   runtime-topology construction and diagnostic queue/report handling; the
   controller remains the owner of process startup, cancellation, and cleanup.
