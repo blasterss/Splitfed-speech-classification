@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.dataset.audio_segmenter import AudioFileSegmenter
+from src.dataset.audio import AudioFileSegmenter
 
 
 def test_audio_segmenter_unpacks_audio_and_uses_effective_sample_rate(
@@ -19,7 +19,7 @@ def test_audio_segmenter_unpacks_audio_and_uses_effective_sample_rate(
         )
         return waveform, 4
 
-    monkeypatch.setattr("src.dataset.audio_segmenter.load_audio", load_audio)
+    monkeypatch.setattr("src.dataset.audio.segmenter.load_audio", load_audio)
 
     segmenter = AudioFileSegmenter(
         SimpleNamespace(SAMPLING_RATE=16000),

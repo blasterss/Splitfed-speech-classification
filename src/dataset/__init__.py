@@ -1,5 +1,4 @@
-from .audio import load_audio
-from .audio_segmenter import AudioFileSegmenter
+from .audio import AudioFileSegmenter, load_audio
 from .dataset import ConflictEmotionalDataset
 from .feature_extraction import FeatureExtraction
 

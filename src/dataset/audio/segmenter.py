@@ -1,4 +1,4 @@
-from .audio import load_audio
+from .loading import load_audio
 
 
 class AudioFileSegmenter:
