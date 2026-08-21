@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
+from src.dataset.audio import load_audio
 from src.dataset.feature_extraction import FeatureExtraction
-from src.dataset.feature_utils import FeatureUtils
 from src.schema import FeatureType
 
 
@@ -64,11 +64,10 @@ def test_audio_loading_resamples_only_when_target_is_configured(
         observed.update(path=path, sr=sr, duration=duration)
         return np.ones(16), 16000 if sr is None else sr
 
-    monkeypatch.setattr("src.dataset.feature_utils.librosa.load", load)
+    monkeypatch.setattr("src.dataset.audio.loading.librosa.load", load)
 
-    FeatureUtils.load_audio(
+    load_audio(
         "audio.wav",
-        sample_rate=44050,
         target_sample_rate=target_sample_rate,
         duration=1.5,
     )

@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 from ...logger import logger
 from ...schema import DatasetConfig
+from ..audio import load_audio
 from ..feature_extraction import FeatureExtraction
-from ..feature_utils import FeatureUtils
 
 
 class BaseDatasetLoader(ABC):
@@ -71,9 +71,8 @@ class BaseDatasetLoader(ABC):
                 actor_id = self.parse_actor_id(file_path.name)
                 sex = self.parse_sex(file_path.name)
 
-                y, sr = FeatureUtils.load_audio(
+                y, sr = load_audio(
                     file_path,
-                    sample_rate=self.SAMPLING_RATE,
                     target_sample_rate=self.config.target_sample_rate,
                 )
 

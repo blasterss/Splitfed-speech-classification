@@ -1,4 +1,4 @@
-from .feature_utils import FeatureUtils
+from .audio import load_audio
 
 
 class AudioFileSegmenter:
@@ -14,9 +14,8 @@ class AudioFileSegmenter:
                 "Segment window and hop durations must be positive"
             )
 
-        self.audio, self.sample_rate = FeatureUtils.load_audio(
+        self.audio, self.sample_rate = load_audio(
             filepath,
-            sample_rate=config.SAMPLING_RATE,
             target_sample_rate=None,
         )
         self.window_size = int(window_duration * self.sample_rate)

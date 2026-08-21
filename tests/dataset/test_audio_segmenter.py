@@ -12,17 +12,14 @@ def test_audio_segmenter_unpacks_audio_and_uses_effective_sample_rate(
     waveform = np.arange(10)
     observed = {}
 
-    def load_audio(path, *, sample_rate, target_sample_rate):
+    def load_audio(path, *, target_sample_rate):
         observed.update(
             path=path,
-            sample_rate=sample_rate,
             target_sample_rate=target_sample_rate,
         )
         return waveform, 4
 
-    monkeypatch.setattr(
-        "src.dataset.audio_segmenter.FeatureUtils.load_audio", load_audio
-    )
+    monkeypatch.setattr("src.dataset.audio_segmenter.load_audio", load_audio)
 
     segmenter = AudioFileSegmenter(
         SimpleNamespace(SAMPLING_RATE=16000),
@@ -33,7 +30,6 @@ def test_audio_segmenter_unpacks_audio_and_uses_effective_sample_rate(
 
     assert observed == {
         "path": "audio.wav",
-        "sample_rate": 16000,
         "target_sample_rate": None,
     }
     assert segmenter.sample_rate == 4

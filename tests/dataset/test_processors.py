@@ -211,7 +211,7 @@ def test_loader_accounts_for_extraction_failure_reasons(tmp_path, monkeypatch):
         return np.ones(16), 16000
 
     monkeypatch.setattr(
-        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        "src.dataset.processors.base_processor.load_audio",
         load_audio,
     )
     monkeypatch.setattr(
@@ -239,7 +239,7 @@ def test_loader_keeps_multichannel_data_and_metadata_aligned(
     (tmp_path / "actor-0_good.wav").touch()
     channels = [np.ones((3, 4)), np.ones((1, 4))]
     monkeypatch.setattr(
-        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        "src.dataset.processors.base_processor.load_audio",
         lambda *args, **kwargs: (np.ones(16), 16000),
     )
     monkeypatch.setattr(
@@ -269,7 +269,7 @@ def test_loader_keeps_multichannel_data_and_metadata_aligned(
 def test_loader_rejects_multichannel_sample_atomically(tmp_path, monkeypatch):
     (tmp_path / "actor-0_bad.wav").touch()
     monkeypatch.setattr(
-        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        "src.dataset.processors.base_processor.load_audio",
         lambda *args, **kwargs: (np.ones(16), 16000),
     )
     monkeypatch.setattr(
