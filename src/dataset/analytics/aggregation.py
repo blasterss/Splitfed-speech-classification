@@ -34,23 +34,25 @@ class DataConcatenator:
                 raise ValueError("Mismatch between features and feature_names")
 
             for name, feat in zip(feature_names, features, strict=True):
-                # [F, T] → mel, mfcc, contrast
-                if feat.ndim == 2:
-                    for j in range(feat.shape[0]):
-                        signal = feat[j]
-                        row[f"{name}_{j}_mean"] = float(signal.mean())
-                        row[f"{name}_{j}_std"] = float(signal.std())
+                feature_name = name.value
 
                 # [1, T] → rms, zcr
-                elif feat.ndim == 2 and feat.shape[0] == 1:
+                if feat.ndim == 2 and feat.shape[0] == 1:
                     signal = feat[0]
-                    row[f"{name}_mean"] = float(signal.mean())
-                    row[f"{name}_std"] = float(signal.std())
+                    row[f"{feature_name}_mean"] = float(signal.mean())
+                    row[f"{feature_name}_std"] = float(signal.std())
+
+                # [F, T] → mel, mfcc, contrast
+                elif feat.ndim == 2:
+                    for j in range(feat.shape[0]):
+                        signal = feat[j]
+                        row[f"{feature_name}_{j}_mean"] = float(signal.mean())
+                        row[f"{feature_name}_{j}_std"] = float(signal.std())
 
                 # [T] → pitch
                 elif feat.ndim == 1:
-                    row[f"{name}_mean"] = float(feat.mean())
-                    row[f"{name}_std"] = float(feat.std())
+                    row[f"{feature_name}_mean"] = float(feat.mean())
+                    row[f"{feature_name}_std"] = float(feat.std())
 
                 else:
                     raise ValueError(f"Unsupported shape {feat.shape}")
