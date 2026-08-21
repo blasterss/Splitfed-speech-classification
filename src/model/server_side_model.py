@@ -1,9 +1,10 @@
+from typing import Literal
+
 import torch
 from torch import nn
-from typing import Optional, Literal
 
 from ..logger import logger
-from .base_model import Baseblock, Baseblock1d
+from .base_model import Baseblock1d
 
 
 class ServerSideModel(nn.Module):

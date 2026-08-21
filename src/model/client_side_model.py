@@ -1,11 +1,8 @@
 import torch
-
 from torch import nn
 from torch.distributions import Laplace, Normal
 
-from .base_model import Baseblock, Baseblock1d
-
-from typing import Optional
+from .base_model import Baseblock1d
 
 
 class PrivacyLayer(nn.Module):
@@ -81,8 +78,8 @@ class ClientSideModel(nn.Module):
         kernel_size: int = 7,
         padding: int = 3,
         noise: bool = True,
-        noise_std: Optional[float] = 0.05,
-        noise_type: Optional[str] = "gauss",
+        noise_std: float | None = 0.05,
+        noise_type: str | None = "gauss",
     ):
         super().__init__()
 
