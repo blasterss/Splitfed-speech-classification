@@ -17,7 +17,7 @@ from .logger import logger
 from .schema import ConfigSchema
 from .splitfed.controller import TrainingController
 from .transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
-from .utils.common import read_yaml, save_yaml
+from .utils.config import read_yaml, save_yaml
 from .utils.persistence import ArtifactPaths
 from .utils.training import set_seed
 

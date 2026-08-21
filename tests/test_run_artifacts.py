@@ -6,7 +6,7 @@ from src.main import (
     _save_run_metadata,
 )
 from src.schema import ConfigSchema
-from src.utils.common import read_yaml
+from src.utils.config import read_yaml
 
 
 def test_resolved_config_round_trips_mode_seed_and_topology(tmp_path):

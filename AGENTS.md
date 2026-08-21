@@ -155,7 +155,7 @@ uv run pytest
 For schema or configuration changes, also validate the example configuration:
 
 ```bash
-uv run python -c "from src.schema import ConfigSchema; from src.utils.common import read_yaml; ConfigSchema(**read_yaml('configs/config.example.yaml')); print('schema-ok')"
+uv run python -c "from src.schema import ConfigSchema; from src.utils.config import read_yaml; ConfigSchema(**read_yaml('configs/config.example.yaml')); print('schema-ok')"
 ```
 
 For controller, channel, barrier, or worker changes, require a synthetic CPU

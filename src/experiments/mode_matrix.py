@@ -10,7 +10,7 @@ import torch.multiprocessing as mp
 from ..main import _execute_training
 from ..schema import ConfigSchema
 from ..splitfed.controller import TrainingController
-from ..utils.common import read_yaml, save_yaml
+from ..utils.config import read_yaml, save_yaml
 from ..utils.training import set_seed
 
 MODE_VARIANTS = (

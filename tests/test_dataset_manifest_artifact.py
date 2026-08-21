@@ -1,5 +1,5 @@
 from src.main import _save_dataset_manifest
-from src.utils.common import read_yaml
+from src.utils.config import read_yaml
 
 
 def test_dataset_manifest_records_missing_clients(tmp_path):

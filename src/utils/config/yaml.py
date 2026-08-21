@@ -1,12 +1,12 @@
+from pathlib import Path
+from typing import Any
+
 import yaml
 
-from ..logger import logger
-
-from pathlib import Path
-from typing import Any, Dict
+from ...logger import logger
 
 
-def read_yaml(path, verbose: bool = False) -> Dict[Any, Any]:
+def read_yaml(path, verbose: bool = False) -> dict[Any, Any]:
     """
     Reads a yaml file, and returns a dict.
 
@@ -45,7 +45,7 @@ def read_yaml(path, verbose: bool = False) -> Dict[Any, Any]:
             content = yaml.safe_load(content_text)
         else:
             # Regular Path object
-            with open(path, "r") as file:
+            with open(path) as file:
                 content = yaml.safe_load(file)
 
         if verbose:
@@ -65,7 +65,7 @@ def read_yaml(path, verbose: bool = False) -> Dict[Any, Any]:
         raise Exception(msg) from e
 
 
-def save_yaml(path: Path, data: Dict, verbose: bool = True) -> None:
+def save_yaml(path: Path, data: dict, verbose: bool = True) -> None:
     """
     Writes a dictionary to a YAML file.
 
@@ -99,10 +99,10 @@ def save_yaml(path: Path, data: Dict, verbose: bool = True) -> None:
             )
         if verbose:
             logger.info(f"YAML file {path} has been written successfully.")
-    except IOError as e:
+    except OSError as e:
         msg = f"Error writing to file {path}."
         logger.error(f"{msg}: {e}")
-        raise IOError(msg) from e
+        raise OSError(msg) from e
     except yaml.YAMLError as e:
         msg = f"Error serializing data to YAML file {path}."
         logger.error(f"{msg}: {e}")

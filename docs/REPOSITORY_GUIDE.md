@@ -57,7 +57,8 @@ directory can make valid repository-relative paths fail.
 - `src/utils/`: shared utilities; `persistence/` owns artifact paths,
   checkpoint envelopes, and state-dict byte serialization; `runtime/` owns
   process signal policy and structured failure publication; `training/` owns
-  deterministic seed setup and per-round loss statistics.
+  deterministic seed setup and per-round loss statistics; `config/` owns YAML
+  configuration serialization.
 - `configs/config.example.yaml`: portable CPU example configuration.
 - `configs/config.real.yaml`: repository-local real-data research configuration
   for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,
@@ -223,7 +224,7 @@ uv run python -m py_compile path/to/changed.py
 For configuration or loader changes, also validate the example and a real WAV:
 
 ```bash
-uv run python -c "from src.schema import ConfigSchema; from src.utils.common import read_yaml; ConfigSchema(**read_yaml('configs/config.example.yaml')); print('schema-ok')"
+uv run python -c "from src.schema import ConfigSchema; from src.utils.config import read_yaml; ConfigSchema(**read_yaml('configs/config.example.yaml')); print('schema-ok')"
 ```
 
 The repository has focused tests for schemas/configuration, dataset parsers,
