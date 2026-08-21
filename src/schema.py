@@ -220,13 +220,14 @@ class DatasetConfig(StrictConfigModel):
 
     root: str = Field(description="Path to the dataset on the client device.")
 
-    feature_names: list[FeatureType] | None = Field(
-        default=[FeatureType.mfcc, FeatureType.rms, FeatureType.zcr],
+    feature_names: list[FeatureType] = Field(
+        default_factory=lambda: [
+            FeatureType.mfcc,
+            FeatureType.rms,
+            FeatureType.zcr,
+        ],
         min_length=1,
-        description=(
-            "List of feature names to extract. "
-            "If not specified, all supported features will be extracted."
-        ),
+        description="Ordered non-empty list of feature names to extract.",
     )
     target_sample_rate: int | None = Field(
         default=None,
@@ -275,7 +276,7 @@ class DatasetConfig(StrictConfigModel):
     @field_validator("feature_names")
     @classmethod
     def validate_unique_feature_names(cls, value):
-        if value is not None and len(value) != len(set(value)):
+        if len(value) != len(set(value)):
             raise ValueError("feature_names must not contain duplicates")
         return value
 

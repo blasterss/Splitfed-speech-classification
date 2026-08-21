@@ -206,11 +206,7 @@ def build_dataset_manifest(
     return {
         "dataset": config.name.value,
         "split_seed": config.split_seed,
-        "feature_names": (
-            None
-            if config.feature_names is None
-            else [feature.value for feature in config.feature_names]
-        ),
+        "feature_names": [feature.value for feature in config.feature_names],
         "extraction": dataset.extraction_report,
         "coverage": dataset.coverage,
         "train_actor_ids": list(dataset.train_actor_ids),

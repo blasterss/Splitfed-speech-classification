@@ -57,6 +57,15 @@ def test_dataset_config_rejects_empty_feature_list(tmp_path):
         )
 
 
+def test_dataset_config_rejects_null_feature_list(tmp_path):
+    with pytest.raises(ValidationError, match="feature_names"):
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=None,
+        )
+
+
 def test_dataset_config_rejects_duplicate_features(tmp_path):
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         DatasetConfig(
