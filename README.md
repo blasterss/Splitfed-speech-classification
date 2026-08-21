@@ -425,7 +425,8 @@ tests.
 - Per-file feature extraction failures are skipped but recorded as discovered,
   loaded and failed counts grouped by exception type; raw paths are not
   persisted in the report.
-- Spectral-contrast failures fall back to zero features.
+- Spectral-contrast failures are counted as extraction loss instead of being
+  hidden behind synthetic zero features.
 - Multi-channel utilities are incomplete and inconsistent with the main path.
 
 ### Evaluation and artifacts

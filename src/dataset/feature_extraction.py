@@ -289,6 +289,14 @@ class FeatureExtraction:
             fmin = 100.0
             fmax = nyquist - 10
 
+        # librosa derives octave bands from fmin and n_bands and does not
+        # accept an fmax argument. Lower fmin when needed so the requested
+        # number of bands remains below the effective upper frequency.
+        max_safe_fmin = fmax / (2 ** (n_bands - 1))
+        fmin = min(fmin, max_safe_fmin * 0.99)
+        if fmin <= 0:
+            raise ValueError("Spectral contrast requires a positive frequency")
+
         return librosa.feature.spectral_contrast(
             y=y,
             sr=sr,
@@ -296,7 +304,6 @@ class FeatureExtraction:
             hop_length=hop_length,
             n_bands=n_bands,
             fmin=fmin,
-            fmax=fmax,
         )
 
     @staticmethod
