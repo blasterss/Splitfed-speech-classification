@@ -76,13 +76,10 @@ class CremaDLoader(BaseDatasetLoader):
         parts = filename.split("_")
 
         emotion = parts[-2]
-        tense = parts[-1].replace(".wav", "")
 
-        label = self.CLASSES_.get(emotion, 0)
-
-        # Example alternative logic:
-        # if emotion in ["DIS"]:
-        #     label = self.TENSES_.get(tense, 0)
+        if emotion not in self.CLASSES_:
+            raise ValueError(f"Unsupported CREMA-D emotion code: {emotion}")
+        label = self.CLASSES_[emotion]
 
         return label
 

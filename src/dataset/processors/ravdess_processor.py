@@ -1,4 +1,3 @@
-from typing import Tuple
 from .base_processor import BaseDatasetLoader
 
 
@@ -42,14 +41,14 @@ class RavdessLoader(BaseDatasetLoader):
 
         parts = filename.replace(".wav", "").split("-")
 
-        emotion = self.EMOTION_MAP.get(parts[2], "NEU")
-        tense = "HI" if parts[5] == "02" else "MD"
+        emotion_code = parts[2]
+        if emotion_code not in self.EMOTION_MAP:
+            raise ValueError(
+                f"Unsupported RAVDESS emotion code: {emotion_code}"
+            )
+        emotion = self.EMOTION_MAP[emotion_code]
 
-        label = self.CLASSES_.get(emotion, 0)
-
-        # Example alternative logic:
-        # if emotion in ["DIS"]:
-        #     label = self.TENSES_.get(tense, 0)
+        label = self.CLASSES_[emotion]
 
         return label
 

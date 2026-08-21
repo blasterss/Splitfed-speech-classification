@@ -1,4 +1,3 @@
-from typing import Tuple
 from .base_processor import BaseDatasetLoader
 
 
@@ -38,9 +37,11 @@ class SaveeLoader(BaseDatasetLoader):
         # Remove last two digits (e.g. '01')
         emotion_part = parts[-1].replace(".wav", "")[:-2]
 
-        emotion = self.EMOTION_MAP.get(emotion_part, "NEU")
+        if emotion_part not in self.EMOTION_MAP:
+            raise ValueError(f"Unsupported SAVEE emotion code: {emotion_part}")
+        emotion = self.EMOTION_MAP[emotion_part]
 
-        label = self.CLASSES_.get(emotion, 0)
+        label = self.CLASSES_[emotion]
 
         return label
 

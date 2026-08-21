@@ -60,6 +60,25 @@ def test_dataset_filename_parsers(
 
 
 @pytest.mark.parametrize(
+    ("dataset_type", "filename", "unknown_code"),
+    [
+        (DatasetType.crema_d, "1001_IEO_XYZ_HI.wav", "XYZ"),
+        (DatasetType.ravdess, "03-01-99-01-01-01-12.wav", "99"),
+        (DatasetType.savee, "DC_x01.wav", "x"),
+    ],
+)
+def test_dataset_filename_parsers_reject_unknown_emotions(
+    tmp_path, dataset_type, filename, unknown_code
+):
+    loader = DatasetLoaderFactory.create(
+        DatasetConfig(name=dataset_type, root=str(tmp_path))
+    )
+
+    with pytest.raises(ValueError, match=unknown_code):
+        loader.parse_label(filename)
+
+
+@pytest.mark.parametrize(
     ("dataset_type", "loader_type"),
     [
         (DatasetType.crema_d, CremaDLoader),
