@@ -34,3 +34,35 @@ def test_multiband_feature_channel_uses_enum_values_in_keys(tmp_path):
             "mfcc_1_std": 1.0,
         }
     ]
+
+
+def test_combined_datasets_use_their_own_feature_names(tmp_path, monkeypatch):
+    configs = [
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=["rms"],
+        ),
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=["zcr"],
+        ),
+    ]
+
+    class Loader:
+        def load(self, *, feature_mode):
+            assert feature_mode == "multi_channel"
+            return [[np.asarray([[1.0, 3.0]])]], [{}]
+
+    monkeypatch.setattr(
+        "src.dataset.analytics.aggregation.DatasetLoaderFactory.create",
+        lambda config: Loader(),
+    )
+
+    features, _ = DataConcatenator(configs).get_agg_data()
+
+    assert features == [
+        {"rms_mean": 2.0, "rms_std": 1.0},
+        {"zcr_mean": 2.0, "zcr_std": 1.0},
+    ]

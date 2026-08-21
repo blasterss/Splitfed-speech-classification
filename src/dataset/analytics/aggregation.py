@@ -21,11 +21,13 @@ class DataConcatenator:
         return all_files
 
     def aggregate_features(
-        self, all_data: list[list[np.ndarray]]
+        self,
+        all_data: list[list[np.ndarray]],
+        feature_names=None,
     ) -> list[dict[str, float]]:
 
         aggregated_features = []
-        feature_names = self.configs[0].feature_names
+        feature_names = feature_names or self.configs[0].feature_names
 
         for features in all_data:
             row = {}
@@ -69,7 +71,7 @@ class DataConcatenator:
         for config in self.configs:
             loader = DatasetLoaderFactory.create(config)
             data, metadata = loader.load(feature_mode="multi_channel")
-            data = self.aggregate_features(data)
+            data = self.aggregate_features(data, config.feature_names)
             all_data.extend(data)
             all_metadata.extend(metadata)
         return all_data, all_metadata
