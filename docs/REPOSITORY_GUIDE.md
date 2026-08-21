@@ -44,6 +44,9 @@ directory can make valid repository-relative paths fail.
   `TrainingController`; component packages own their protocol and model
   operations, `split_server/worker/` separates shared and personalized child
   processes, and `common/` owns shared process lifecycle helpers.
+- `src/splitfed/client/`: client data/model runtime, response validation, and
+  child-process lifecycle separated into `client.py`, `protocol.py`, and
+  `worker.py` while preserving the `src.splitfed.client` import surface.
 - `src/transport/`: `Message`, queue channel, channel factory, and the
   unimplemented gRPC channel.
 - `src/utils/`: YAML helpers, training utilities, statistics, and feature
