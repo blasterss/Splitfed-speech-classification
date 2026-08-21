@@ -222,6 +222,7 @@ class DatasetConfig(StrictConfigModel):
 
     feature_names: list[FeatureType] | None = Field(
         default=[FeatureType.mfcc, FeatureType.rms, FeatureType.zcr],
+        min_length=1,
         description=(
             "List of feature names to extract. "
             "If not specified, all supported features will be extracted."

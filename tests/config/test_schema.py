@@ -48,6 +48,15 @@ def test_dataset_config_rejects_missing_root(tmp_path):
         DatasetConfig(name=DatasetType.savee, root=str(missing_root))
 
 
+def test_dataset_config_rejects_empty_feature_list(tmp_path):
+    with pytest.raises(ValidationError, match="feature_names"):
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=[],
+        )
+
+
 def test_example_config_uses_portable_dataset_paths():
     config_path = Path("configs/config.example.yaml")
     config = yaml.safe_load(config_path.read_text())
