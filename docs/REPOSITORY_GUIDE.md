@@ -39,6 +39,8 @@ directory can make valid repository-relative paths fail.
   wrappers, and dataset-specific filename parsers.
 - `src/dataset/processors/`: CREMA-D, RAVDESS, and SAVEE loaders registered in
   `DatasetLoaderFactory`.
+- `src/dataset/analytics/`: experimental multi-channel feature aggregation;
+  it is not part of the supported training path.
 - `src/model/`: client-side and server-side PyTorch models.
 - `src/splitfed/`: clients, split server, federated server, and
   `TrainingController`; component packages own their protocol and model

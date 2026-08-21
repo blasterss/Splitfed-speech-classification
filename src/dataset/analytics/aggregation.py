@@ -4,8 +4,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..dataset.processors.factory import DatasetLoaderFactory
-from ..schema import DatasetConfig
+from ...schema import DatasetConfig
+from ..processors.factory import DatasetLoaderFactory
 
 
 class DataConcatenator:
