@@ -2,7 +2,7 @@
 
 import queue
 
-from ...utils.failures import FailureRecord
+from ...utils.runtime import FailureRecord
 
 
 def close_process_queue(process_queue) -> None:

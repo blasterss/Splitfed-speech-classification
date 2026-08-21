@@ -3,8 +3,11 @@
 from ...logger import logger
 from ...schema import ClientConfig, TrainingConfig, TrainingMode
 from ...transport.base import Channel, ChannelCancelled
-from ...utils.failures import FailureRecord, publish_failure
-from ...utils.process import ignore_parent_interrupts
+from ...utils.runtime import (
+    FailureRecord,
+    ignore_parent_interrupts,
+    publish_failure,
+)
 from ...utils.training import set_seed
 
 logger = logger.getChild("Client")

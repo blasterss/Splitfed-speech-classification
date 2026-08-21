@@ -3,7 +3,7 @@ import signal
 
 import torch.multiprocessing as mp
 
-from src.utils.process import ignore_parent_interrupts
+from src.utils.runtime import ignore_parent_interrupts
 
 
 def _interrupt_immune_worker(ready, stop) -> None:
