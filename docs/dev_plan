@@ -93,8 +93,8 @@ evaluation cadence и artifact scoping из плана удалены.
    telemetry windows, leases, quarantine, fairness debt и воспроизводимый
    выбор cohorts.
 4. Cancellation ограничена shared event, barrier abort и polling queue waits.
-   Нет typed cancellation/error envelope, structured first-failure report и
-   restart/recovery protocol.
+   Bounded structured first-failure report уже сохраняется, но нет typed
+   cancellation delivery/envelope и restart/recovery protocol.
 5. Partial FedAvg quorum является arrival window, а не заранее выданным
    `RoundPlan`. Клиент, отставший больше чем на один завершённый раунд, не имеет
    catch-up/resume protocol.
@@ -114,8 +114,8 @@ evaluation cadence и artifact scoping из плана удалены.
 11. Нет deterministic heterogeneous simulator, остальных named profiles,
     policy registry, CI workflow и автоматизированной CUDA matrix. Реальные
     480x3/CUDA прогоны выполнены вручную, но не являются CI gate.
-12. Capture/segmentation и multi-channel utilities не являются рабочим
-    поддержанным training path.
+12. Live capture отсутствует; standalone segmentation и multi-channel
+    analytics utilities не подключены к поддержанному training path.
 
 ## 3. Целевая архитектура
 

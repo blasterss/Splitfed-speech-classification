@@ -37,6 +37,10 @@ directory can make valid repository-relative paths fail.
 - `src/schema.py`: Pydantic configuration models and enums.
 - `src/dataset/`: WAV discovery, audio loading, feature extraction, dataset
   wrappers, and dataset-specific filename parsers.
+- `src/dataset/audio/`: native-rate/optional-resampling WAV loading and the
+  standalone audio segment iterator; live capture is not implemented.
+- `src/dataset/features/`: ordered MFCC, RMS, ZCR, Mel, and spectral-contrast
+  extraction for stacked and analytics-only multi-channel representations.
 - `src/dataset/processors/`: CREMA-D, RAVDESS, and SAVEE loaders registered in
   `DatasetLoaderFactory`.
 - `src/dataset/analytics/`: experimental multi-channel feature aggregation;

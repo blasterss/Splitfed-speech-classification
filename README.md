@@ -85,7 +85,11 @@ notebooks/
   exploration.ipynb       exploratory data analysis
   debug_runtime.ipynb     model/runtime experiments
 src/
-  dataset/                audio loading and feature extraction
+  dataset/
+    audio/                WAV loading and standalone segmentation
+    features/             configured acoustic feature extraction
+    processors/           corpus discovery and filename parsing
+    analytics/            exploratory feature aggregation
   model/                  client-side and server-side neural networks
   splitfed/               clients, servers and training controller
   transport/              message and local queue abstractions
