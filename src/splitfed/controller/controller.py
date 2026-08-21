@@ -1,21 +1,30 @@
-import queue
-
 import torch.multiprocessing as mp
 
-from ..logger import get_logger
-from ..schema import ConfigSchema, TrainingMode
-from ..transport.base import ChannelFactory
-from ..utils.artifacts import ArtifactPaths
-from ..utils.failures import FailureRecord
-from .centralized import CentralizedTrainer
-from .client import _client_worker
-from .common.lifecycle import (
+from ...logger import get_logger
+from ...schema import ConfigSchema, TrainingMode
+from ...utils.artifacts import ArtifactPaths
+from ..centralized import CentralizedTrainer
+from ..client import _client_worker
+from ..common.lifecycle import (
     _cancel_training,
     _shutdown_processes,
     _wait_for_training_processes,
 )
-from .fed_server import FedServer
-from .split_server import SplitServer
+from ..fed_server import FedServer
+from ..split_server import SplitServer
+from .reporting import (
+    capture_first_failure,
+    close_process_queue,
+    drain_dataset_reports,
+)
+from .topology import (
+    FED_DOWNLINK,
+    FED_UPLINK,
+    SPLIT_DOWNLINK,
+    SPLIT_UPLINK,
+    build_channels,
+    build_servers,
+)
 
 logger = get_logger(__name__)
 
@@ -32,10 +41,10 @@ class TrainingController:
         - Training supervision and teardown
     """
 
-    SPLIT_UPLINK = "split_uplink"
-    SPLIT_DOWNLINK = "split_downlink"
-    FED_UPLINK = "federated_uplink"
-    FED_DOWNLINK = "federated_downlink"
+    SPLIT_UPLINK = SPLIT_UPLINK
+    SPLIT_DOWNLINK = SPLIT_DOWNLINK
+    FED_UPLINK = FED_UPLINK
+    FED_DOWNLINK = FED_DOWNLINK
     PROCESS_POLL_TIMEOUT = 0.5
     PROCESS_SHUTDOWN_TIMEOUT = 10
 
@@ -91,25 +100,10 @@ class TrainingController:
         """
         Gracefully shuts down multiprocessing manager.
         """
-        report_queue = getattr(self, "_dataset_report_queue", None)
-        if report_queue is not None:
-            close = getattr(report_queue, "close", None)
-            if close is not None:
-                close()
-            join_thread = getattr(report_queue, "join_thread", None)
-            if join_thread is not None:
-                join_thread()
-            self._dataset_report_queue = None
-
-        failure_queue = getattr(self, "_failure_queue", None)
-        if failure_queue is not None:
-            close = getattr(failure_queue, "close", None)
-            if close is not None:
-                close()
-            join_thread = getattr(failure_queue, "join_thread", None)
-            if join_thread is not None:
-                join_thread()
-            self._failure_queue = None
+        close_process_queue(getattr(self, "_dataset_report_queue", None))
+        self._dataset_report_queue = None
+        close_process_queue(getattr(self, "_failure_queue", None))
+        self._failure_queue = None
 
         if self._manager is not None:
             if self._stop_event is not None:
@@ -119,93 +113,29 @@ class TrainingController:
             self._stop_event = None
 
     def _init_channels(self) -> None:
-        """
-        Creates per-client communication channels.
-        """
-
-        required = set()
-        if self.cfg.training.mode in (
-            TrainingMode.split,
-            TrainingMode.splitfed,
-        ):
-            required.update({self.SPLIT_UPLINK, self.SPLIT_DOWNLINK})
-        if self.cfg.training.mode in (
-            TrainingMode.federated,
-            TrainingMode.splitfed,
-        ):
-            required.update({self.FED_UPLINK, self.FED_DOWNLINK})
-
-        for client_cfg in self.cfg.clients:
-            cid = client_cfg.client_id
-            self.channels[cid] = {}
-
-            for name, params in self.cfg.channels.items():
-                if name not in required:
-                    logger.warning(
-                        "Unexpected channel name '%s' in config – skipping",
-                        name,
-                    )
-                    continue
-
-                self.channels[cid][name] = ChannelFactory.create(
-                    params,
-                    mp_context=self._mp_context,
-                    stop_event=self._stop_event,
-                )
-
-            missing = required - self.channels[cid].keys()
-
-            if missing:
-                raise ValueError(
-                    f"Client '{cid}' is missing channel definitions: {missing}"
-                )
+        """Create per-client communication channels for the selected mode."""
+        self.channels = build_channels(
+            self.cfg,
+            self._mp_context,
+            self._stop_event,
+        )
 
         logger.info(
             "Channels initialised for %d client(s)", len(self.cfg.clients)
         )
 
     def _init_servers(self) -> None:
-        """
-        Initializes SplitServer and FedServer instances.
-        """
-
-        if self.cfg.split_server is not None:
-            split_channels = {
-                cid: {
-                    "uplink": self.channels[cid][self.SPLIT_UPLINK],
-                    "downlink": self.channels[cid][self.SPLIT_DOWNLINK],
-                }
-                for cid in self.channels
-            }
-            self.split_server = SplitServer(
-                config=self.cfg.split_server,
-                client_channels=split_channels,
-                stop_event=self._stop_event,
-                mp_context=self._mp_context,
-                failure_queue=self._failure_queue,
-            )
-            self.split_server.training_mode = self.cfg.training.mode.value
-
+        """Initialize the server instances required by the selected mode."""
+        self.split_server, self.fed_server = build_servers(
+            self.cfg,
+            self.channels,
+            self._stop_event,
+            self._mp_context,
+            self._failure_queue,
+        )
+        if self.split_server is not None:
             logger.info("SplitServer initialised")
-
-        if self.cfg.fed_server is not None:
-            fed_channels = {
-                cid: {
-                    "uplink": self.channels[cid][self.FED_UPLINK],
-                    "downlink": self.channels[cid][self.FED_DOWNLINK],
-                }
-                for cid in self.channels
-            }
-            self.fed_server = FedServer(
-                config=self.cfg.fed_server,
-                client_channels=fed_channels,
-                num_clients=len(self.cfg.clients),
-                stop_event=self._stop_event,
-                mp_context=self._mp_context,
-                failure_queue=self._failure_queue,
-            )
-            self.fed_server.training_mode = self.cfg.training.mode.value
-
+        if self.fed_server is not None:
             logger.info("FedServer initialised")
 
     def start_training(self) -> None:
@@ -367,30 +297,14 @@ class TrainingController:
         report_queue = getattr(self, "_dataset_report_queue", None)
         if report_queue is None:
             return
-        while True:
-            try:
-                report = report_queue.get_nowait()
-            except queue.Empty:
-                break
-            client_id = report.get("client_id")
-            if not isinstance(client_id, int):
-                raise ValueError("Dataset report has invalid client_id")
-            if client_id in self.dataset_manifests:
-                raise ValueError(
-                    f"Duplicate dataset report for client {client_id}"
-                )
-            self.dataset_manifests[client_id] = report
+        drain_dataset_reports(
+            report_queue,
+            self.dataset_manifests,
+        )
 
     def _capture_first_failure(self, fallback: BaseException) -> None:
-        if getattr(self, "first_failure", None) is not None:
-            return
-        failure_queue = getattr(self, "_failure_queue", None)
-        if failure_queue is not None:
-            try:
-                self.first_failure = failure_queue.get_nowait()
-                return
-            except queue.Empty:
-                pass
-        self.first_failure = FailureRecord.from_exception(
-            component="controller", exception=fallback
-        ).as_dict()
+        self.first_failure = capture_first_failure(
+            getattr(self, "first_failure", None),
+            getattr(self, "_failure_queue", None),
+            fallback,
+        )
