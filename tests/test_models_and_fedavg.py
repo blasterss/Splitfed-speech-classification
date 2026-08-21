@@ -5,7 +5,7 @@ from src.model.server_side_model import ServerSideModel
 from src.model.speech_model import SpeechRecognitionModel
 from src.schema import AggregationStrategy
 from src.splitfed.fed_server import FedServer
-from src.utils.state import deserialize_state_dict, serialize_state_dict
+from src.utils.persistence import deserialize_state_dict, serialize_state_dict
 
 
 def test_client_model_produces_split_activations_on_cpu():

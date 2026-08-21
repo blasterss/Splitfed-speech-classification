@@ -5,8 +5,7 @@ import torch.multiprocessing as mp
 
 from ...logger import logger
 from ...schema import ConfigSchema
-from ...utils.checkpoint import save_checkpoint
-from ...utils.state import deserialize_state_dict
+from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .worker import _centralized_training_worker
 
 

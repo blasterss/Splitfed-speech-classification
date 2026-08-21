@@ -14,7 +14,7 @@ from src.splitfed.split_server import (
     _split_server_worker_personalized,
 )
 from src.transport.message import Message
-from src.utils.state import deserialize_state_dict
+from src.utils.persistence import deserialize_state_dict
 
 
 class SpawnQueueChannel:

@@ -10,8 +10,8 @@ from ...schema import FedServerConfig
 from ...transport.base import Channel, Message
 from ...transport.replay import ReplayGuard
 from ...utils.failures import FailureRecord, publish_failure
+from ...utils.persistence import serialize_state_dict
 from ...utils.process import ignore_parent_interrupts
-from ...utils.state import serialize_state_dict
 from ...utils.training import set_seed
 from .aggregation import aggregate_states
 from .protocol import quorum_decision, state_schema, validate_client_update

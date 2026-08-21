@@ -1,4 +1,4 @@
-from src.utils.artifacts import ArtifactPaths
+from src.utils.persistence import ArtifactPaths
 
 
 def test_artifact_paths_are_scoped_by_experiment_name(tmp_path):

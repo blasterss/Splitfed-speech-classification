@@ -11,7 +11,7 @@ from src.splitfed.centralized import (
     _pad_feature_batch,
     _validate_centralized_shapes,
 )
-from src.utils.state import deserialize_state_dict, serialize_state_dict
+from src.utils.persistence import deserialize_state_dict, serialize_state_dict
 
 
 class _CompletedProcess:

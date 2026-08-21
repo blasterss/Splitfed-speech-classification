@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from src.utils.checkpoint import load_checkpoint, save_checkpoint
+from src.utils.persistence import load_checkpoint, save_checkpoint
 
 
 def test_checkpoint_round_trip_validates_mode_scope_and_state_schema(tmp_path):

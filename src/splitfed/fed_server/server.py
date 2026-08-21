@@ -7,8 +7,7 @@ import torch.multiprocessing as mp
 from ...logger import logger
 from ...schema import AggregationStrategy, FedServerConfig
 from ...transport.base import Channel
-from ...utils.checkpoint import save_checkpoint
-from ...utils.state import deserialize_state_dict
+from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .aggregation import aggregate_metrics, aggregate_states
 from .worker import _fed_server_worker
 

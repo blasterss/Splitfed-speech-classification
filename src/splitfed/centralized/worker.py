@@ -9,8 +9,8 @@ from ...dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
 from ...logger import logger
 from ...model.speech_model import SpeechRecognitionModel
 from ...schema import ConfigSchema
+from ...utils.persistence import serialize_state_dict
 from ...utils.process import ignore_parent_interrupts
-from ...utils.state import serialize_state_dict
 from ...utils.training import set_seed
 from .data import _pad_feature_batch, _validate_centralized_shapes
 

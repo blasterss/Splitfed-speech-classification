@@ -11,8 +11,8 @@ from ....schema import SplitServerConfig
 from ....transport.base import Channel
 from ....transport.replay import ReplayGuard
 from ....utils.failures import FailureRecord, publish_failure
+from ....utils.persistence import serialize_state_dict
 from ....utils.process import ignore_parent_interrupts
-from ....utils.state import serialize_state_dict
 from ....utils.training import set_seed
 from ....utils.training_stats import _RoundStats
 from ..operations import _handle_eval_single, _handle_train_batch

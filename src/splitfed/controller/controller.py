@@ -2,7 +2,7 @@ import torch.multiprocessing as mp
 
 from ...logger import get_logger
 from ...schema import ConfigSchema, TrainingMode
-from ...utils.artifacts import ArtifactPaths
+from ...utils.persistence import ArtifactPaths
 from ..centralized import CentralizedTrainer
 from ..client import _client_worker
 from ..common.lifecycle import (

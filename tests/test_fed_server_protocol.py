@@ -12,7 +12,7 @@ from src.splitfed.fed_server.protocol import (
     validate_client_update,
 )
 from src.transport.message import Message
-from src.utils.state import deserialize_state_dict
+from src.utils.persistence import deserialize_state_dict
 
 FUTURE_DEADLINE = time.time() + 3600
 

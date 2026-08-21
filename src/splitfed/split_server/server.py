@@ -6,8 +6,7 @@ import torch.multiprocessing as mp
 from ...logger import logger
 from ...schema import ServerModelScope, SplitServerConfig
 from ...transport.base import Channel
-from ...utils.checkpoint import save_checkpoint
-from ...utils.state import deserialize_state_dict
+from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .worker import (
     _split_server_worker_batch,
     _split_server_worker_personalized,

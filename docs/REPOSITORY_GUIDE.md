@@ -54,8 +54,8 @@ directory can make valid repository-relative paths fail.
   training loop, and variable-length dataset collation/shape validation.
 - `src/transport/`: `Message`, queue channel, channel factory, and the
   unimplemented gRPC channel.
-- `src/utils/`: YAML helpers, training utilities, statistics, and feature
-  aggregation utilities.
+- `src/utils/`: shared utilities; `persistence/` owns artifact paths,
+  checkpoint envelopes, and state-dict byte serialization.
 - `configs/config.example.yaml`: portable CPU example configuration.
 - `configs/config.real.yaml`: repository-local real-data research configuration
   for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,
