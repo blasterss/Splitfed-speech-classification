@@ -2,7 +2,6 @@ from pathlib import Path
 
 import torch
 import torch.optim as optim
-from sklearn.metrics import f1_score, precision_score, recall_score
 from torch.utils.data import DataLoader
 
 from ...dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
@@ -11,6 +10,7 @@ from ...model.client_side_model import ClientSideModel
 from ...model.speech_model import SpeechRecognitionModel
 from ...schema import ClientConfig, TrainingMode
 from ...transport.base import Channel, Message
+from .evaluation import evaluate_client
 from .protocol import _extract_payload, _validate_global_update
 
 logger = logger.getChild("Client")
@@ -248,142 +248,5 @@ class Client:
             round,
         )
 
-    @torch.no_grad()
     def evaluate(self, round: int = 0) -> dict[str, float | int]:
-        """
-        Evaluates model on local test set.
-
-        Returns:
-            accuracy, f1, precision, recall
-        """
-
-        if len(self.dataset.test_dataset) == 0:
-            logger.warning(
-                "Client %s: test dataset is empty — returning zero metrics.",
-                self.client_id,
-            )
-            return _empty_metrics()
-
-        self.model.eval()
-
-        correct = 0
-        total = 0
-
-        all_probs = []
-        all_preds = []
-        all_labels = []
-
-        for step, (x, y) in enumerate(self.test_loader, start=1):
-            x = x.to(self.device, non_blocking=True)
-            y = y.to(self.device, non_blocking=True)
-
-            if self.mode is TrainingMode.federated:
-                logits = self.model(x).reshape(-1)
-            else:
-                activations = self.model(x)
-
-                # Send activations for server-side inference
-                request = Message(
-                    type="eval_step",
-                    sender=self.client_id,
-                    round=round,
-                    step=step,
-                    payload={
-                        "activations": activations.cpu(),
-                        "labels": y.cpu(),
-                    },
-                )
-                self.to_server.send(request)
-                response = self.from_server.recv()
-
-                logits = _extract_payload(
-                    response,
-                    "logits",
-                    "logits",
-                    self.client_id,
-                    round,
-                    step,
-                    request.request_id,
-                )
-
-                if logits is None:
-                    raise RuntimeError(
-                        f"Client {self.client_id}: invalid split evaluation "
-                        f"response for round={round} step={step}"
-                    )
-
-                logits = logits.to(self.device).reshape(-1)
-
-            probs = torch.sigmoid(logits)
-            preds = (probs > 0.5).long()
-
-            y = y.reshape(-1)
-
-            correct += (preds == y).sum().item()
-            total += y.size(0)
-
-            all_probs.append(probs.cpu())
-            all_preds.append(preds.cpu())
-            all_labels.append(y.cpu())
-
-        if total == 0:
-            logger.warning("Client %s: no samples evaluated.", self.client_id)
-            return _empty_metrics()
-
-        all_preds_np = torch.cat(all_preds).numpy()
-        all_labels_np = torch.cat(all_labels).numpy()
-        all_probs_np = torch.cat(all_probs).numpy()
-
-        import pandas as pd
-
-        df = pd.DataFrame(
-            {
-                "probs": all_probs_np,
-                "preds": all_preds_np,
-                "labels": all_labels_np,
-            }
-        )
-
-        metrics_path = getattr(self, "metrics_path", None)
-        if metrics_path is not None:
-            metrics_path.mkdir(parents=True, exist_ok=True)
-            df.to_csv(
-                metrics_path
-                / f"Client{self.client_id}_round_{round}_eval.csv",
-                index=False,
-            )
-
-        f1 = f1_score(
-            all_labels_np, all_preds_np, average="binary", zero_division=0
-        )
-        precision = precision_score(
-            all_labels_np,
-            all_preds_np,
-            average="binary",
-            zero_division=0,
-        )
-        recall = recall_score(
-            all_labels_np, all_preds_np, average="binary", zero_division=0
-        )
-
-        return {
-            "accuracy": correct / total,
-            "f1": float(f1),
-            "precision": float(precision),
-            "recall": float(recall),
-            "num_samples": total,
-            "num_positive_labels": int(all_labels_np.sum()),
-            "num_positive_predictions": int(all_preds_np.sum()),
-        }
-
-
-def _empty_metrics() -> dict[str, float | int]:
-    return {
-        "accuracy": 0.0,
-        "f1": 0.0,
-        "precision": 0.0,
-        "recall": 0.0,
-        "num_samples": 0,
-        "num_positive_labels": 0,
-        "num_positive_predictions": 0,
-    }
+        return evaluate_client(self, round)

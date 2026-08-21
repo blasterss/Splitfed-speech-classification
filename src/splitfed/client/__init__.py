@@ -1,9 +1,7 @@
 """SplitFed client component."""
 
-from .client import (
-    Client,
-    _empty_metrics,
-)
+from .client import Client
+from .evaluation import _empty_metrics
 from .protocol import _extract_payload, _validate_global_update
 from .worker import (
     _abort_barriers,
