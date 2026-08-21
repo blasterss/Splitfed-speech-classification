@@ -10,6 +10,8 @@ from ..processors.factory import DatasetLoaderFactory
 
 class DataConcatenator:
     def __init__(self, configs: list[DatasetConfig]):
+        if not configs:
+            raise ValueError("DataConcatenator requires at least one config")
         self.configs = configs
         self.roots = [Path(config.root) for config in configs]
 
@@ -79,6 +81,10 @@ class DataConcatenator:
     def to_dataframe(
         self, agg_data: list[dict[str, float]], metadata: list[dict[str, Any]]
     ):
+        if len(agg_data) != len(metadata):
+            raise ValueError(
+                "Aggregated features and metadata must have equal row counts"
+            )
         df_features = pd.DataFrame(agg_data)
         df_metadata = pd.DataFrame(metadata)
         return pd.concat([df_metadata, df_features], axis=1)

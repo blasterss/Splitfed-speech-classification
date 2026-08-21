@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from src.dataset.analytics import DataConcatenator
 from src.schema import DatasetConfig, DatasetType
@@ -66,3 +67,15 @@ def test_combined_datasets_use_their_own_feature_names(tmp_path, monkeypatch):
         {"rms_mean": 2.0, "rms_std": 1.0},
         {"zcr_mean": 2.0, "zcr_std": 1.0},
     ]
+
+
+def test_concatenator_requires_at_least_one_config():
+    with pytest.raises(ValueError, match="at least one config"):
+        DataConcatenator([])
+
+
+def test_dataframe_rejects_mismatched_feature_and_metadata_rows(tmp_path):
+    concatenator = _concatenator(tmp_path, ["rms"])
+
+    with pytest.raises(ValueError, match="equal row counts"):
+        concatenator.to_dataframe([{"rms_mean": 1.0}], [{}, {}])
