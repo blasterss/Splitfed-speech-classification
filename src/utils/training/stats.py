@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from ..logger import logger
+from ...logger import logger
 
 logger = logger.getChild("TrainingStats")
 

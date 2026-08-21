@@ -56,7 +56,8 @@ directory can make valid repository-relative paths fail.
   unimplemented gRPC channel.
 - `src/utils/`: shared utilities; `persistence/` owns artifact paths,
   checkpoint envelopes, and state-dict byte serialization; `runtime/` owns
-  process signal policy and structured failure publication.
+  process signal policy and structured failure publication; `training/` owns
+  deterministic seed setup and per-round loss statistics.
 - `configs/config.example.yaml`: portable CPU example configuration.
 - `configs/config.real.yaml`: repository-local real-data research configuration
   for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,

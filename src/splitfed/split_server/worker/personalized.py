@@ -16,8 +16,7 @@ from ....utils.runtime import (
     ignore_parent_interrupts,
     publish_failure,
 )
-from ....utils.training import set_seed
-from ....utils.training_stats import _RoundStats
+from ....utils.training import _RoundStats, set_seed
 from ..operations import _handle_eval_single, _handle_train_batch
 from ..optimization import (
     build_personalized_models,
