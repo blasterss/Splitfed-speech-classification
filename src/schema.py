@@ -272,6 +272,13 @@ class DatasetConfig(StrictConfigModel):
             raise ValueError(f"Path does not exist: {v}")
         return str(path.absolute())
 
+    @field_validator("feature_names")
+    @classmethod
+    def validate_unique_feature_names(cls, value):
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("feature_names must not contain duplicates")
+        return value
+
 
 class ClientConfig(StrictConfigModel):
     """Full configuration for a federated learning client."""

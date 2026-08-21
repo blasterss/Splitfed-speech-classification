@@ -57,6 +57,15 @@ def test_dataset_config_rejects_empty_feature_list(tmp_path):
         )
 
 
+def test_dataset_config_rejects_duplicate_features(tmp_path):
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=["mfcc", "mfcc"],
+        )
+
+
 def test_example_config_uses_portable_dataset_paths():
     config_path = Path("configs/config.example.yaml")
     config = yaml.safe_load(config_path.read_text())
