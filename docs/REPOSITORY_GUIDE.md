@@ -41,6 +41,8 @@ directory can make valid repository-relative paths fail.
   `DatasetLoaderFactory`.
 - `src/dataset/analytics/`: experimental multi-channel feature aggregation;
   it is not part of the supported training path.
+- Live audio capture is not implemented; the dataset package operates on WAV
+  files already present under validated dataset roots.
 - `src/model/`: client-side and server-side PyTorch models.
 - `src/splitfed/`: clients, split server, federated server, and
   `TrainingController`; component packages own their protocol and model
