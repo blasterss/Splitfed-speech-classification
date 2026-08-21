@@ -66,6 +66,9 @@ directory can make valid repository-relative paths fail.
   for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,
   CPU clients and CUDA split/federated servers.
 - `configs/logger.yaml`: logging configuration.
+- `tests/`: tests grouped by owning component (`config/`, `dataset/`,
+  `experiments/`, `model/`, `persistence/`, `runtime/`, `splitfed/`, and
+  `transport/`); pytest discovers all groups from the repository-level path.
 - `notebooks/`: exploratory work; Ruff excludes notebooks.
 - `uv.lock`: resolved dependency set; update it with `uv lock` when project
   dependencies change.
