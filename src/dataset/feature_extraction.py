@@ -64,10 +64,9 @@ class FeatureExtraction:
         feature_names = feature_names or [FeatureType.mel, FeatureType.mfcc]
 
         channels = []
-
-        if "mel" in feature_names:
-            channels.append(
-                FeatureExtraction.get_mel_spec(
+        for feature_name in feature_names:
+            if feature_name == FeatureType.mel:
+                channel = FeatureExtraction.get_mel_spec(
                     y,
                     sr,
                     n_mels=config["n_mels"],
@@ -75,46 +74,36 @@ class FeatureExtraction:
                     hop_length=config["hop_length"],
                     power=config["power"],
                 )
-            )
-
-        if "mfcc" in feature_names:
-            channels.append(
-                FeatureExtraction.get_mfcc(
+            elif feature_name == FeatureType.mfcc:
+                channel = FeatureExtraction.get_mfcc(
                     y,
                     sr,
                     n_mfcc=config["n_mfcc"],
                     n_fft=config["n_fft"],
                     hop_length=config["hop_length"],
                 )
-            )
-
-        if "rms" in feature_names:
-            channels.append(
-                FeatureExtraction.get_rms(
+            elif feature_name == FeatureType.rms:
+                channel = FeatureExtraction.get_rms(
                     y,
                     frame_length=config["frame_length"],
                     hop_length=config["hop_length"],
                 )
-            )
-
-        if "contrast" in feature_names:
-            channels.append(
-                FeatureExtraction.get_spectral_contrast(
+            elif feature_name == FeatureType.contrast:
+                channel = FeatureExtraction.get_spectral_contrast(
                     y,
                     sr,
                     n_fft=config["n_fft"],
                     hop_length=config["hop_length"],
                 )
-            )
-
-        if "zcr" in feature_names:
-            channels.append(
-                FeatureExtraction.get_zero_crossing_rate(
+            elif feature_name == FeatureType.zcr:
+                channel = FeatureExtraction.get_zero_crossing_rate(
                     y,
                     frame_length=config["frame_length"],
                     hop_length=config["hop_length"],
                 )
-            )
+            else:
+                raise ValueError(f"Unsupported feature type: {feature_name}")
+            channels.append(channel)
 
         # Align all channels by minimum time dimension
         min_time = min(ch.shape[-1] for ch in channels)

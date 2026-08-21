@@ -3,6 +3,7 @@ import pytest
 
 from src.dataset.feature_extraction import FeatureExtraction
 from src.dataset.feature_utils import FeatureUtils
+from src.schema import FeatureType
 
 
 def test_spectral_contrast_propagates_extraction_failure(monkeypatch):
@@ -77,3 +78,24 @@ def test_audio_loading_resamples_only_when_target_is_configured(
         "sr": expected_librosa_rate,
         "duration": 1.5,
     }
+
+
+def test_feature_extraction_preserves_configured_order(monkeypatch):
+    monkeypatch.setattr(
+        FeatureExtraction,
+        "get_mfcc",
+        lambda *args, **kwargs: np.full((1, 2), 1.0),
+    )
+    monkeypatch.setattr(
+        FeatureExtraction,
+        "get_zero_crossing_rate",
+        lambda *args, **kwargs: np.full((1, 2), 2.0),
+    )
+
+    features = FeatureExtraction.get_all_features(
+        np.ones(16),
+        8000,
+        feature_names=[FeatureType.zcr, FeatureType.mfcc],
+    )
+
+    assert features[:, 0].tolist() == [2.0, 1.0]
