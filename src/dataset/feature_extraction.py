@@ -289,24 +289,15 @@ class FeatureExtraction:
             fmin = 100.0
             fmax = nyquist - 10
 
-        try:
-            contrast = librosa.feature.spectral_contrast(
-                y=y,
-                sr=sr,
-                n_fft=n_fft,
-                hop_length=hop_length,
-                n_bands=n_bands,
-                fmin=fmin,
-                fmax=fmax,
-            )
-
-            return contrast
-
-        except Exception:
-            # Fallback to zero tensor
-            n_frames = 1 + len(y) // hop_length
-
-            return np.zeros((n_bands, n_frames))
+        return librosa.feature.spectral_contrast(
+            y=y,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_bands=n_bands,
+            fmin=fmin,
+            fmax=fmax,
+        )
 
     @staticmethod
     def get_zero_crossing_rate(
