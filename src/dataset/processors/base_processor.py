@@ -81,17 +81,16 @@ class BaseDatasetLoader(ABC):
                     feature_names=self.config.feature_names,
                 )
 
+                valid_frames = _feature_frame_count(features)
+                sample_metadata = {
+                    "label": label,
+                    "actor_id": actor_id,
+                    "sex": sex,
+                    "dataset": str(self.config.name),
+                    "valid_frames": valid_frames,
+                }
                 data.append(features)
-
-                metadata.append(
-                    {
-                        "label": label,
-                        "actor_id": actor_id,
-                        "sex": sex,
-                        "dataset": str(self.config.name),
-                        "valid_frames": int(features.shape[-1]),
-                    }
-                )
+                metadata.append(sample_metadata)
 
             except Exception as e:
                 logger.warning(f"Error: {file_path.name} - {e}")
@@ -192,3 +191,28 @@ class BaseDatasetLoader(ABC):
             padded.append(feat)
 
         return padded
+
+
+def _feature_frame_count(features: np.ndarray | list[np.ndarray]) -> int:
+    """Validate one extracted sample and return its shared time length."""
+    if isinstance(features, np.ndarray):
+        if features.ndim < 1 or features.shape[-1] <= 0:
+            raise ValueError("Extracted features have no time frames")
+        return int(features.shape[-1])
+
+    if not isinstance(features, list) or not features:
+        raise TypeError("Extracted features must be an array or channel list")
+    if any(
+        not isinstance(channel, np.ndarray) or channel.ndim < 1
+        for channel in features
+    ):
+        raise TypeError("Every feature channel must be a non-scalar array")
+    frame_counts = {int(channel.shape[-1]) for channel in features}
+    if len(frame_counts) != 1:
+        raise ValueError(
+            "Multi-channel features have inconsistent time frames"
+        )
+    frame_count = next(iter(frame_counts))
+    if frame_count <= 0:
+        raise ValueError("Extracted features have no time frames")
+    return frame_count

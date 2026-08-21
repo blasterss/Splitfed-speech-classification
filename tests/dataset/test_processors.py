@@ -222,3 +222,65 @@ def test_loader_accounts_for_extraction_failure_reasons(tmp_path, monkeypatch):
         "failed": 1,
         "failure_reasons": {"ValueError": 1},
     }
+
+
+def test_loader_keeps_multichannel_data_and_metadata_aligned(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "actor-0_good.wav").touch()
+    channels = [np.ones((3, 4)), np.ones((1, 4))]
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        lambda *args, **kwargs: (np.ones(16), 16000),
+    )
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureExtraction.get_all_features",
+        lambda *args, **kwargs: channels,
+    )
+    loader = _ReportingLoader(
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=["mfcc", "rms"],
+        )
+    )
+
+    data, metadata = loader.load(feature_mode="multi_channel")
+
+    assert data == [channels]
+    assert metadata[0]["valid_frames"] == 4
+    assert loader.last_load_report == {
+        "discovered": 1,
+        "loaded": 1,
+        "failed": 0,
+        "failure_reasons": {},
+    }
+
+
+def test_loader_rejects_multichannel_sample_atomically(tmp_path, monkeypatch):
+    (tmp_path / "actor-0_bad.wav").touch()
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureUtils.load_audio",
+        lambda *args, **kwargs: (np.ones(16), 16000),
+    )
+    monkeypatch.setattr(
+        "src.dataset.processors.base_processor.FeatureExtraction.get_all_features",
+        lambda *args, **kwargs: [np.ones((3, 4)), np.ones((1, 5))],
+    )
+    loader = _ReportingLoader(
+        DatasetConfig(
+            name=DatasetType.savee,
+            root=str(tmp_path),
+            feature_names=["mfcc", "rms"],
+        )
+    )
+
+    data, metadata = loader.load(feature_mode="multi_channel")
+
+    assert data == metadata == []
+    assert loader.last_load_report == {
+        "discovered": 1,
+        "loaded": 0,
+        "failed": 1,
+        "failure_reasons": {"ValueError": 1},
+    }
