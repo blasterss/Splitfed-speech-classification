@@ -1,13 +1,11 @@
+import random
+from pathlib import Path
+
 import librosa
 import matplotlib.pyplot as plt
 import numpy as np
-
-from typing import Optional, List
-from torch.utils.data import DataLoader
-from pathlib import Path
-
-import random
 import torch
+from torch.utils.data import DataLoader
 
 
 class FeatureUtils:
@@ -15,17 +13,15 @@ class FeatureUtils:
     def load_audio(
         path: Path,
         sample_rate: float,
-        target_sample_rate: Optional[float],
-        duration: Optional[float] = None,
+        target_sample_rate: float | None,
+        duration: float | None = None,
     ):
         """
         Loads an audio file with optional resampling
         and duration trimming.
         """
 
-        sr = target_sample_rate or sample_rate
-
-        return librosa.load(path, sr=sr, duration=duration)
+        return librosa.load(path, sr=target_sample_rate, duration=duration)
 
     @staticmethod
     def show_waveform(y: np.ndarray, sr: float):
@@ -67,7 +63,7 @@ class FeatureUtils:
     def show_random_sample(
         dataloader: DataLoader,
         sr: float = 16000,
-        channel_names: Optional[List[str]] = None,
+        channel_names: list[str] | None = None,
     ):
         """
         Displays a random sample from the dataloader.
@@ -91,7 +87,7 @@ class FeatureUtils:
         batch_idx: int,
         sample_idx: int,
         sr: float = 16000,
-        channel_names: Optional[List[str]] = None,
+        channel_names: list[str] | None = None,
     ):
         """
         Displays a specific sample from a batch.
@@ -115,7 +111,7 @@ class FeatureUtils:
         feature: torch.Tensor,
         label: int,
         sr: float,
-        channel_names: Optional[List[str]] = None,
+        channel_names: list[str] | None = None,
     ):
         """
         Internal visualization helper for features.
@@ -197,7 +193,7 @@ class FeatureUtils:
     def show_batch(
         dataloader: DataLoader,
         sr: float,
-        channel_names: Optional[List[str]] = None,
+        channel_names: list[str] | None = None,
     ):
         """
         Displays multiple samples from a batch.
@@ -256,7 +252,7 @@ class FeatureUtils:
     def dataset_stats(
         data: torch.Tensor,
         labels: torch.Tensor,
-        channel_names: Optional[List[str]] = None,
+        channel_names: list[str] | None = None,
     ):
         """
         Prints dataset statistics.
@@ -278,11 +274,11 @@ class FeatureUtils:
         print(f"Shape   : {tuple(data.shape[1:])}")
 
         unique, counts = torch.unique(labels, return_counts=True)
-
-        print(
-            f"Labels  : "
-            f"{ {k.item(): v.item() for k, v in zip(unique, counts)} }\n"
-        )
+        label_counts = {
+            key.item(): value.item()
+            for key, value in zip(unique, counts, strict=True)
+        }
+        print(f"Labels  : {label_counts}\n")
 
         print(
             f"{'Channel':<20} "
