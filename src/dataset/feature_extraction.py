@@ -62,6 +62,8 @@ class FeatureExtraction:
 
         config = {**FeatureExtraction.DEFAULT_CONFIG, **kwargs}
         feature_names = feature_names or [FeatureType.mel, FeatureType.mfcc]
+        if feature_mode not in {"stacked", "multi_channel"}:
+            raise ValueError(f"Unsupported feature mode: {feature_mode}")
 
         channels = []
         for feature_name in feature_names:
@@ -113,8 +115,7 @@ class FeatureExtraction:
         if feature_mode == "stacked":
             return np.concatenate(channels, axis=0)
 
-        else:
-            return channels
+        return channels
 
     @staticmethod
     def get_all_features_separate(

@@ -48,6 +48,9 @@ class BaseDatasetLoader(ABC):
         self, feature_mode: str = "stacked"
     ) -> tuple[list[np.ndarray], list[dict[str, Any]]]:
 
+        if feature_mode not in {"stacked", "multi_channel"}:
+            raise ValueError(f"Unsupported feature mode: {feature_mode}")
+
         logger.info(f"Loading data from {self.root}...")
 
         data, metadata = [], []

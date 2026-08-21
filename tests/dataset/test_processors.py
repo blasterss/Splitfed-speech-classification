@@ -94,6 +94,15 @@ def test_factory_registers_all_supported_datasets(
     assert isinstance(DatasetLoaderFactory.create(config), loader_type)
 
 
+def test_loader_rejects_unknown_feature_mode_on_empty_dataset(tmp_path):
+    loader = DatasetLoaderFactory.create(
+        DatasetConfig(name=DatasetType.savee, root=str(tmp_path))
+    )
+
+    with pytest.raises(ValueError, match="Unsupported feature mode: typo"):
+        loader.load(feature_mode="typo")
+
+
 class _ActorDatasetLoader:
     def load(self):
         data = [np.full((3, 8), value) for value in range(4)]

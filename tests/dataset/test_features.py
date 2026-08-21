@@ -99,3 +99,13 @@ def test_feature_extraction_preserves_configured_order(monkeypatch):
     )
 
     assert features[:, 0].tolist() == [2.0, 1.0]
+
+
+def test_feature_extraction_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="Unsupported feature mode: typo"):
+        FeatureExtraction.get_all_features(
+            np.ones(16),
+            8000,
+            feature_mode="typo",
+            feature_names=[FeatureType.mfcc],
+        )
