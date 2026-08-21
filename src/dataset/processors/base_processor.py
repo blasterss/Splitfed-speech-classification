@@ -9,7 +9,7 @@ from tqdm import tqdm
 from ...logger import logger
 from ...schema import DatasetConfig
 from ..audio import load_audio
-from ..feature_extraction import FeatureExtraction
+from ..features import FeatureExtraction
 
 
 class BaseDatasetLoader(ABC):

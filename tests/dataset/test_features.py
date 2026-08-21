@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from src.dataset.audio import load_audio
-from src.dataset.feature_extraction import FeatureExtraction
+from src.dataset.features import FeatureExtraction
 from src.schema import FeatureType
 
 
@@ -11,7 +11,7 @@ def test_spectral_contrast_propagates_extraction_failure(monkeypatch):
         raise RuntimeError("spectral failure")
 
     monkeypatch.setattr(
-        "src.dataset.feature_extraction.librosa.feature.spectral_contrast",
+        "src.dataset.features.extraction.librosa.feature.spectral_contrast",
         fail_extraction,
     )
 
@@ -41,7 +41,7 @@ def test_spectral_contrast_does_not_pass_unsupported_fmax(monkeypatch):
         return np.ones((7, 3))
 
     monkeypatch.setattr(
-        "src.dataset.feature_extraction.librosa.feature.spectral_contrast",
+        "src.dataset.features.extraction.librosa.feature.spectral_contrast",
         extract,
     )
 

@@ -3,7 +3,7 @@ from typing import Literal
 import librosa
 import numpy as np
 
-from ..schema import FeatureType
+from ...schema import FeatureType
 
 
 class FeatureExtraction:

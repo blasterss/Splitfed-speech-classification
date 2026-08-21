@@ -1,6 +1,6 @@
 from .audio import AudioFileSegmenter, load_audio
 from .dataset import ConflictEmotionalDataset
-from .feature_extraction import FeatureExtraction
+from .features import FeatureExtraction
 
 __all__ = [
     "AudioFileSegmenter",
