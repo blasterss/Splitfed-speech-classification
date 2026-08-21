@@ -9,10 +9,20 @@ class AudioFileSegmenter:
         window_duration: float = 1,
         hop_duration: float = 0.5,
     ):
-        self.window_size = int(window_duration * config.SAMPLING_RATE)
-        self.hop_size = int(hop_duration * config.SAMPLING_RATE)
+        if window_duration <= 0 or hop_duration <= 0:
+            raise ValueError(
+                "Segment window and hop durations must be positive"
+            )
 
-        self.audio = FeatureUtils.load_audio(filepath)
+        self.audio, self.sample_rate = FeatureUtils.load_audio(
+            filepath,
+            sample_rate=config.SAMPLING_RATE,
+            target_sample_rate=None,
+        )
+        self.window_size = int(window_duration * self.sample_rate)
+        self.hop_size = int(hop_duration * self.sample_rate)
+        if self.window_size <= 0 or self.hop_size <= 0:
+            raise ValueError("Segment window and hop sizes must be positive")
         self.num_samples = len(self.audio)
 
     def __iter__(self):
