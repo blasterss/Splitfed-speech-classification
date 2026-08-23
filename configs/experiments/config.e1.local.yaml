@@ -34,7 +34,7 @@ clients:
       local_steps: 1
       batch_size: 8
       seed: *seed
-      device: cpu
+      device: cuda
     noise: &local_noise
       type: gauss
       std: 1.0e-10
