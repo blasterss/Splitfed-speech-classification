@@ -1,0 +1,60 @@
+data_path: ../datasets
+models_save_path: artifacts
+
+experiment:
+  name: e1_local_cross_corpus
+  description: >-
+    Train one isolated complete model per corpus and evaluate each unchanged
+    model on the actor-disjoint test views of all three corpora.
+  transport: queue
+  seed: &seed 42
+
+training:
+  mode: centralized
+  num_rounds: 30
+  seed: *seed
+  eval_every: 30
+  fed_every: 1
+  barrier_timeout_sec: 900
+
+clients:
+  - client_id: 0
+    dataset: &base_dataset
+      target_sample_rate: 8000
+      feature_names: [mfcc, rms, zcr]
+      name: CREMA-D
+      root: ../datasets/CREMA-D/raw
+      reduced: false
+      test_size: 0.2
+      split_seed: *seed
+    model: &local_model
+      lr: 0.001
+      optimizer: adam
+    runtime: &local_runtime
+      local_steps: 1
+      batch_size: 8
+      seed: *seed
+      device: cpu
+    noise: &local_noise
+      type: gauss
+      std: 1.0e-10
+
+  - client_id: 1
+    dataset:
+      <<: *base_dataset
+      name: RAVDESS
+      root: ../datasets/RAVDESS/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+  - client_id: 2
+    dataset:
+      <<: *base_dataset
+      name: SAVEE
+      root: ../datasets/SAVEE/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+channels: {}

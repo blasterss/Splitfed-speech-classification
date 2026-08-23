@@ -209,6 +209,19 @@ Repeat `--mode` to select any subset of `centralized`, `federated`,
 `split-shared`, `split-personalized` and `splitfed`. The summary records wall
 time and outcome; it does not yet sample per-process CPU/RSS/GPU utilization.
 
+Run the channel-free E1 local-only cross-corpus matrix with:
+
+```bash
+uv run python -m src.experiments.local_cross_corpus \
+  --config-file configs/experiments/config.e1.local.yaml
+```
+
+The harness treats each configured client as one corpus view, resets the same
+model seed before each isolated training run, and evaluates the resulting model
+against every configured test corpus using only the source training corpus
+normalization statistics. It does not invoke `TrainingController` and creates
+no multiprocessing workers, channels, split servers, or federated servers.
+
 ## Change workflow
 
 1. Read the owning module and its nearest caller or test before editing.
