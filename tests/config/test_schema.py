@@ -137,7 +137,7 @@ def test_sequential_strategy_requires_shared_server_model():
         SplitServerConfig(
             model={"lr": 0.001, "device": "cpu"},
             model_scope="personalized",
-            training_strategy="sflv2_sequential_v1",
+            training_strategy="sequential_v1",
             seed=42,
             split_uplink_channel="split_uplink",
             split_downlink_channel="split_downlink",

@@ -237,7 +237,7 @@ def _synthetic_personalized_client_worker(
     ("split_worker", "strategy"),
     [
         (_split_server_worker_concat, "concat_v1"),
-        (_split_server_worker_sequential, "sflv2_sequential_v1"),
+        (_split_server_worker_sequential, "sequential_v1"),
     ],
 )
 def test_spawned_splitfed_training_cycle_with_unequal_client_steps(

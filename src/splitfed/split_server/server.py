@@ -59,8 +59,7 @@ class SplitServer:
         if self.config.model_scope is ServerModelScope.personalized:
             worker = _split_server_worker_personalized
         elif (
-            self.config.training_strategy
-            is SplitServerStrategy.sflv2_sequential_v1
+            self.config.training_strategy is SplitServerStrategy.sequential_v1
         ):
             worker = _split_server_worker_sequential
         else:

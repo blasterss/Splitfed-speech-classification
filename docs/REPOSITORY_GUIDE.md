@@ -300,7 +300,7 @@ still missing.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
 - `split_server.training_strategy: concat_v1` is the current OUR path: matched
   client activations are concatenated into one server batch and cause one
-  optimizer update. `sflv2_sequential_v1` instead serves clients in configured
+  optimizer update. `sequential_v1` instead serves clients in configured
   order through `round_end`, updating the shared server after every client
   batch. `split_server.model.gradient_accumulation_steps` is fixed at `1`;
   server gradients are never averaged across batches.

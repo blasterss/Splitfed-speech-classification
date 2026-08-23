@@ -60,7 +60,7 @@ feature sequence, регулирует batch size неоднородных worke
 | Получить Local cross-corpus reference | Полная матрица train-corpus × eval-corpus с train-corpus normalization | `src.experiments.local_cross_corpus`, checkpoints, CSV/YAML, accuracy, Anger F1, macro-F1, precision, recall, UAR, PR-AUC и confusion counts | Multi-seed aggregation, доверительные интервалы и единый evaluator для checkpoint других методов |
 | Получить Centralized reference | Одна полная модель на объединённых train actors и отдельные результаты на каждом test corpus | Рабочий centralized topology, объединённый loader, checkpoint и `spawn` smoke | Оценка сейчас объединяет test corpora и сообщает только accuracy; нет трёхколоночной cross-corpus таблицы и полного набора метрик E1 |
 | Получить FedAvg reference | Полные клиентские модели, валидированный FedAvg и per-corpus evaluation | Режим `federated`, `fedavg`/`weighted_fedavg`, schema/state-dict validation, quorum timeout и multiprocessing smoke | Общий E1 harness, cross-corpus checkpoint evaluation, macro/worst-corpus сводка и multi-seed результаты |
-| Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sflv2_sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
+| Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
 | Зафиксировать OUR | Согласованные `(round, step)` batches объединяются перед одним server update; клиентские части проходят FedAvg | `concat_v1`, конкатенация activation, разделение activation gradients, один server update без batch-gradient averaging, stale-batch timeout и `spawn` smoke | Научный harness с тем же data/evaluation budget, телеметрия ожидания/bytes и multi-seed сравнение с SFLv2 |
 | Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized split хранит отдельные server models и optimizer states | Нет агрегации серверных частей, общего SFLv1 checkpoint contract и эталонного теста одного global round |
 | Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | Только простая конкатенация в `concat_v1` | Весь алгоритмический baseline MergeSFL и его reference tests; `concat_v1` нельзя переименовывать в MergeSFL |
@@ -74,7 +74,7 @@ feature sequence, регулирует batch size неоднородных worke
 
 - Инженерный runtime уже поддерживает четыре topology (`centralized`,
   `federated`, `split`, `splitfed`) и две явные стратегии общей split-server
-  модели: `concat_v1` и `sflv2_sequential_v1`.
+  модели: `concat_v1` и `sequential_v1`.
 - E0 и Local-часть E1 существуют, но только Local создаёт готовую матрицу
   качества. E0 остаётся notebook-анализом, а Centralized/FedAvg/SFLv2/OUR ещё
   не сведены к тому же контракту артефактов.
@@ -124,7 +124,7 @@ Centralized, FedAvg, SFLv2 и OUR остаются следующим шагом
 ### Блок B — точные алгоритмические baseline
 
 1. Добавить детерминированный численный reference для уже реализованных
-   `sflv2_sequential_v1` и `concat_v1`: проверить порядок client updates,
+   `sequential_v1` и `concat_v1`: проверить порядок client updates,
    число server optimizer steps и итоговые параметры на малой задаче.
 2. Записывать выбранную server strategy и фактический порядок клиентов в
    resolved artifacts каждого запуска.
@@ -306,7 +306,7 @@ per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
    actor folds/seeds и сохранить итоговую сводку.
 2. Завершить блок A и E1: привести Centralized и FedAvg к Local cross-corpus
    контракту оценки.
-3. Закрыть reference-тесты `sflv2_sequential_v1` и `concat_v1`, добавить
+3. Закрыть reference-тесты `sequential_v1` и `concat_v1`, добавить
    matched-budget harness и минимальную ресурсную телеметрию, затем выполнить
    E2.
 4. Выполнить E3 как прямую ablation SFLv2 против `concat_v1`; добавлять
