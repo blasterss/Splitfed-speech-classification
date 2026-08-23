@@ -47,6 +47,7 @@ secureasr = "src.main:main"
 train = ["torch==2.7.1"]
 dev = [
     "black>=24.0,<26",
+    "ipykernel>=7.3.0",
     "mypy>=1.10,<2",
     "pytest>=8,<9",
     "pytest-timeout>=2.3,<3",
