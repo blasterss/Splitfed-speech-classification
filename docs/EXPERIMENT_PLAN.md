@@ -45,50 +45,44 @@ SplitFed`, но не как канонический SFLv2.
 feature sequence, регулирует batch size неоднородных workers и совместно
 оптимизирует эти механизмы.
 
-## 2. Аудит текущей системы
+## 2. Аудит текущего среза: цель, результат и разрыв
 
-### 2.1. Что уже реализовано
+Аудит выполнен по текущим entry points, конфигурационной схеме, владельцам
+моделей, экспериментальным harness и тестам. Наличие класса или режима само по
+себе не считается готовым научным baseline: нужен воспроизводимый запуск,
+однозначная семантика обновлений и сопоставимый контракт результатов.
 
-| Возможность | Подтверждение в репозитории | Использование |
-| --- | --- | --- |
-| CREMA-D, RAVDESS, SAVEE | Dataset processors и строгий `DatasetConfig` | E0 и cross-corpus запуски |
-| Бинарные метки ANG/not-ANG | Dataset processors и валидация dataset | Основная задача |
-| Actor-disjoint train/test split | `ConflictEmotionalDataset` и `split_seed` | Исключение утечки голоса диктора внутри корпуса |
-| Train-only нормализация с учётом padding | Dataset pipeline и тесты нормализации | Все эксперименты качества |
-| Акустические характеристики | MFCC, RMS, ZCR, Mel, contrast и `DataConcatenator` | E0 |
-| Режим Centralized | Явная topology контроллера | Reference для E1 |
-| Режим Federated | Полные локальные модели и обычный или dataset-weighted FedAvg | Baseline для E1/E2 |
-| Split/shared и split/personalized | Явные варианты владения серверной моделью | Диагностика, но не замена SFLv1/SFLv2 |
-| Текущий SplitFed/OUR | Общий сервер, синхронизация `(round, step)`, конкатенация activation и FedAvg клиентских частей | Основной исследуемый метод |
-| Разная длина локальных loaders | Протокол `round_end` и логика готовности batch | Запуски с естественно неравными корпусами |
-| Ограниченное ожидание и stale error | Тайм-ауты queue/barrier, удаление stale batch, коррелированный ответ об ошибке | Проверка протокола; телеметрия E4 неполна |
-| Артефакты воспроизводимости | Resolved config, provenance, manifests, metrics и checkpoints | Каждый запуск |
-| Accuracy, F1, precision, recall | Клиентский evaluator | Предварительное сравнение качества |
-| Mode matrix | `src.experiments.mode_matrix` | Только smoke/диагностическое сравнение |
-| Local-only cross-corpus matrix | `src.experiments.local_cross_corpus` | E1: независимое обучение на A и оценка на A/B/C |
+### 2.1. Сопоставление по целям
 
-Текущий сервер собирает сообщения с activation для одинаковых round и step,
-конкатенирует их по размерности batch, выполняет один forward/backward общей
-серверной модели, разделяет градиенты activation и возвращает каждому клиенту
-его часть. Это отличие реализации `OUR` от канонического SFLv2.
+| Цель | Требуемый результат | Что есть сейчас | Чего нет / следующий проверяемый шаг |
+| --- | --- | --- | --- |
+| Измерить исходную неоднородность корпусов | Воспроизводимые оценки label/acoustic shift без обучения целевой модели | E0 notebook, валидный dataset-only config, actor IDs, extraction-loss counts, duration, JS/Wasserstein/energy/KS, MMD, domain AUC и PCA | Автоматический export tidy-таблиц и manifest из notebook; повторные seeds/folds и итоговая сводка с неопределённостью |
+| Получить Local cross-corpus reference | Полная матрица train-corpus × eval-corpus с train-corpus normalization | `src.experiments.local_cross_corpus`, checkpoints, CSV/YAML, accuracy, Anger F1, macro-F1, precision, recall, UAR, PR-AUC и confusion counts | Multi-seed aggregation, доверительные интервалы и единый evaluator для checkpoint других методов |
+| Получить Centralized reference | Одна полная модель на объединённых train actors и отдельные результаты на каждом test corpus | Рабочий centralized topology, объединённый loader, checkpoint и `spawn` smoke | Оценка сейчас объединяет test corpora и сообщает только accuracy; нет трёхколоночной cross-corpus таблицы и полного набора метрик E1 |
+| Получить FedAvg reference | Полные клиентские модели, валидированный FedAvg и per-corpus evaluation | Режим `federated`, `fedavg`/`weighted_fedavg`, schema/state-dict validation, quorum timeout и multiprocessing smoke | Общий E1 harness, cross-corpus checkpoint evaluation, macro/worst-corpus сводка и multi-seed результаты |
+| Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sflv2_sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
+| Зафиксировать OUR | Согласованные `(round, step)` batches объединяются перед одним server update; клиентские части проходят FedAvg | `concat_v1`, конкатенация activation, разделение activation gradients, один server update без batch-gradient averaging, stale-batch timeout и `spawn` smoke | Научный harness с тем же data/evaluation budget, телеметрия ожидания/bytes и multi-seed сравнение с SFLv2 |
+| Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized split хранит отдельные server models и optimizer states | Нет агрегации серверных частей, общего SFLv1 checkpoint contract и эталонного теста одного global round |
+| Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | Только простая конкатенация в `concat_v1` | Весь алгоритмический baseline MergeSFL и его reference tests; `concat_v1` нельзя переименовывать в MergeSFL |
+| Сопоставить качество всех методов | Одинаковые actor folds, normalization policy, seeds, stopping/data budget и единая tidy-схема | Эти гарантии полностью собраны только в Local harness; runtime сохраняет config/manifests/checkpoints и базовые client metrics | Общий evaluator/harness для Centralized, FedAvg, SFLv2 и OUR; validation actors, multi-seed CI, macro и worst-corpus aggregation |
+| Сопоставить вычислительную стоимость | Per-process параметры/память, transmitted bytes, server wait, round и total time | Ограниченные lifecycle logs, deadlines, quorum и stale counters на уровне протокола | Версионированная телеметрия, единицы измерения, warm-up policy и экспорт в общую таблицу |
+| Проверить задержки и отказы | Seeded delay/drop/straggler без deadlock и без частично применённого шага | Тайм-ауты, cancellation, barrier abort, failure propagation и завершение процессов тестируются | Детерминированный fault simulator и транзакция `completed/aborted`, гарантирующая отсутствие server/client update при сорванном шаге |
+| Проверить неравную нагрузку | Явные `full_epoch`, `fixed_max_steps`, `equal_samples` с учётом повторов | `local_steps`, разные длины loaders и `round_end` поддерживаются | Реестр workload policies, effective/repeated sample accounting, fairness и matched-budget experiments |
+| Проверить перенос на неизвестный корпус | Held-out corpus исключён из обучения, нормализации и model selection | Local matrix измеряет перенос A → B/C, но обучающая постановка остаётся однокорпусной | Leave-one-corpus-out topology для методов совместного обучения и отдельный held-out evaluator |
 
-### 2.2. Чего не хватает для научного сравнения
+### 2.2. Итог аудита текущего среза
 
-| Отсутствующий компонент | Что блокирует | Требуемый результат |
-| --- | --- | --- |
-| Канонический SFLv1 | Полнота набора методов | Агрегация обеих частей модели с явным владением |
-| Канонический последовательный SFLv2 | E2–E4 | Воспроизводимый порядок клиентов и одно обновление сервера на client batch |
-| Полная реализация MergeSFL | E3–E5 | Feature merging и batch regulation вместо простой конкатенации |
-| PR-AUC, macro-F1, UAR и доверительные интервалы | E1–E7 | Per-client, per-corpus, macro и worst-client отчёты |
-| Cross-corpus/held-out evaluator | E1/E6 | Оценка одного checkpoint на произвольном corpus view |
-| Multi-seed harness | Все научные выводы | Одинаковые seeds, агрегированные таблицы и неопределённость |
-| Ресурсная телеметрия | E2/E4/E5 | Bytes, round/wait/total time, параметры и память |
-| Детерминированный симулятор задержек и отказов | E4 | Delay, jitter, пропуск step и длительный straggler |
-| Явная транзакция abort/skip | E4 | Step с тайм-аутом не обновляет ни одну часть модели |
-| Реестр workload policies | E5 | Full epoch, fixed maximum steps и equal-sample budget |
-| Validation или nested actor split | E5 и выбор модели | Отсутствие настройки по финальным test actors |
-| Leave-one-corpus-out topology | E6 | Held-out корпус не участвует в обучении и нормализации |
-| Multi-class отображение меток | Опциональный E7 | Проверенные метки, новая output/loss схема и метрики |
+- Инженерный runtime уже поддерживает четыре topology (`centralized`,
+  `federated`, `split`, `splitfed`) и две явные стратегии общей split-server
+  модели: `concat_v1` и `sflv2_sequential_v1`.
+- E0 и Local-часть E1 существуют, но только Local создаёт готовую матрицу
+  качества. E0 остаётся notebook-анализом, а Centralized/FedAvg/SFLv2/OUR ещё
+  не сведены к тому же контракту артефактов.
+- Ближайший научно полезный срез — не новый transport или scheduler, а общий
+  evaluator и matched-budget harness для уже реализованных методов.
+- SFLv1, MergeSFL, fault simulator, workload policies и leave-one-corpus-out
+  остаются отдельными последующими срезами; их нельзя считать реализованными
+  по наличию personalized mode, конкатенации или тайм-аутов.
 
 ### 2.3. Ограничения данных
 
@@ -112,10 +106,11 @@ Local-only часть реализована в `src.experiments.local_cross_cor
 строит полную матрицу train-corpus × eval-corpus, использует статистики
 нормализации только train-корпуса и сохраняет tidy CSV, YAML-матрицы и один
 checkpoint на train-corpus. Распространение того же evaluator contract на
-Centralized, FedAvg и OUR остаётся следующим шагом блока.
+Centralized, FedAvg, SFLv2 и OUR остаются следующим шагом блока.
 
-1. Добавить PR-AUC по вероятностям, macro-F1, UAR, confusion counts и явную
-   обработку одного класса или отсутствия положительных предсказаний.
+1. Вынести реализованные в Local PR-AUC, macro-F1, UAR, confusion counts и
+   обработку одного класса/отсутствия положительных предсказаний в общий
+   версионированный binary-metrics contract.
 2. Реализовать оценку валидированного checkpoint на любом настроенном корпусе
    без вычисления нормализации по оценочному корпусу.
 3. Сохранять per-corpus, macro и worst-corpus результаты, seed, actors и число
@@ -123,21 +118,21 @@ Centralized, FedAvg и OUR остаётся следующим шагом бло
 4. Добавить согласованные multi-seed запуски и агрегированные доверительные
    интервалы.
 
-**Готово, когда:** Local, Centralized, FedAvg и OUR создают одну схему
-результатов на одинаковых actor folds.
+**Готово, когда:** Local, Centralized, FedAvg, SFLv2 и OUR создают одну схему
+результатов на одинаковых actor folds и matched data budget.
 
 ### Блок B — точные алгоритмические baseline
 
-1. Зафиксировано: `sflv2_sequential_v1` использует общий сервер,
-   воспроизводимый порядок клиентов, одно обновление серверной модели на
-   client batch и FedAvg клиентских частей. Текущий OUR baseline называется
-   `concat_v1` и объединяет согласованные client batches перед одним server
-   update.
-2. Реализовать `sflv1_v1`: изолированные серверные модели во время локального
+1. Добавить детерминированный численный reference для уже реализованных
+   `sflv2_sequential_v1` и `concat_v1`: проверить порядок client updates,
+   число server optimizer steps и итоговые параметры на малой задаче.
+2. Записывать выбранную server strategy и фактический порядок клиентов в
+   resolved artifacts каждого запуска.
+3. Реализовать `sflv1_v1`: изолированные серверные модели во время локального
    обучения и их явная агрегация на глобальной границе.
-3. Проверить эталонное поведение на детерминированной synthetic задаче, затем
+4. Проверить эталонное поведение SFLv1 на synthetic задаче, затем
    отдельно на каждом речевом корпусе.
-4. Реализовывать MergeSFL только после фиксации feature ordering, batch
+5. Реализовывать MergeSFL только после фиксации feature ordering, batch
    regulation, loss weighting и уравнений server update в детерминированных
    тестах.
 
@@ -307,10 +302,15 @@ per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
 
 ## 5. Порядок выполнения
 
-1. Выполнить E0 с текущим notebook.
-2. Реализовать блок A, затем выполнить E1.
-3. Реализовать SFLv2 и телеметрию, затем выполнить E2.
-4. Реализовать MergeSFL и ablation, затем выполнить E3.
+1. Завершить E0: экспортировать таблицы notebook, выполнить согласованные
+   actor folds/seeds и сохранить итоговую сводку.
+2. Завершить блок A и E1: привести Centralized и FedAvg к Local cross-corpus
+   контракту оценки.
+3. Закрыть reference-тесты `sflv2_sequential_v1` и `concat_v1`, добавить
+   matched-budget harness и минимальную ресурсную телеметрию, затем выполнить
+   E2.
+4. Выполнить E3 как прямую ablation SFLv2 против `concat_v1`; добавлять
+   MergeSFL только как отдельный полностью реализованный baseline.
 5. Реализовать блок C, затем выполнить E4 и E5.
 6. Реализовать held-out evaluator, затем выполнить E6.
 7. Выполнять E7 только при необходимости для заявленной области статьи.
