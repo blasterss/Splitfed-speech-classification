@@ -4,12 +4,13 @@ from pathlib import Path
 import torch.multiprocessing as mp
 
 from ...logger import logger
-from ...schema import ServerModelScope, SplitServerConfig
+from ...schema import ServerModelScope, SplitServerConfig, SplitServerStrategy
 from ...transport.base import Channel
 from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .worker import (
-    _split_server_worker_batch,
+    _split_server_worker_concat,
     _split_server_worker_personalized,
+    _split_server_worker_sequential,
 )
 
 logger = logger.getChild("SplitServer")
@@ -55,11 +56,15 @@ class SplitServer:
     def start(self) -> None:
         """Spawn the server worker process."""
         self._stop_event.clear()
-        worker = (
-            _split_server_worker_personalized
-            if self.config.model_scope is ServerModelScope.personalized
-            else _split_server_worker_batch
-        )
+        if self.config.model_scope is ServerModelScope.personalized:
+            worker = _split_server_worker_personalized
+        elif (
+            self.config.training_strategy
+            is SplitServerStrategy.sflv2_sequential_v1
+        ):
+            worker = _split_server_worker_sequential
+        else:
+            worker = _split_server_worker_concat
         self._process = self._mp_context.Process(
             target=worker,
             args=(

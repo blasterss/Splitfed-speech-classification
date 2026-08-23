@@ -1,6 +1,7 @@
 import queue
 import time
 
+import pytest
 import torch
 import torch.multiprocessing as mp
 
@@ -10,8 +11,9 @@ from src.schema import FedServerConfig, SplitServerConfig
 from src.splitfed.client import _extract_payload, _validate_global_update
 from src.splitfed.fed_server import _fed_server_worker
 from src.splitfed.split_server import (
-    _split_server_worker_batch,
+    _split_server_worker_concat,
     _split_server_worker_personalized,
+    _split_server_worker_sequential,
 )
 from src.transport.message import Message
 from src.utils.persistence import deserialize_state_dict
@@ -231,7 +233,16 @@ def _synthetic_personalized_client_worker(
     result_queue.put((client_id, local_steps))
 
 
-def test_spawned_splitfed_training_cycle_with_unequal_client_steps():
+@pytest.mark.parametrize(
+    ("split_worker", "strategy"),
+    [
+        (_split_server_worker_concat, "concat_v1"),
+        (_split_server_worker_sequential, "sflv2_sequential_v1"),
+    ],
+)
+def test_spawned_splitfed_training_cycle_with_unequal_client_steps(
+    split_worker, strategy
+):
     context = mp.get_context("spawn")
     stop_event = context.Event()
     split_result_queue = context.Queue(maxsize=1)
@@ -253,11 +264,12 @@ def test_spawned_splitfed_training_cycle_with_unequal_client_steps():
             "optimizer": "adam",
             "lr": 0.001,
             "device": "cpu",
-            "gradient_accumulation_steps": 2,
+            "gradient_accumulation_steps": 1,
             "batch_timeout_sec": 10,
         },
         seed=42,
         model_scope="shared",
+        training_strategy=strategy,
         split_uplink_channel="split_uplink",
         split_downlink_channel="split_downlink",
     )
@@ -287,7 +299,7 @@ def test_spawned_splitfed_training_cycle_with_unequal_client_steps():
     }
     processes = [
         context.Process(
-            target=_split_server_worker_batch,
+            target=split_worker,
             args=(
                 split_config,
                 split_channels,
@@ -504,7 +516,7 @@ def test_spawned_personalized_split_keeps_per_client_server_states():
             "optimizer": "adam",
             "lr": 0.001,
             "device": "cpu",
-            "gradient_accumulation_steps": 2,
+            "gradient_accumulation_steps": 1,
             "batch_timeout_sec": 10,
         },
         seed=42,

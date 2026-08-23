@@ -12,6 +12,7 @@ from src.schema import (
     FedServerConfig,
     NoiseConfig,
     QueueChannelConfig,
+    SplitServerConfig,
     SplitServerModelConfig,
     TrainingConfig,
     _validate_device_available,
@@ -109,14 +110,14 @@ def test_queue_channel_requires_positive_timeout():
         )
 
 
-def test_split_server_requires_positive_gradient_accumulation_steps():
+def test_split_server_requires_one_gradient_accumulation_step():
     with pytest.raises(ValidationError, match="gradient_accumulation_steps"):
         SplitServerModelConfig(
             pos_weight=1,
             optimizer="adam",
             lr=0.001,
             device="cpu",
-            gradient_accumulation_steps=0,
+            gradient_accumulation_steps=2,
         )
 
 
@@ -128,6 +129,18 @@ def test_split_server_requires_positive_batch_timeout():
             lr=0.001,
             device="cpu",
             batch_timeout_sec=0,
+        )
+
+
+def test_sequential_strategy_requires_shared_server_model():
+    with pytest.raises(ValidationError, match="applies only to shared"):
+        SplitServerConfig(
+            model={"lr": 0.001, "device": "cpu"},
+            model_scope="personalized",
+            training_strategy="sflv2_sequential_v1",
+            seed=42,
+            split_uplink_channel="split_uplink",
+            split_downlink_channel="split_downlink",
         )
 
 

@@ -78,12 +78,13 @@ clients:
 
 split_server:
   model_scope: shared
+  training_strategy: concat_v1
   model:
     pos_weight: 3
     optimizer: adam
     lr: 0.0005
     device: cpu
-    gradient_accumulation_steps: 4
+    gradient_accumulation_steps: 1
     batch_timeout_sec: 30
   seed: *seed
   split_uplink_channel: split_uplink

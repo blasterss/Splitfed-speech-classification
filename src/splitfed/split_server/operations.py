@@ -8,22 +8,16 @@ from ...model.server_side_model import ServerSideModel
 from ...transport.base import Channel, Message
 
 
-def _handle_train_batch(
+def _handle_train_concat(
     batch_msgs: dict[str, Message],
     model: ServerSideModel,
     criterion: nn.Module,
     device: torch.device,
     client_channels: dict[str, dict[str, Channel]],
-    parallel: bool = True,
 ) -> float | None:
-    """Train one combined or sequential server-side split batch."""
+    """Train one server batch formed by concatenating client activations."""
     model.train()
-    if parallel:
-        result = _forward_parallel(batch_msgs, model, criterion, device)
-    else:
-        result = _forward_sequential(
-            batch_msgs, model, criterion, device, len(batch_msgs)
-        )
+    result = _forward_concat(batch_msgs, model, criterion, device)
     if result is None:
         return None
     grads_per_client, batch_loss = result
@@ -41,7 +35,7 @@ def _handle_train_batch(
     return batch_loss
 
 
-def _forward_parallel(
+def _forward_concat(
     batch_msgs: dict[str, Message],
     model: ServerSideModel,
     criterion: nn.Module,
@@ -65,7 +59,7 @@ def _forward_parallel(
     outputs = model(combined)
     if outputs.shape != expected.shape:
         logger.error(
-            "SplitServer [parallel]: shape mismatch %s vs %s — "
+            "SplitServer [concat]: shape mismatch %s vs %s — "
             "aborting batch.",
             outputs.shape,
             expected.shape,
@@ -76,7 +70,7 @@ def _forward_parallel(
     loss.backward()
     if combined.grad is None:
         logger.error(
-            "SplitServer [parallel]: H.grad is None — sending zero gradients."
+            "SplitServer [concat]: H.grad is None — sending zero gradients."
         )
         gradients = torch.zeros_like(combined)
     else:
@@ -86,48 +80,6 @@ def _forward_parallel(
         client_id: gradient.cpu()
         for client_id, gradient in zip(client_order, splits, strict=True)
     }, loss_value
-
-
-def _forward_sequential(
-    batch_msgs: dict[str, Message],
-    model: ServerSideModel,
-    criterion: nn.Module,
-    device: torch.device,
-    n_clients: int,
-) -> tuple[dict[str, torch.Tensor], float] | None:
-    """Run client forwards sequentially while accumulating model gradients."""
-    gradients: dict[str, torch.Tensor] = {}
-    total_loss = 0.0
-    for client_id, message in batch_msgs.items():
-        activations = message.payload["activations"].to(device)
-        labels = message.payload["labels"].to(device).float()
-        if labels.dim() == 1:
-            labels = labels.unsqueeze(1)
-        detached = activations.detach().requires_grad_(True)
-        outputs = model(detached)
-        if outputs.shape != labels.shape:
-            logger.error(
-                "SplitServer [sequential]: shape mismatch for client %s "
-                "%s vs %s — aborting batch.",
-                client_id,
-                outputs.shape,
-                labels.shape,
-            )
-            model.zero_grad()
-            return None
-        loss = criterion(outputs, labels) / n_clients
-        total_loss += loss.item()
-        loss.backward()
-        if detached.grad is None:
-            logger.error(
-                "SplitServer [sequential]: H.grad is None for client %s "
-                "— sending zero gradients.",
-                client_id,
-            )
-            gradients[client_id] = torch.zeros_like(activations)
-        else:
-            gradients[client_id] = detached.grad.detach().cpu()
-    return gradients, total_loss
 
 
 def _handle_eval_single(

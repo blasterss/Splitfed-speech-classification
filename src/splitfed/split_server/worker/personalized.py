@@ -17,11 +17,8 @@ from ....utils.runtime import (
     publish_failure,
 )
 from ....utils.training import _RoundStats, set_seed
-from ..operations import _handle_eval_single, _handle_train_batch
-from ..optimization import (
-    build_personalized_models,
-    step_accumulated_gradients,
-)
+from ..operations import _handle_eval_single, _handle_train_concat
+from ..optimization import build_personalized_models
 from ..protocol import _validate_message
 
 logger = logger.getChild("SplitServer")
@@ -43,7 +40,6 @@ def _split_server_worker_personalized(
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor(config.model.pos_weight, device=device)
     ).to(device)
-    accumulated = {client_id: 0 for client_id in client_ids}
     completed_steps = {client_id: set() for client_id in client_ids}
     stats = {client_id: _RoundStats() for client_id in client_ids}
     replay_guard = ReplayGuard()
@@ -76,7 +72,8 @@ def _split_server_worker_personalized(
                     )
                 completed_steps[client_id].add(correlation)
                 if message.type == "train_step":
-                    loss = _handle_train_batch(
+                    optimizers[client_id].zero_grad()
+                    loss = _handle_train_concat(
                         {client_id: message},
                         models[client_id],
                         criterion,
@@ -85,17 +82,7 @@ def _split_server_worker_personalized(
                     )
                     if loss is not None:
                         stats[client_id].update(loss)
-                        accumulated[client_id] += 1
-                    if (
-                        accumulated[client_id]
-                        == config.model.gradient_accumulation_steps
-                    ):
-                        step_accumulated_gradients(
-                            models[client_id].parameters(),
-                            optimizers[client_id],
-                            accumulated[client_id],
-                        )
-                        accumulated[client_id] = 0
+                        optimizers[client_id].step()
                 elif message.type == "eval_step":
                     _handle_eval_single(
                         message,
@@ -107,13 +94,6 @@ def _split_server_worker_personalized(
                         [],
                     )
                 elif message.type == "round_end":
-                    if accumulated[client_id]:
-                        step_accumulated_gradients(
-                            models[client_id].parameters(),
-                            optimizers[client_id],
-                            accumulated[client_id],
-                        )
-                        accumulated[client_id] = 0
                     stats[client_id].log_and_reset(message.round)
             if not served_any:
                 stop_event.wait(timeout=0.001)
@@ -131,13 +111,6 @@ def _split_server_worker_personalized(
         stop_event.set()
         raise
     finally:
-        for client_id in client_ids:
-            if accumulated[client_id]:
-                step_accumulated_gradients(
-                    models[client_id].parameters(),
-                    optimizers[client_id],
-                    accumulated[client_id],
-                )
         state = {
             client_id: {
                 key: value.cpu()

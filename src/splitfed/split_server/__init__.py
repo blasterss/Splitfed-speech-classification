@@ -1,11 +1,8 @@
 """Split-learning server component."""
 
-from .operations import _forward_parallel
+from .operations import _forward_concat
 from .optimization import (
     build_personalized_models as _build_personalized_models,
-)
-from .optimization import (
-    step_accumulated_gradients as _step_accumulated_gradients,
 )
 from .protocol import (
     _batch_is_ready,
@@ -15,8 +12,9 @@ from .protocol import (
 )
 from .server import SplitServer
 from .worker import (
-    _split_server_worker_batch,
+    _split_server_worker_concat,
     _split_server_worker_personalized,
+    _split_server_worker_sequential,
 )
 
 __all__ = [
@@ -24,10 +22,10 @@ __all__ = [
     "_batch_is_ready",
     "_build_personalized_models",
     "_evict_stale_batches",
-    "_forward_parallel",
-    "_split_server_worker_batch",
+    "_forward_concat",
+    "_split_server_worker_concat",
     "_split_server_worker_personalized",
-    "_step_accumulated_gradients",
+    "_split_server_worker_sequential",
     "_store_pending_batch",
     "_validate_message",
 ]

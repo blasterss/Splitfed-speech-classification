@@ -21,8 +21,7 @@ from ....utils.runtime import (
     publish_failure,
 )
 from ....utils.training import _RoundStats, set_seed
-from ..operations import _handle_eval_single, _handle_train_batch
-from ..optimization import step_accumulated_gradients
+from ..operations import _handle_eval_single, _handle_train_concat
 from ..protocol import (
     _batch_is_ready,
     _evict_stale_batches,
@@ -33,7 +32,7 @@ from ..protocol import (
 logger = logger.getChild("SplitServer")
 
 
-def _split_server_worker_batch(
+def _split_server_worker_concat(
     config: SplitServerConfig,
     client_channels: dict[str, dict[str, Channel]],
     stop_event,
@@ -64,8 +63,6 @@ def _split_server_worker_batch(
 
     all_eval_probs = []
     all_eval_labels = []
-    accumulated_batches = 0
-    optimizer.zero_grad()
     try:
         while not stop_event.is_set():
             served_any = False
@@ -155,7 +152,8 @@ def _split_server_worker_batch(
                         stats.log_and_reset(current_round)
                         current_round = batch_round
 
-                    batch_loss = _handle_train_batch(
+                    optimizer.zero_grad()
+                    batch_loss = _handle_train_concat(
                         batch_msgs,
                         model,
                         criterion,
@@ -164,17 +162,7 @@ def _split_server_worker_batch(
                     )
                     if batch_loss is not None:
                         stats.update(batch_loss)
-                        accumulated_batches += 1
-                        if (
-                            accumulated_batches
-                            == config.model.gradient_accumulation_steps
-                        ):
-                            step_accumulated_gradients(
-                                model.parameters(),
-                                optimizer,
-                                accumulated_batches,
-                            )
-                            accumulated_batches = 0
+                        optimizer.step()
 
                 completed_round = msg.round
                 round_is_complete = completed_rounds[completed_round] == set(
@@ -184,13 +172,6 @@ def _split_server_worker_batch(
                     key[0] == completed_round for key in pending_batches
                 )
                 if round_is_complete and not round_has_pending:
-                    if accumulated_batches:
-                        step_accumulated_gradients(
-                            model.parameters(),
-                            optimizer,
-                            accumulated_batches,
-                        )
-                        accumulated_batches = 0
                     completed_rounds.pop(completed_round, None)
 
             _evict_stale_batches(

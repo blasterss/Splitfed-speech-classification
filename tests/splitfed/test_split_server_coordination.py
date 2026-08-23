@@ -10,9 +10,8 @@ from src.splitfed.split_server import (
     _batch_is_ready,
     _build_personalized_models,
     _evict_stale_batches,
-    _forward_parallel,
-    _split_server_worker_batch,
-    _step_accumulated_gradients,
+    _forward_concat,
+    _split_server_worker_concat,
     _store_pending_batch,
     _validate_message,
 )
@@ -152,7 +151,7 @@ def test_split_worker_reports_original_failure_context():
     }
 
     with pytest.raises(ValueError, match="Invalid split message"):
-        _split_server_worker_batch(
+        _split_server_worker_concat(
             config,
             channels,
             stop_event,
@@ -211,27 +210,6 @@ def test_batch_becomes_ready_when_missing_client_finished_round():
         {"client-0", "client-1"},
         {"client-0"},
     )
-
-
-def test_accumulated_server_gradients_are_averaged_before_step():
-    parameter = torch.nn.Parameter(torch.tensor([1.0]))
-    optimizer = torch.optim.SGD([parameter], lr=1.0)
-    parameter.grad = torch.tensor([6.0])
-
-    _step_accumulated_gradients([parameter], optimizer, batch_count=3)
-
-    assert torch.equal(parameter.detach(), torch.tensor([-1.0]))
-    assert parameter.grad is None
-
-
-def test_remainder_gradient_uses_actual_batch_count():
-    parameter = torch.nn.Parameter(torch.tensor([1.0]))
-    optimizer = torch.optim.SGD([parameter], lr=1.0)
-    parameter.grad = torch.tensor([6.0])
-
-    _step_accumulated_gradients([parameter], optimizer, batch_count=2)
-
-    assert torch.equal(parameter.detach(), torch.tensor([-2.0]))
 
 
 def test_personalized_server_models_and_optimizers_are_isolated():
@@ -305,7 +283,7 @@ def test_personalized_server_saves_one_checkpoint_per_client(tmp_path):
     )
 
 
-def test_parallel_client_gradient_uses_full_batch_loss():
+def test_concat_client_gradient_uses_full_batch_loss():
     model = torch.nn.Linear(1, 1, bias=False)
     model.weight.data.fill_(1.0)
     criterion = torch.nn.BCEWithLogitsLoss()
@@ -319,7 +297,7 @@ def test_parallel_client_gradient_uses_full_batch_loss():
         payload={"activations": activations, "labels": labels},
     )
 
-    gradients, _ = _forward_parallel(
+    gradients, _ = _forward_concat(
         {"client-0": message}, model, criterion, torch.device("cpu")
     )
 

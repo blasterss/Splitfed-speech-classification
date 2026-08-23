@@ -7,6 +7,7 @@ Describes experiment topology, clients, servers, and communication channels.
 
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 import torch
 from pydantic import (
@@ -63,6 +64,13 @@ class TrainingMode(str, Enum):
 class ServerModelScope(str, Enum):
     shared = "shared"
     personalized = "personalized"
+
+
+class SplitServerStrategy(str, Enum):
+    """Server update ordering for a shared split model."""
+
+    concat_v1 = "concat_v1"
+    sflv2_sequential_v1 = "sflv2_sequential_v1"
 
 
 class ExperimentProfile(str, Enum):
@@ -333,10 +341,12 @@ class SplitServerModelConfig(StrictConfigModel):
         description="Execution device for the server-side model.",
     )
 
-    gradient_accumulation_steps: int = Field(
-        default=4,
-        gt=0,
-        description="Server batches averaged per optimizer update.",
+    gradient_accumulation_steps: Literal[1] = Field(
+        default=1,
+        description=(
+            "One server optimizer update per strategy batch; gradient "
+            "accumulation and batch averaging are not supported."
+        ),
     )
 
     batch_timeout_sec: float = Field(
@@ -355,6 +365,11 @@ class SplitServerConfig(StrictConfigModel):
 
     model_scope: ServerModelScope = Field(default=ServerModelScope.shared)
 
+    training_strategy: SplitServerStrategy = Field(
+        default=SplitServerStrategy.concat_v1,
+        description="Shared server-model update ordering.",
+    )
+
     seed: int = Field(
         description="Seed for server-side randomness (e.g., client sampling)."
     )
@@ -370,6 +385,18 @@ class SplitServerConfig(StrictConfigModel):
             "Channel name for transmitting gradients from server to clients."
         )
     )
+
+    @model_validator(mode="after")
+    def validate_strategy_scope(self):
+        if (
+            self.model_scope is ServerModelScope.personalized
+            and self.training_strategy is not SplitServerStrategy.concat_v1
+        ):
+            raise ValueError(
+                "split-server training_strategy applies only to shared "
+                "server models"
+            )
+        return self
 
 
 # ============================================================

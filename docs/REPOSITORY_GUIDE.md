@@ -298,9 +298,12 @@ still missing.
 - `training.fed_every` controls aggregation cadence. `training.eval_every`
   schedules synchronized snapshots and the final round is always evaluated.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
-- `split_server.model.gradient_accumulation_steps` controls averaged server
-  optimizer updates. Client activation gradients are not scaled by this value,
-  and incomplete accumulation windows flush at the completed round boundary.
+- `split_server.training_strategy: concat_v1` is the current OUR path: matched
+  client activations are concatenated into one server batch and cause one
+  optimizer update. `sflv2_sequential_v1` instead serves clients in configured
+  order through `round_end`, updating the shared server after every client
+  batch. `split_server.model.gradient_accumulation_steps` is fixed at `1`;
+  server gradients are never averaged across batches.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial

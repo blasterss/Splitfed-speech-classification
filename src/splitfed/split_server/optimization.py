@@ -25,18 +25,3 @@ def build_personalized_models(
         )
         optimizers[client_id].zero_grad()
     return models, optimizers
-
-
-def step_accumulated_gradients(
-    parameters,
-    optimizer: optim.Optimizer,
-    batch_count: int,
-) -> None:
-    """Apply one optimizer step after averaging accumulated gradients."""
-    if batch_count <= 0:
-        raise ValueError("batch_count must be positive")
-    for parameter in parameters:
-        if parameter.grad is not None:
-            parameter.grad.div_(batch_count)
-    optimizer.step()
-    optimizer.zero_grad()
