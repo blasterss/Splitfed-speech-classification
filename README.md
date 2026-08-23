@@ -270,6 +270,19 @@ aggregation round occurs before FedAvg so that the client encoder and shared
 server model are a trained, compatible pair. The global client encoder is then
 installed for the next round.
 
+Run the E1 local-only cross-corpus baseline with:
+
+```bash
+uv run python -m src.experiments.local_cross_corpus \
+  --config-file configs/experiments/config.e1.local.yaml
+```
+
+It trains one independent complete model per corpus and evaluates every model
+on the actor-disjoint test view of every corpus. Evaluation always reuses the
+training corpus normalization statistics. The harness writes a tidy CSV,
+metric matrices in YAML, and one checkpoint per training corpus under
+`artifacts/e1_local_cross_corpus/local_cross_corpus/`.
+
 Expected generated artifacts include:
 
 - rotating logs under `logs/` when logging configuration is loaded;
@@ -483,18 +496,17 @@ work, in delivery order, is:
 
 ## Experimental roadmap
 
-A meaningful study should compare:
+The implementation audit, baseline definitions, required changes, and the
+refactored experiment sequence are maintained in
+[docs/EXPERIMENT_PLAN.md](docs/EXPERIMENT_PLAN.md). The original
+`exp_plan.docx` remains source material rather than an executable protocol.
 
-1. centralised training;
-2. federated-only training;
-3. split-only training;
-4. SplitFed training;
-5. SplitFed under several clipping/noise settings.
-
-Measure classification quality, per-client quality, communication volume, round
-latency, peak GPU memory and privacy leakage. Vary the split point and evaluate
-leave-one-dataset-out generalisation. This would turn the prototype into a
-reproducible research platform rather than only a multiprocessing demonstration.
+The intended order is: quantify corpus heterogeneity; complete the common
+evaluation contract; establish Local/Centralized/FedAvg references; implement
+faithful SFLv1, SFLv2 and MergeSFL baselines; then evaluate server optimization,
+failure robustness, unequal workloads and leave-one-corpus-out generalization.
+The existing mode matrix remains a smoke/diagnostic runner, not a benchmark
+harness.
 
 ## License
 
