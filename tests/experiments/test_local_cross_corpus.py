@@ -6,6 +6,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from src.dataset.dataset import EmotionalDataset
+from src.experiments.checkpoint_evaluation import evaluate_model_on_corpora
 from src.experiments.local_cross_corpus import (
     NORMALIZATION_POLICY,
     _cross_corpus_evaluation_dataset,
@@ -182,3 +183,26 @@ def test_local_training_writes_complete_three_by_three_matrix(tmp_path):
     assert (artifact_root / "local_cross_corpus.csv").is_file()
     assert (artifact_root / "local_cross_corpus_summary.yaml").is_file()
     assert len(list((artifact_root / "checkpoints").glob("*.pt"))) == 3
+
+
+def test_checkpoint_evaluator_reports_per_corpus_macro_and_worst():
+    datasets = {
+        "CREMA-D": _corpus(0.0),
+        "RAVDESS": _corpus(10.0),
+        "SAVEE": _corpus(20.0),
+    }
+    model = TinyBinaryModel(1)
+    model.output.weight.data.zero_()
+    model.output.bias.data.zero_()
+
+    summary = evaluate_model_on_corpora(
+        model,
+        datasets,
+        batch_size=2,
+        device=torch.device("cpu"),
+    )
+
+    assert [row["eval_corpus"] for row in summary["rows"]] == list(datasets)
+    assert summary["metrics_schema_version"] == 1
+    assert summary["macro"]["anger_f1"] == 0.0
+    assert summary["worst_corpus"]["anger_f1"] == 0.0
