@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch.multiprocessing as mp
 
-from ..main import _execute_training
+from ..application.lifecycle import execute_training
 from ..schema import ConfigSchema
 from ..splitfed.controller import TrainingController
 from ..utils.config import read_yaml, save_yaml
@@ -112,7 +112,7 @@ def main() -> None:
         set_seed(config.experiment.seed)
         started = time.monotonic()
         try:
-            _execute_training(
+            execute_training(
                 TrainingController(config),
                 config,
                 configuration_provenance={

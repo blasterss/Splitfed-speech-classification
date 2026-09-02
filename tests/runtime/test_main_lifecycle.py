@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.main import _execute_training
+from src.application.lifecycle import execute_training
 
 
 class FakeController:
@@ -35,7 +35,7 @@ def _config_without_artifacts():
 def test_execute_training_tears_down_after_success():
     controller = FakeController()
 
-    _execute_training(controller, _config_without_artifacts())
+    execute_training(controller, _config_without_artifacts())
 
     assert controller.calls == ["setup", "start_training", "teardown"]
 
@@ -49,7 +49,7 @@ def test_execute_training_tears_down_after_failure(failure_stage):
     )
 
     with pytest.raises(RuntimeError, match=f"{failure_stage} failed"):
-        _execute_training(controller, _config_without_artifacts())
+        execute_training(controller, _config_without_artifacts())
 
     assert controller.calls[-1] == "teardown"
 
@@ -74,7 +74,7 @@ def test_execute_training_attempts_all_server_stops_before_teardown():
     controller.fed_server = FakeServer(controller.calls, "fed")
 
     with pytest.raises(RuntimeError, match="split stop failed"):
-        _execute_training(controller, _config_without_artifacts())
+        execute_training(controller, _config_without_artifacts())
 
     assert controller.calls == [
         "setup",

@@ -1,4 +1,4 @@
-from src.main import (
+from src.application.artifacts import (
     _config_sha256,
     _file_sha256,
     _save_first_failure,

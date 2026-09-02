@@ -1,11 +1,14 @@
 import pytest
 
+from src.application.configuration import (
+    apply_cli_overrides,
+    resolve_raw_config,
+)
 from src.config_profiles import (
     PROFILE_REGISTRY,
     ExperimentProfileDefinition,
     ExperimentProfileRegistry,
 )
-from src.main import apply_cli_overrides, resolve_raw_config
 from src.schema import ExperimentProfile
 
 

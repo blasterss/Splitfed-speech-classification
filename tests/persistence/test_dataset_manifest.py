@@ -1,4 +1,4 @@
-from src.main import _save_dataset_manifest
+from src.application.artifacts import _save_dataset_manifest
 from src.utils.config import read_yaml
 
 
