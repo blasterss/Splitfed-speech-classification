@@ -77,6 +77,10 @@ def _client_worker(
                 training_cfg.mode
                 in (TrainingMode.federated, TrainingMode.splitfed)
                 and round_idx % training_cfg.fed_every == 0
+                and (
+                    getattr(training_cfg, "aggregate_final", True)
+                    or round_idx < training_cfg.num_rounds
+                )
             )
             should_evaluate = _should_evaluate(
                 round_idx,

@@ -223,6 +223,40 @@ def test_evaluation_uses_mode_compatible_model_pair(
     assert RecordingClient.events == expected_events
 
 
+def test_final_federated_aggregation_can_be_disabled(monkeypatch):
+    RecordingClient.events = []
+    stop_event = FakeStopEvent()
+    monkeypatch.setattr("src.splitfed.client.Client", RecordingClient)
+    cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=2,
+        eval_every=2,
+        fed_every=1,
+        aggregate_final=False,
+        mode=TrainingMode.federated,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        object(),
+        object(),
+        stop_event,
+        FakeBarrier(),
+        FakeBarrier(),
+    )
+
+    assert RecordingClient.events == [
+        ("train", 1),
+        ("aggregate", 1),
+        ("train", 2),
+        ("evaluate", 2),
+    ]
+
+
 def test_spawned_barrier_waiter_exits_after_cancellation():
     context = mp.get_context("spawn")
     barrier = context.Barrier(2)
