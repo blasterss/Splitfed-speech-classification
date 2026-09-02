@@ -9,9 +9,9 @@ from src.dataset.dataset import EmotionalDataset
 from src.experiments.local_cross_corpus import (
     NORMALIZATION_POLICY,
     _cross_corpus_evaluation_dataset,
-    _evaluate_binary_model,
     run_local_cross_corpus,
 )
+from src.experiments.metrics import evaluate_binary_model
 from src.schema import ConfigSchema
 
 
@@ -141,7 +141,7 @@ def test_binary_metrics_marks_one_class_pr_auc_unavailable():
         np.zeros(2, dtype=np.float32),
     )
 
-    metrics = _evaluate_binary_model(
+    metrics = evaluate_binary_model(
         model,
         DataLoader(dataset, batch_size=2),
         torch.device("cpu"),
