@@ -26,7 +26,7 @@ The repository currently provides:
 - a client-side residual 1D CNN;
 - a server-side CNN with either global pooling or a bidirectional RNN;
 - local multiprocessing channels based on `multiprocessing.Queue`;
-- explicit `centralized`, `federated`, `split/shared`,
+- explicit `local`, `centralized`, `federated`, `split/shared`,
   `split/personalized` and `splitfed` execution topologies;
 - synchronous split-learning forward/backward steps;
 - explicit per-client round completion for unequal local loader lengths;
@@ -53,7 +53,9 @@ working features**:
 ## Architecture
 
 ```text
-TrainingController
+Configured experiment
+  local               -> one isolated complete model per corpus
+  TrainingController
   centralized         -> one complete model, no channels or servers
   federated           -> complete client model x N <-> FedServer
   split/shared        -> client partition x N <-> one SplitServer model
@@ -157,9 +159,9 @@ there. The example expects the downloaded datasets in `../datasets`.
 Important configuration caveats:
 
 - unknown fields are rejected at every configuration level;
-- `training.mode` is typed as `centralized`, `federated`, `split` or
+- `training.mode` is typed as `local`, `centralized`, `federated`, `split` or
   `splitfed`; mode-specific server/channel topology is validated. Execution is
-  implemented for `centralized`, `federated`, `split/shared`,
+  implemented for `local`, `centralized`, `federated`, `split/shared`,
   `split/personalized` and `splitfed`;
 - `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
   `shared`. Personalized split keeps one server model, optimizer, metrics stream
@@ -273,8 +275,8 @@ installed for the next round.
 Run the E1 local-only cross-corpus baseline with:
 
 ```bash
-uv run python -m src.experiments.local_cross_corpus \
-  --config-file configs/experiments/config.e1.local.yaml
+uv run secureasr \
+  --config-file configs/experiments/config.e1.1.yaml
 ```
 
 It trains one independent complete model per corpus and evaluates every model
