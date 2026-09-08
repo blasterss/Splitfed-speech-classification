@@ -1,0 +1,83 @@
+data_path: ../datasets
+models_save_path: artifacts
+
+experiment:
+  name: e1_full_fedavg
+  description: >-
+    Full-data FedAvg baseline. In each of ten rounds every client exhausts its
+    local actor-disjoint training loader. Aggregate after rounds one through
+    nine, then evaluate the local round-ten models without final aggregation.
+  transport: queue
+  seed: &seed 42
+
+training:
+  mode: federated
+  num_rounds: 10
+  seed: *seed
+  eval_every: 10
+  fed_every: 1
+  aggregate_final: false
+  barrier_timeout_sec: 7200
+
+clients:
+  - client_id: 0
+    dataset: &base_dataset
+      target_sample_rate: 8000
+      feature_names: [mfcc, rms, zcr]
+      name: CREMA-D
+      root: ../datasets/CREMA-D/raw
+      reduced: false
+      test_size: 0.2
+      split_seed: *seed
+    model: &local_model
+      lr: 0.001
+      optimizer: adam
+    runtime: &local_runtime
+      local_steps: 1000
+      batch_size: 8
+      seed: *seed
+      device: cuda
+    noise: &local_noise
+      type: gauss
+      std: 1.0e-10
+
+  - client_id: 1
+    dataset:
+      <<: *base_dataset
+      name: RAVDESS
+      root: ../datasets/RAVDESS/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+  - client_id: 2
+    dataset:
+      <<: *base_dataset
+      name: SAVEE
+      root: ../datasets/SAVEE/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+fed_server:
+  strategy: fedavg
+  seed: *seed
+  device: cuda
+  aggregation_freq: 1
+  min_clients: 3
+  quorum_timeout_sec: 7200
+  federated_uplink_channel: federated_uplink
+  federated_downlink_channel: federated_downlink
+
+channels:
+  federated_uplink:
+    transport: queue
+    name: federated_uplink
+    maxsize: 8
+    timeout: 7200
+
+  federated_downlink:
+    transport: queue
+    name: federated_downlink
+    maxsize: 8
+    timeout: 7200
