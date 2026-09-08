@@ -5,11 +5,10 @@ import argparse
 import torch.multiprocessing as mp
 
 from .application.configuration import resolve_raw_config
-from .application.lifecycle import execute_training
+from .application.dispatch import execute_configured_experiment
 from .config_profiles import PROFILE_REGISTRY
 from .logger import logger
 from .schema import ConfigSchema
-from .splitfed.controller import TrainingController
 from .utils.config import read_yaml
 from .utils.training import set_seed
 
@@ -50,9 +49,8 @@ def main() -> None:
     config = ConfigSchema(**raw_config)
     set_seed(config.experiment.seed)
 
-    logger.info("=== SETTING UP CONTROLLER ===")
-    execute_training(
-        TrainingController(config=config),
+    logger.info("=== STARTING CONFIGURED EXPERIMENT ===")
+    execute_configured_experiment(
         config,
         configuration_provenance=config_provenance,
     )

@@ -10,7 +10,7 @@ experiment:
   seed: &seed 42
 
 training:
-  mode: centralized
+  mode: local
   num_rounds: 30
   seed: *seed
   eval_every: 30

@@ -35,6 +35,7 @@ class NoiseType(str, Enum):
 
 
 class TrainingMode(str, Enum):
+    local = "local"
     centralized = "centralized"
     federated = "federated"
     split = "split"

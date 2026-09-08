@@ -145,10 +145,9 @@ def run_local_cross_corpus(
 
 
 def _validate_local_config(config: ConfigSchema) -> None:
-    if config.training.mode is not TrainingMode.centralized:
+    if config.training.mode is not TrainingMode.local:
         raise ValueError(
-            "Local cross-corpus training requires training.mode=centralized "
-            "to guarantee a channel-free complete-model topology"
+            "Local cross-corpus training requires training.mode=local"
         )
     corpus_names = [client.dataset.name.value for client in config.clients]
     if len(corpus_names) < 2:
@@ -228,6 +227,7 @@ def _cross_corpus_evaluation_dataset(
             else valid_frames.detach().cpu().numpy()
         ),
     )
+
 
 def _metric_matrix(rows: list[dict], metric: str) -> dict:
     return {
