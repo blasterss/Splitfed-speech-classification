@@ -62,7 +62,8 @@ Configured experiment
   federated           -> complete client model x N <-> FedServer
   split/shared        -> client partition x N <-> one SplitServer model
   split/personalized  -> client partition x N <-> isolated server model x N
-  splitfed            -> split/shared + client-partition FedAvg
+  splitfed            -> split server + client-partition FedAvg; the server
+                           scope may be shared or personalized
 
 SplitServer
   validated activations + labels -> server model -> correlated gradients
@@ -165,10 +166,14 @@ Important configuration caveats:
   `splitfed`; mode-specific server/channel topology is validated. Execution is
   implemented for `local`, `centralized`, `federated`, `split/shared`,
   `split/personalized` and `splitfed`;
-- `split_server.model_scope` is `shared` or `personalized`; SplitFed requires
-  `shared`. Personalized split keeps one server model, optimizer, metrics stream
-  and checkpoint per client;
+- `split_server.model_scope` is `shared` or `personalized`. Personalized
+  SplitFed keeps one server model and optimizer per client while aggregating
+  client-side models; this is not the canonical SFLv1 server-model aggregation
+  protocol. Personalized split keeps one server model, optimizer, metrics
+  stream and checkpoint per client;
 - `training.fed_every` currently controls federated synchronization;
+- personalized SplitFed uses the same synchronization cadence and aggregation
+  strategy for both partitions; a correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;
   `full_epoch_v1` consumes the complete local loader and makes `local_steps`
   an unused compatibility value for that client;

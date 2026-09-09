@@ -287,9 +287,11 @@ still missing.
   Controller setup creates only those roles. Execution is available for
   `local`, `centralized`, `federated`, `split/shared`, `split/personalized` and
   `splitfed`.
-- `split_server.model_scope` supports `shared` and `personalized`; SplitFed
-  requires `shared`. Personalized models, optimizers, metrics and checkpoint
-  files remain isolated by client ID.
+- `split_server.model_scope` supports `shared` and `personalized`. Personalized
+  SplitFed keeps server models and optimizers isolated by client ID while
+  aggregating client-side models; this is not the canonical SFLv1 server-model
+  aggregation protocol. Personalized models, metrics and checkpoint files
+  remain isolated by client ID.
 - The root field is `models_save_path` (plural), not `model_save_path`; it owns
   `<root>/<experiment.name>/{metadata,checkpoints,metrics}`.
 - Runs with `models_save_path` persist the validated JSON-compatible
@@ -337,7 +339,7 @@ still missing.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
-aggregation window. The completed global state is sent to accepted
+  aggregation window. The completed global state is sent to accepted
   participants. A validated late update for that same completed round receives
   a correlated catch-up response without changing the completed aggregate;
   older rounds remain unsupported and are discarded.
@@ -350,6 +352,10 @@ aggregation window. The completed global state is sent to accepted
   `training.fed_every`, the single client/server synchronization cadence.
 - Server channel references are validated against the controller's four
   canonical logical roles before setup.
+- Personalized SplitFed applies the configured `fed_every`, `aggregate_final`
+  and FedAvg strategy to both model partitions. Each client waits for a
+  correlated SplitServer round ACK before it can start the next round, so
+  server aggregation cannot mix adjacent rounds.
 - Only queue transport without compression is operational. gRPC/compression
   selections and unknown optimizer/noise names fail schema validation.
 
