@@ -1,11 +1,14 @@
+from types import SimpleNamespace
+
 from src.application.artifacts import (
     _config_sha256,
     _file_sha256,
+    _implemented_policies,
     _save_first_failure,
     _save_resolved_config,
     _save_run_metadata,
 )
-from src.schema import ConfigSchema
+from src.schema import AggregationStrategy, ConfigSchema, TransportType
 from src.utils.config import read_yaml
 
 
@@ -187,3 +190,19 @@ def test_first_failure_artifact_is_versioned_and_structured(tmp_path):
     _save_first_failure(failure, tmp_path)
 
     assert read_yaml(tmp_path / "first_failure.yaml") == failure
+
+
+def test_metadata_names_federated_buffer_policy():
+    config = SimpleNamespace(
+        experiment=SimpleNamespace(transport=TransportType.queue),
+        fed_server=SimpleNamespace(
+            strategy=AggregationStrategy.weighted_fedavg
+        ),
+    )
+
+    policies = _implemented_policies(config)
+
+    assert policies["aggregation"]["buffer_policy"] == {
+        "name": "weighted_floating_state_largest_nonfloating_v1",
+        "version": "1",
+    }

@@ -243,6 +243,10 @@ def _implemented_policies(config: ConfigSchema) -> dict:
         aggregation = {
             "name": config.fed_server.strategy.value,
             "version": "1",
+            "buffer_policy": {
+                "name": "weighted_floating_state_largest_nonfloating_v1",
+                "version": "1",
+            },
         }
     return {
         "transport": {

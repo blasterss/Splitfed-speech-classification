@@ -184,7 +184,10 @@ Important configuration caveats:
   global state correlated to its own request;
 - `fed_server.strategy: fedavg` assigns equal weight to every accepted client;
   `weighted_fedavg` weights floating tensors by dataset size. Non-floating
-  buffers come from the largest accepted dataset. `aggregation_freq` must equal
+  buffers come from the largest accepted dataset. This is recorded as buffer
+  policy `weighted_floating_state_largest_nonfloating_v1`; floating BatchNorm
+  running statistics are therefore averaged, while integer counters are not.
+  `aggregation_freq` must equal
   `training.fed_every`, which is the single synchronization cadence;
 - server channel references must match the four canonical logical roles used by
   the controller;

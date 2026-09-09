@@ -337,14 +337,16 @@ still missing.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
-  aggregation window. The completed global state is sent to accepted
+aggregation window. The completed global state is sent to accepted
   participants. A validated late update for that same completed round receives
   a correlated catch-up response without changing the completed aggregate;
   older rounds remain unsupported and are discarded.
 - Partial quorum is arrival-window based and does not yet provide fairness or
   leases. `fedavg` uses uniform accepted-client weights; `weighted_fedavg` uses
-  dataset-size weights for floating tensors. Non-floating buffers come from the
-  largest accepted dataset. `aggregation_freq` must match
+  dataset-size weights for floating tensors. Buffer policy
+  `weighted_floating_state_largest_nonfloating_v1` also averages floating
+  BatchNorm running statistics and takes non-floating counters from the largest
+  accepted dataset. `aggregation_freq` must match
   `training.fed_every`, the single client/server synchronization cadence.
 - Server channel references are validated against the controller's four
   canonical logical roles before setup.
