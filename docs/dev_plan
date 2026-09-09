@@ -39,6 +39,8 @@ CLI/config
 Режим обучения должен быть явным параметром конфигурации, например
 `training.mode`:
 
+- `local`: отдельная complete model обучается на каждом corpus view без обмена
+  параметрами; результаты образуют train-corpus × eval-corpus матрицу;
 - `federated`: клиент полностью выполняет forward/backward локально, сервер
   получает только validated client updates и выполняет aggregation;
 - `split`: клиент отправляет intermediate activations и получает gradients;
@@ -411,7 +413,7 @@ round_start
   -> ServerModel(activations), loss
   -> backward on server; return GRADIENTS(request_id)
   -> client backward(gradients), optimizer.step()
-  -> repeat configured local_steps
+  -> repeat according to configured workload policy
   -> optional client update to FedServer
   -> aggregate when policy is satisfied
   -> GLOBAL_UPDATE(request_id/round)
@@ -421,9 +423,10 @@ round_start
 Нужно выбрать и документировать policy участия: все клиенты, `min_clients`
 или sampled clients. При пропущенном клиенте сервер должен либо завершить
 round с явным quorum decision, либо отменить его; бесконечное ожидание
-недопустимо. Разные длины loaders должны обрабатываться через `local_steps`,
-циклический loader или явный `round_done`, а не через неявное ожидание
-одинакового числа batch.
+недопустимо. Текущий локальный runtime явно поддерживает `max_steps_v1` и
+`full_epoch_v1` плюс `round_end`; циклический/equal-samples workload и учёт
+повторов остаются следующими policy. Разные длины loaders нельзя сводить к
+неявному ожиданию одинакового числа batch.
 
 ### 4.3.1. Federated-only round
 
@@ -718,9 +721,9 @@ reconnect, payload size/compression, multi-process integration.
 
 ### Этап 8. Research experiments, CI и release gate
 
-**Задачи:** использовать реализованные centralized, federated, split/shared,
-split/personalized и SplitFed режимы для leave-one-dataset-out и multi-seed
-evaluation; измерять качество,
+**Задачи:** использовать реализованные local, centralized, federated,
+split/shared, split/personalized и SplitFed режимы для leave-one-dataset-out и
+multi-seed evaluation; измерять качество,
 latency, communication bytes, peak memory, throughput и privacy leakage.
 Добавить CI с Ruff, Black, mypy, pytest и smoke test; подготовить release
 checklist и обновить README/REPOSITORY_GUIDE.
@@ -811,8 +814,8 @@ volume permissions, resource-limit behavior, container failure injection.
 3. Один CPU synthetic run проходит от CLI до artifacts на Linux и через
    `spawn`.
 4. Любой child failure приводит к failed run и понятному report.
-5. `centralized`, `federated`, `split/shared`, `split/personalized` и `splitfed`
-   имеют проверяемые mode contracts и независимые artifacts.
+5. `local`, `centralized`, `federated`, `split/shared`, `split/personalized` и
+   `splitfed` имеют проверяемые mode contracts и независимые artifacts.
 6. Containerized smoke run проходит с изоляцией, probes, limits и graceful
   shutdown.
 7. Scheduler policy comparisons воспроизводимы и содержат worst-client,

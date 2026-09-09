@@ -212,15 +212,24 @@ time and outcome; it does not yet sample per-process CPU/RSS/GPU utilization.
 Run the channel-free E1 local-only cross-corpus matrix with:
 
 ```bash
-uv run python -m src.experiments.local_cross_corpus \
-  --config-file configs/experiments/config.e1.local.yaml
+uv run secureasr \
+  --config-file configs/experiments/config.e1.1.yaml
 ```
 
-The harness treats each configured client as one corpus view, resets the same
-model seed before each isolated training run, and evaluates the resulting model
-against every configured test corpus using only the source training corpus
-normalization statistics. It does not invoke `TrainingController` and creates
-no multiprocessing workers, channels, split servers, or federated servers.
+The explicit `training.mode: local` dispatches to the local cross-corpus
+runner. The runner treats each configured client as one corpus view, resets
+the same model seed before each isolated training run, and evaluates the
+resulting model against every configured test corpus using only the source
+training corpus normalization statistics. It does not invoke
+`TrainingController` and creates no multiprocessing workers, channels, split
+servers, or federated servers.
+
+The E1 complete-model baselines are
+`configs/experiments/config.e1.2_centr.yaml` and
+`configs/experiments/config.e1.2_fl.yaml`. Both enable automatic per-corpus
+evaluation of the final validated checkpoint. The federated baseline starts
+aggregatable client models from `training.seed`, consumes a full local epoch,
+uses dataset-size weighting, and aggregates before final evaluation.
 
 ## Change workflow
 
@@ -265,7 +274,7 @@ still missing.
 - Unknown fields are rejected in root and nested configuration models.
 - `training.mode` selects mode-specific server and channel requirements.
   Controller setup creates only those roles. Execution is available for
-  `centralized`, `federated`, `split/shared`, `split/personalized` and
+  `local`, `centralized`, `federated`, `split/shared`, `split/personalized` and
   `splitfed`.
 - `split_server.model_scope` supports `shared` and `personalized`; SplitFed
   requires `shared`. Personalized models, optimizers, metrics and checkpoint
@@ -297,6 +306,16 @@ still missing.
   validated before controller setup.
 - `training.fed_every` controls aggregation cadence. `training.eval_every`
   schedules synchronized snapshots and the final round is always evaluated.
+- `clients[].runtime.workload_policy` is the typed `max_steps_v1` or
+  `full_epoch_v1` stopping rule. The latter exhausts the loader and ignores the
+  positive compatibility value in `local_steps`.
+- Federated and SplitFed workers use the common `training.seed` for the model
+  partition that FedAvg combines. Client-specific data-loader randomness still
+  uses `clients[].runtime.seed`.
+- `experiment.analysis_only` prevents a notebook/data-analysis config from
+  entering the training dispatcher. `experiment.cross_corpus_evaluation`
+  enables post-training evaluation only for artifact-backed centralized or
+  federated complete models; federated runs must aggregate on the final round.
 - `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
 - `split_server.training_strategy: concat_v1` is the current OUR path: matched
   client activations are concatenated into one server batch and cause one

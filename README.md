@@ -167,6 +167,9 @@ Important configuration caveats:
   `shared`. Personalized split keeps one server model, optimizer, metrics stream
   and checkpoint per client;
 - `training.fed_every` currently controls federated synchronization;
+- `clients[].runtime.workload_policy` is `max_steps_v1` by default;
+  `full_epoch_v1` consumes the complete local loader and makes `local_steps`
+  an unused compatibility value for that client;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
   batches are averaged per optimizer update; each round flushes its remainder;
@@ -190,6 +193,11 @@ Important configuration caveats:
 - optimizer and noise distribution names are typed registries. gRPC and channel
   compression selections are rejected before setup because those paths remain
   stubs.
+- `experiment.analysis_only: true` makes a dataset-analysis configuration
+  valid for notebooks but rejects accidental dispatch to the training runtime;
+- `experiment.cross_corpus_evaluation: true` is available only for centralized
+  and federated complete-model runs backed by `models_save_path`. Federated
+  evaluation additionally requires an aggregation on the final round.
 
 The repository also contains a forward-looking research plan for additional
 launch profiles, simulation, isolated client containers and throughput-aware
@@ -203,6 +211,9 @@ trains one complete `SpeechRecognitionModel` over the combined client dataset
 views without transport channels or servers. Federated mode trains and
 aggregates complete client models; split/shared uses the client partition and
 one shared SplitServer; SplitFed adds client-partition FedAvg.
+Federated and SplitFed clients initialize their aggregatable model partition
+from the common `training.seed`; per-client loader shuffling remains controlled
+by `clients[].runtime.seed`.
 
 `TrainingController` explicitly owns a multiprocessing `spawn` context for its
 manager, queues and child processes; callers do not need to set a global start
@@ -284,6 +295,18 @@ on the actor-disjoint test view of every corpus. Evaluation always reuses the
 training corpus normalization statistics. The harness writes a tidy CSV,
 metric matrices in YAML, and one checkpoint per training corpus under
 `artifacts/e1_local_cross_corpus/local_cross_corpus/`.
+
+Run the complete-model E1 baselines with:
+
+```bash
+uv run secureasr --config-file configs/experiments/config.e1.2_centr.yaml
+uv run secureasr --config-file configs/experiments/config.e1.2_fl.yaml
+```
+
+Both configs evaluate the validated final checkpoint separately on each
+actor-disjoint test corpus and write rate metrics plus macro/worst-corpus
+summaries under `<experiment>/metrics/cross_corpus/`. The federated config uses
+`full_epoch_v1`, sample-weighted aggregation and a final global aggregation.
 
 Expected generated artifacts include:
 
