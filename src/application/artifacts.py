@@ -7,11 +7,17 @@ import json
 import platform
 import subprocess
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
 
+from ..experiments.checkpoint_evaluation import CORPUS_AGGREGATE_METRICS
+from ..experiments.metrics import (
+    BINARY_METRICS_SCHEMA_VERSION,
+    evaluate_binary_predictions,
+)
 from ..logger import logger
 from ..schema import ConfigSchema
 from ..transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
@@ -50,6 +56,11 @@ def finalize_run_artifacts(
     _save_resource_metrics(
         getattr(controller, "resource_metrics", []), artifact_paths.metrics
     )
+    _save_splitfed_quality(
+        artifact_paths.metrics,
+        config,
+        created_after=getattr(controller, "run_started_at", None),
+    )
     _save_models(controller, artifact_paths.checkpoints)
 
 
@@ -73,6 +84,8 @@ def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(ordered)
+
+    _save_resource_averages(ordered, metrics_path)
 
     numeric_maxima = {}
     for field in (
@@ -119,6 +132,148 @@ def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
             "roles": sorted({row["role"] for row in ordered}),
         },
     )
+
+
+def _save_resource_averages(metrics: list[dict], metrics_path: Path) -> None:
+    """Persist average client/role resource intervals without merging peaks."""
+    groups = defaultdict(list)
+    for row in metrics:
+        group = (
+            str(row.get("role")),
+            row.get("client_id"),
+            str(row.get("phase")),
+        )
+        groups[group].append(row)
+
+    rows = []
+    for (role, client_id, phase), group in sorted(groups.items()):
+        row = {
+            "role": role,
+            "client_id": client_id,
+            "phase": phase,
+            "event_count": len(group),
+        }
+        for field in (
+            "wall_time_seconds",
+            "cpu_user_seconds",
+            "cpu_system_seconds",
+            "samples",
+            "batches",
+            "samples_per_second",
+            "batches_per_second",
+        ):
+            values = [
+                item[field] for item in group if item.get(field) is not None
+            ]
+            row[f"avg_{field}"] = sum(values) / len(values) if values else None
+        for field in (
+            "peak_rss_bytes",
+            "peak_cuda_allocated_bytes",
+            "peak_cuda_reserved_bytes",
+        ):
+            values = [
+                item[field] for item in group if item.get(field) is not None
+            ]
+            row[f"max_{field}"] = max(values) if values else None
+        rows.append(row)
+
+    fieldnames = list(rows[0]) if rows else []
+    with (metrics_path / "resource_by_client.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        if fieldnames:
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def _save_splitfed_quality(
+    metrics_path: Path,
+    config: ConfigSchema,
+    *,
+    created_after: float | None = None,
+) -> None:
+    """Aggregate final local evaluations into one quality report."""
+    if config.training.mode.value not in {"split", "splitfed"}:
+        return
+    rows = []
+    corpus_by_client = {
+        str(client.client_id): getattr(
+            client.dataset.name, "value", client.dataset.name
+        )
+        for client in getattr(config, "clients", [])
+    }
+    expected_round = config.training.num_rounds
+    missing_client_ids = []
+    for client_id in sorted(corpus_by_client, key=int):
+        filename = f"Client{client_id}_round_{expected_round}_eval.csv"
+        path = metrics_path / filename
+        if not path.is_file() or (
+            created_after is not None and path.stat().st_mtime < created_after
+        ):
+            missing_client_ids.append(client_id)
+            continue
+        labels = []
+        probabilities = []
+        with path.open(newline="", encoding="utf-8") as source:
+            for item in csv.DictReader(source):
+                labels.append(int(float(item["labels"])))
+                probabilities.append(float(item["probs"]))
+        rows.append(
+            {
+                "client_id": client_id,
+                "corpus": corpus_by_client.get(client_id),
+                "round": expected_round,
+                **evaluate_binary_predictions(labels, probabilities),
+            }
+        )
+
+    metric_fields = ("client_id", "corpus", "round") + tuple(
+        evaluate_binary_predictions([], []).keys()
+    )
+    with (metrics_path / "splitfed_metrics.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as output:
+        writer = csv.DictWriter(output, fieldnames=metric_fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    total_samples = sum(row["num_samples"] for row in rows)
+    save_yaml(
+        metrics_path / "splitfed_summary.yaml",
+        {
+            "schema_version": 1,
+            "metrics_schema_version": BINARY_METRICS_SCHEMA_VERSION,
+            "mode": config.training.mode.value,
+            "round": expected_round,
+            "complete": not missing_client_ids,
+            "missing_client_ids": missing_client_ids,
+            "rows": rows,
+            "macro_average": {
+                field: _optional_mean(rows, field)
+                for field in CORPUS_AGGREGATE_METRICS
+            },
+            "sample_weighted_average": {
+                field: _optional_weighted_mean(rows, field, total_samples)
+                for field in CORPUS_AGGREGATE_METRICS
+            },
+        },
+    )
+
+
+def _optional_mean(rows: list[dict], field: str) -> float | None:
+    values = [row[field] for row in rows if row.get(field) is not None]
+    if not rows or len(values) != len(rows):
+        return None
+    return sum(values) / len(values)
+
+
+def _optional_weighted_mean(
+    rows: list[dict], field: str, total_samples: int
+) -> float | None:
+    has_missing_value = any(row.get(field) is None for row in rows)
+    if not rows or not total_samples or has_missing_value:
+        return None
+    return sum(row[field] * row["num_samples"] for row in rows) / total_samples
 
 
 def _stop_servers(controller) -> None:

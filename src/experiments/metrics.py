@@ -30,6 +30,19 @@ def evaluate_binary_model(model, loader, device: torch.device) -> dict:
 
     y_true = torch.cat(labels).numpy()
     y_score = torch.cat(probabilities).numpy()
+    return evaluate_binary_predictions(y_true, y_score)
+
+
+def evaluate_binary_predictions(y_true, y_score) -> dict:
+    """Evaluate materialized binary labels and positive-class scores."""
+    y_true = np.asarray(y_true, dtype=np.int64)
+    y_score = np.asarray(y_score, dtype=np.float64)
+    if y_true.ndim != 1 or y_score.ndim != 1 or y_true.shape != y_score.shape:
+        raise ValueError("Binary labels and scores must be matching 1D arrays")
+    if not len(y_true):
+        return empty_binary_metrics()
+    if not np.isin(y_true, (0, 1)).all() or not np.isfinite(y_score).all():
+        raise ValueError("Binary evaluation inputs contain invalid values")
     y_pred = (y_score > 0.5).astype(np.int64)
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     has_both_classes = len(np.unique(y_true)) == 2

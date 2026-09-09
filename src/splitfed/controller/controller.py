@@ -1,4 +1,5 @@
 import queue
+import time
 
 import torch.multiprocessing as mp
 
@@ -71,6 +72,7 @@ class TrainingController:
         self.dataset_manifests: dict[int, dict] = {}
         self.resource_metrics: list[dict] = []
         self.first_failure: dict | None = None
+        self.run_started_at: float | None = None
 
     def setup(self) -> None:
         """
@@ -155,6 +157,7 @@ class TrainingController:
 
         if not hasattr(self, "resource_metrics"):
             self.resource_metrics = []
+        self.run_started_at = time.time()
         run_tracker = ResourceTracker("controller", "cpu")
         if self.cfg.training.mode is TrainingMode.centralized:
             try:
