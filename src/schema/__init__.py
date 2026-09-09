@@ -26,6 +26,7 @@ from .enums import (
     SplitServerStrategy,
     TrainingMode,
     TransportType,
+    WorkloadPolicy,
 )
 from .experiment import ExperimentConfig, TrainingConfig
 from .root import ConfigSchema, _validate_device_available
@@ -57,6 +58,7 @@ __all__ = [
     "TrainingConfig",
     "TrainingMode",
     "TransportType",
+    "WorkloadPolicy",
     "_validate_device_available",
     "torch",
 ]

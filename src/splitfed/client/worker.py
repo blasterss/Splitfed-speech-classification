@@ -32,7 +32,13 @@ def _client_worker(
 
     current_round = None
     try:
-        set_seed(cfg.runtime.seed + int(cfg.client_id))
+        initialization_seed = (
+            training_cfg.seed
+            if training_cfg.mode
+            in (TrainingMode.federated, TrainingMode.splitfed)
+            else cfg.runtime.seed + int(cfg.client_id)
+        )
+        set_seed(initialization_seed)
 
         # Resolve through the package at runtime so the stable public Client
         # seam remains patchable by lifecycle tests and downstream callers.

@@ -5,7 +5,13 @@ from pathlib import Path
 from pydantic import Field, field_validator
 
 from .base import StrictConfigModel
-from .enums import DatasetType, FeatureType, NoiseType, OptimizerType
+from .enums import (
+    DatasetType,
+    FeatureType,
+    NoiseType,
+    OptimizerType,
+    WorkloadPolicy,
+)
 
 
 class ClientModelConfig(StrictConfigModel):
@@ -25,6 +31,12 @@ class ClientRuntimeConfig(StrictConfigModel):
     local_steps: int = Field(
         gt=0,
         description="Number of local steps between synchronizations.",
+    )
+    workload_policy: WorkloadPolicy = Field(
+        default=WorkloadPolicy.max_steps_v1,
+        description=(
+            "Whether a round stops at local_steps or exhausts the loader."
+        ),
     )
     batch_size: int = Field(gt=0, description="Local training batch size.")
     seed: int = Field(description="Seed for client-side randomness.")

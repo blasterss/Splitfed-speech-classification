@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from src.schema import TrainingMode
+from src.schema import TrainingMode, WorkloadPolicy
 from src.splitfed.client import (
     Client,
     _extract_payload,
@@ -214,6 +214,30 @@ def test_federated_client_trains_complete_model_without_split_channels():
     client.train_one_round(1)
 
     assert not torch.equal(client.model.weight.detach(), initial_weight)
+
+
+def test_full_epoch_workload_does_not_stop_at_local_steps():
+    client = Client.__new__(Client)
+    client.cfg = SimpleNamespace(
+        runtime=SimpleNamespace(
+            local_steps=1,
+            workload_policy=WorkloadPolicy.full_epoch_v1,
+        )
+    )
+
+    assert not client._round_is_complete(step=2)
+
+
+def test_max_steps_workload_stops_at_configured_limit():
+    client = Client.__new__(Client)
+    client.cfg = SimpleNamespace(
+        runtime=SimpleNamespace(
+            local_steps=2,
+            workload_policy=WorkloadPolicy.max_steps_v1,
+        )
+    )
+
+    assert client._round_is_complete(step=2)
 
 
 def test_federated_evaluation_writes_to_experiment_metrics_path(tmp_path):

@@ -8,7 +8,7 @@ from ...dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
 from ...logger import logger
 from ...model.client_side_model import ClientSideModel
 from ...model.speech_model import SpeechRecognitionModel
-from ...schema import ClientConfig, TrainingMode
+from ...schema import ClientConfig, TrainingMode, WorkloadPolicy
 from ...transport.base import Channel, Message
 from .evaluation import evaluate_client
 from .protocol import _extract_payload, _validate_global_update
@@ -183,7 +183,7 @@ class Client:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
-            if step >= self.cfg.runtime.local_steps:
+            if self._round_is_complete(step):
                 break
 
         self.to_server.send(
@@ -210,8 +210,19 @@ class Client:
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
-            if step >= self.cfg.runtime.local_steps:
+            if self._round_is_complete(step):
                 break
+
+    def _round_is_complete(self, step: int) -> bool:
+        policy = getattr(
+            self.cfg.runtime,
+            "workload_policy",
+            WorkloadPolicy.max_steps_v1,
+        )
+        return (
+            policy is WorkloadPolicy.max_steps_v1
+            and step >= self.cfg.runtime.local_steps
+        )
 
     def federative_aggregate(self, round: int) -> None:
         """Exchange local parameters for validated global weights."""

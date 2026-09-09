@@ -42,6 +42,13 @@ class TrainingMode(str, Enum):
     splitfed = "splitfed"
 
 
+class WorkloadPolicy(str, Enum):
+    """Client-side stopping rule for one training round."""
+
+    max_steps_v1 = "max_steps_v1"
+    full_epoch_v1 = "full_epoch_v1"
+
+
 class ServerModelScope(str, Enum):
     shared = "shared"
     personalized = "personalized"

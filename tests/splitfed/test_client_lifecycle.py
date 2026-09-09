@@ -76,6 +76,7 @@ def _worker_args(stop_event, ready_barrier, eval_barrier):
     training_cfg = SimpleNamespace(
         num_rounds=0,
         fed_every=1,
+        seed=17,
         mode=TrainingMode.splitfed,
         barrier_timeout_sec=0.25,
     )
@@ -159,6 +160,7 @@ def test_client_evaluates_on_cadence_and_final_round(monkeypatch):
         num_rounds=3,
         eval_every=2,
         fed_every=1,
+        seed=17,
         mode=TrainingMode.split,
         barrier_timeout_sec=0.25,
     )
@@ -204,6 +206,7 @@ def test_evaluation_uses_mode_compatible_model_pair(
         num_rounds=1,
         eval_every=1,
         fed_every=1,
+        seed=17,
         mode=mode,
         barrier_timeout_sec=0.25,
     )
@@ -232,6 +235,7 @@ def test_final_federated_aggregation_can_be_disabled(monkeypatch):
         num_rounds=2,
         eval_every=2,
         fed_every=1,
+        seed=17,
         aggregate_final=False,
         mode=TrainingMode.federated,
         barrier_timeout_sec=0.25,
@@ -255,6 +259,44 @@ def test_final_federated_aggregation_can_be_disabled(monkeypatch):
         ("train", 2),
         ("evaluate", 2),
     ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_seed"),
+    [
+        (TrainingMode.federated, 17),
+        (TrainingMode.splitfed, 17),
+        (TrainingMode.split, 45),
+    ],
+)
+def test_aggregated_clients_share_training_initialization_seed(
+    monkeypatch, mode, expected_seed
+):
+    observed = []
+    monkeypatch.setattr("src.splitfed.client.worker.set_seed", observed.append)
+    monkeypatch.setattr("src.splitfed.client.Client", NoOpClient)
+    cfg = SimpleNamespace(client_id=3, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=0,
+        fed_every=1,
+        seed=17,
+        mode=mode,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        object(),
+        object(),
+        FakeStopEvent(),
+        FakeBarrier(),
+        FakeBarrier(),
+    )
+
+    assert observed == [expected_seed]
 
 
 def test_spawned_barrier_waiter_exits_after_cancellation():
