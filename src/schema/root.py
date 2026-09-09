@@ -42,6 +42,7 @@ class ConfigSchema(StrictConfigModel):
         self._validate_devices()
         self._validate_clients()
         self._validate_mode_ownership()
+        self._validate_experiment_contract()
         self._validate_channels()
         return self
 
@@ -175,6 +176,41 @@ class ConfigSchema(StrictConfigModel):
             missing = ", ".join(sorted(missing_channels))
             raise ValueError(
                 f"Undefined server channel reference(s): {missing}"
+            )
+
+    def _validate_experiment_contract(self) -> None:
+        if self.experiment.analysis_only:
+            if self.experiment.cross_corpus_evaluation:
+                raise ValueError(
+                    "analysis_only cannot enable cross_corpus_evaluation"
+                )
+            return
+        if not self.experiment.cross_corpus_evaluation:
+            return
+        if self.training.mode not in (
+            TrainingMode.centralized,
+            TrainingMode.federated,
+        ):
+            raise ValueError(
+                "cross_corpus_evaluation requires a complete-model "
+                "centralized or federated mode"
+            )
+        if self.models_save_path is None:
+            raise ValueError(
+                "cross_corpus_evaluation requires models_save_path"
+            )
+        if self.training.mode is TrainingMode.federated and (
+            not self.training.aggregate_final
+            or self.training.num_rounds % self.training.fed_every != 0
+        ):
+            raise ValueError(
+                "federated cross_corpus_evaluation requires final-round "
+                "aggregation"
+            )
+        corpus_names = [client.dataset.name for client in self.clients]
+        if len(corpus_names) != len(set(corpus_names)):
+            raise ValueError(
+                "cross_corpus_evaluation requires unique corpus names"
             )
 
 

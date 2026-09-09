@@ -3,6 +3,7 @@ models_save_path: artifacts
 
 experiment:
   name: e0_cross_corpus_heterogeneity
+  analysis_only: true
   description: >-
     Диагностика естественной неоднородности корпусов CREMA-D, RAVDESS и
     SAVEE. Используются только конфигурации клиентских наборов данных;

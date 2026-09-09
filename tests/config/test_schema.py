@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from src.schema import (
     ClientModelConfig,
+    ClientRuntimeConfig,
+    ConfigSchema,
     DatasetConfig,
     DatasetType,
     ExperimentConfig,
@@ -101,6 +103,16 @@ def test_training_config_requires_positive_barrier_timeout():
         )
 
 
+def test_client_runtime_rejects_unknown_workload_policy():
+    with pytest.raises(ValidationError, match="workload_policy"):
+        ClientRuntimeConfig(
+            local_steps=1,
+            workload_policy="until_tired",
+            batch_size=1,
+            seed=42,
+        )
+
+
 def test_queue_channel_requires_positive_timeout():
     with pytest.raises(ValidationError, match="timeout"):
         QueueChannelConfig(
@@ -186,3 +198,75 @@ def test_schema_rejects_unsupported_optimizer():
 def test_schema_rejects_unsupported_noise_type():
     with pytest.raises(ValidationError, match="type"):
         NoiseConfig(type="uniform", std=0.1)
+
+
+def _federated_cross_eval_config(tmp_path):
+    return {
+        "data_path": str(tmp_path),
+        "models_save_path": str(tmp_path / "artifacts"),
+        "experiment": {
+            "name": "cross-eval",
+            "transport": "queue",
+            "seed": 42,
+            "cross_corpus_evaluation": True,
+        },
+        "training": {
+            "mode": "federated",
+            "num_rounds": 2,
+            "seed": 42,
+            "eval_every": 2,
+            "fed_every": 1,
+        },
+        "clients": [
+            {
+                "client_id": 0,
+                "dataset": {"name": "SAVEE", "root": str(tmp_path)},
+                "model": {"lr": 0.001},
+                "runtime": {
+                    "local_steps": 1,
+                    "batch_size": 1,
+                    "seed": 42,
+                },
+            }
+        ],
+        "fed_server": {
+            "strategy": "weighted_fedavg",
+            "seed": 42,
+            "device": "cpu",
+            "aggregation_freq": 1,
+            "min_clients": 1,
+            "quorum_timeout_sec": 1,
+            "federated_uplink_channel": "federated_uplink",
+            "federated_downlink_channel": "federated_downlink",
+        },
+        "channels": {
+            "federated_uplink": {
+                "transport": "queue",
+                "name": "federated_uplink",
+                "timeout": 1,
+            },
+            "federated_downlink": {
+                "transport": "queue",
+                "name": "federated_downlink",
+                "timeout": 1,
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "training_override",
+    [
+        {"aggregate_final": False},
+        {"num_rounds": 3, "fed_every": 2},
+    ],
+)
+def test_federated_cross_eval_requires_final_global_model(
+    tmp_path, training_override
+):
+    raw = _federated_cross_eval_config(tmp_path)
+    raw["training"].update(training_override)
+    raw["fed_server"]["aggregation_freq"] = raw["training"]["fed_every"]
+
+    with pytest.raises(ValidationError, match="final-round aggregation"):
+        ConfigSchema(**raw)

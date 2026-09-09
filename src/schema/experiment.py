@@ -36,6 +36,14 @@ class ExperimentConfig(StrictConfigModel):
     description: str | None = Field(
         default=None, description="Optional experiment description."
     )
+    analysis_only: bool = Field(
+        default=False,
+        description="Reject training dispatch for dataset-analysis configs.",
+    )
+    cross_corpus_evaluation: bool = Field(
+        default=False,
+        description="Evaluate a final complete-model checkpoint per corpus.",
+    )
     transport: TransportType = Field(description="Selected transport.")
     seed: int = Field(description="Seed for experiment reproducibility.")
 

@@ -3,10 +3,11 @@ models_save_path: artifacts
 
 experiment:
   name: e1_full_fedavg
+  cross_corpus_evaluation: true
   description: >-
-    Full-data FedAvg baseline. In each of ten rounds every client exhausts its
-    local actor-disjoint training loader. Aggregate after rounds one through
-    nine, then evaluate the local round-ten models without final aggregation.
+    Sample-weighted full-data FedAvg baseline. In each of ten rounds every
+    client exhausts its local actor-disjoint training loader. Aggregate the
+    final round before evaluating the shared global model on every corpus.
   transport: queue
   seed: &seed 42
 
@@ -16,7 +17,7 @@ training:
   seed: *seed
   eval_every: 10
   fed_every: 1
-  aggregate_final: false
+  aggregate_final: true
   barrier_timeout_sec: 7200
 
 clients:
@@ -27,13 +28,15 @@ clients:
       name: CREMA-D
       root: ../datasets/CREMA-D/raw
       reduced: false
+      reduced_size: 480
       test_size: 0.2
       split_seed: *seed
     model: &local_model
       lr: 0.001
       optimizer: adam
     runtime: &local_runtime
-      local_steps: 1000
+      local_steps: 1
+      workload_policy: full_epoch_v1
       batch_size: 8
       seed: *seed
       device: cuda
@@ -60,7 +63,7 @@ clients:
     noise: *local_noise
 
 fed_server:
-  strategy: fedavg
+  strategy: weighted_fedavg
   seed: *seed
   device: cuda
   aggregation_freq: 1

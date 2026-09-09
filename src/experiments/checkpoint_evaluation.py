@@ -21,6 +21,15 @@ from .metrics import (
 )
 
 CHECKPOINT_EVALUATION_SCHEMA_VERSION = 1
+CORPUS_AGGREGATE_METRICS = (
+    "accuracy",
+    "anger_f1",
+    "macro_f1",
+    "precision",
+    "recall",
+    "uar",
+    "pr_auc",
+)
 
 
 def evaluate_model_on_corpora(
@@ -57,17 +66,17 @@ def evaluate_model_on_corpora(
             }
         )
 
-    metric_names = (
-        [key for key in rows[0] if key not in {"eval_corpus"}] if rows else []
-    )
     summary = {
         "schema_version": CHECKPOINT_EVALUATION_SCHEMA_VERSION,
         "metrics_schema_version": BINARY_METRICS_SCHEMA_VERSION,
         "rows": rows,
         "dataset_manifests": manifests,
-        "macro": {metric: _mean(rows, metric) for metric in metric_names},
+        "macro": {
+            metric: _mean(rows, metric) for metric in CORPUS_AGGREGATE_METRICS
+        },
         "worst_corpus": {
-            metric: _minimum(rows, metric) for metric in metric_names
+            metric: _minimum(rows, metric)
+            for metric in CORPUS_AGGREGATE_METRICS
         },
     }
     return summary
@@ -141,7 +150,9 @@ def _default_model_factory(input_channels: int, client_config) -> nn.Module:
 
 
 def _numeric_values(rows: list[dict], metric: str) -> list[float]:
-    return [float(row[metric]) for row in rows if row.get(metric) is not None]
+    if not rows or any(row.get(metric) is None for row in rows):
+        return []
+    return [float(row[metric]) for row in rows]
 
 
 def _mean(rows: list[dict], metric: str) -> float | None:

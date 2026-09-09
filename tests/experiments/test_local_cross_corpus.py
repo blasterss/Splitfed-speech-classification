@@ -54,7 +54,7 @@ def _config(tmp_path):
             "seed": 7,
         },
         training={
-            "mode": "centralized",
+            "mode": "local",
             "num_rounds": 1,
             "seed": 7,
             "eval_every": 1,
@@ -206,3 +206,25 @@ def test_checkpoint_evaluator_reports_per_corpus_macro_and_worst():
     assert summary["metrics_schema_version"] == 1
     assert summary["macro"]["anger_f1"] == 0.0
     assert summary["worst_corpus"]["anger_f1"] == 0.0
+    assert "num_samples" not in summary["macro"]
+
+
+def test_checkpoint_evaluator_does_not_hide_unavailable_corpus_pr_auc():
+    one_class = SimpleNamespace(
+        test_dataset=EmotionalDataset(
+            np.ones((2, 1, 2), dtype=np.float32),
+            np.zeros(2, dtype=np.float32),
+        )
+    )
+    model = TinyBinaryModel(1)
+
+    summary = evaluate_model_on_corpora(
+        model,
+        {"SAVEE": one_class},
+        batch_size=2,
+        device=torch.device("cpu"),
+    )
+
+    assert summary["rows"][0]["pr_auc"] is None
+    assert summary["macro"]["pr_auc"] is None
+    assert summary["worst_corpus"]["pr_auc"] is None

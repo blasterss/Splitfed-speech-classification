@@ -3,6 +3,7 @@ models_save_path: artifacts
 
 experiment:
   name: e1_full_centralized
+  cross_corpus_evaluation: true
   description: >-
     Centralized full-data baseline. Combine the actor-disjoint training views
     of CREMA-D, RAVDESS, and SAVEE into one loader and train one complete model
@@ -26,6 +27,7 @@ clients:
       name: CREMA-D
       root: ../datasets/CREMA-D/raw
       reduced: false
+      reduced_size: 480
       test_size: 0.2
       split_seed: *seed
     model: &local_model

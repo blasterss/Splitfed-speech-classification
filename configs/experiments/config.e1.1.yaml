@@ -25,6 +25,7 @@ clients:
       name: CREMA-D
       root: ../datasets/CREMA-D/raw
       reduced: false
+      reduced_size: 480
       test_size: 0.2
       split_seed: *seed
     model: &local_model
