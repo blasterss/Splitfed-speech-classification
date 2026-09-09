@@ -3,21 +3,22 @@ models_save_path: artifacts
 
 experiment:
   name: e1_full_fedavg
-  cross_corpus_evaluation: true
+  cross_corpus_evaluation: false
   description: >-
-    Sample-weighted full-data FedAvg baseline. In each of ten rounds every
+    Sample-weighted full-data FedAvg baseline. In each of fifty rounds every
     client exhausts its local actor-disjoint training loader. Aggregate the
-    final round before evaluating the shared global model on every corpus.
+    first forty-nine rounds and evaluate the final personalized client models
+    without a trailing aggregation.
   transport: queue
   seed: &seed 42
 
 training:
   mode: federated
-  num_rounds: 10
+  num_rounds: 50
   seed: *seed
   eval_every: 10
   fed_every: 1
-  aggregate_final: true
+  aggregate_final: false
   barrier_timeout_sec: 7200
 
 clients:

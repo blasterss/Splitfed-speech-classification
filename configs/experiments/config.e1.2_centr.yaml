@@ -7,13 +7,13 @@ experiment:
   description: >-
     Centralized full-data baseline. Combine the actor-disjoint training views
     of CREMA-D, RAVDESS, and SAVEE into one loader and train one complete model
-    for ten epochs.
+    for fifty epochs.
   transport: queue
   seed: &seed 42
 
 training:
   mode: centralized
-  num_rounds: 10
+  num_rounds: 50
   seed: *seed
   eval_every: 10
   fed_every: 1
