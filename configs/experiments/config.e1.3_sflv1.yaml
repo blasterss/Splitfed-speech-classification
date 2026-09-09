@@ -1,0 +1,111 @@
+data_path: ../datasets
+models_save_path: artifacts
+
+experiment:
+  name: e1_sflv1_personalized_split
+  description: >-
+    Personalized SplitFed variant with one isolated server-side model and
+    optimizer per client. Client-side and server-side models are aggregated
+    with FedAvg while server optimizer states remain personalized.
+  transport: queue
+  seed: &seed 42
+
+training:
+  mode: splitfed
+  num_rounds: 50
+  seed: *seed
+  eval_every: 10
+  fed_every: 10
+  aggregate_final: true
+  barrier_timeout_sec: 900
+
+clients:
+  - client_id: 0
+    dataset: &base_dataset
+      target_sample_rate: 8000
+      feature_names: [mfcc, rms, zcr]
+      name: CREMA-D
+      root: ../datasets/CREMA-D/raw
+      reduced: false
+      reduced_size: 480
+      test_size: 0.2
+      split_seed: *seed
+    model: &local_model
+      lr: 0.001
+      optimizer: adam
+    runtime: &local_runtime
+      local_steps: 64
+      workload_policy: max_steps_v1
+      batch_size: 8
+      seed: *seed
+      device: cuda
+    noise: &local_noise
+      type: gauss
+      std: 1.0e-10
+
+  - client_id: 1
+    dataset:
+      <<: *base_dataset
+      name: RAVDESS
+      root: ../datasets/RAVDESS/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+  - client_id: 2
+    dataset:
+      <<: *base_dataset
+      name: SAVEE
+      root: ../datasets/SAVEE/raw
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
+
+split_server:
+  model_scope: personalized
+  training_strategy: concat_v1
+  model:
+    pos_weight: 6.0
+    optimizer: adam
+    lr: 0.0005
+    device: cuda
+    gradient_accumulation_steps: 1
+    batch_timeout_sec: 60
+  seed: *seed
+  split_uplink_channel: split_uplink
+  split_downlink_channel: split_downlink
+
+fed_server:
+  strategy: fedavg
+  seed: *seed
+  device: cuda
+  aggregation_freq: 10
+  min_clients: 3
+  quorum_timeout_sec: 120
+  federated_uplink_channel: federated_uplink
+  federated_downlink_channel: federated_downlink
+
+channels:
+  split_uplink:
+    transport: queue
+    name: split_uplink
+    maxsize: 32
+    timeout: 300
+
+  split_downlink:
+    transport: queue
+    name: split_downlink
+    maxsize: 32
+    timeout: 300
+
+  federated_uplink:
+    transport: queue
+    name: federated_uplink
+    maxsize: 8
+    timeout: 300
+
+  federated_downlink:
+    transport: queue
+    name: federated_downlink
+    maxsize: 8
+    timeout: 300
