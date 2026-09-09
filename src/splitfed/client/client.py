@@ -16,6 +16,15 @@ from .protocol import _extract_payload, _validate_global_update
 logger = logger.getChild("Client")
 
 
+def _cpu_state_dict_snapshot(
+    model: torch.nn.Module,
+) -> dict[str, torch.Tensor]:
+    return {
+        key: value.detach().cpu().clone()
+        for key, value in model.state_dict().items()
+    }
+
+
 class Client:
     """
     Client for Split Learning / Federated Learning.
@@ -233,7 +242,7 @@ class Client:
             round=round,
             step=1,
             payload={
-                "state_dict": self.model.state_dict(),
+                "state_dict": _cpu_state_dict_snapshot(self.model),
                 "dataset_size": len(self.dataset.train_dataset),
             },
         )

@@ -7,6 +7,7 @@ import torch
 from src.schema import TrainingMode, WorkloadPolicy
 from src.splitfed.client import (
     Client,
+    _cpu_state_dict_snapshot,
     _extract_payload,
     _validate_global_update,
 )
@@ -163,14 +164,19 @@ def test_global_update_rejects_mismatched_request_id():
 
 
 class RecordingChannel:
-    def __init__(self, response=None):
+    def __init__(self, response=None, request_id_source=None):
         self.response = response
+        self.request_id_source = request_id_source
         self.messages = []
 
     def send(self, message):
         self.messages.append(message)
 
     def recv(self):
+        if self.request_id_source is not None:
+            self.response.request_id = self.request_id_source.messages[
+                -1
+            ].request_id
         return self.response
 
 
@@ -214,6 +220,46 @@ def test_federated_client_trains_complete_model_without_split_channels():
     client.train_one_round(1)
 
     assert not torch.equal(client.model.weight.detach(), initial_weight)
+
+
+def test_cpu_state_dict_snapshot_is_detached_from_client_model():
+    model = torch.nn.Linear(2, 1)
+    snapshot = _cpu_state_dict_snapshot(model)
+
+    assert all(value.device.type == "cpu" for value in snapshot.values())
+    assert all(
+        not value.requires_grad and value.is_contiguous()
+        for value in snapshot.values()
+    )
+
+    original_weight = snapshot["weight"].clone()
+    with torch.no_grad():
+        model.weight.add_(1)
+
+    assert torch.equal(snapshot["weight"], original_weight)
+
+
+def test_federated_payload_is_cpu_snapshot_of_client_model():
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.model = torch.nn.Linear(2, 1)
+    client.dataset = SimpleNamespace(train_dataset=[0])
+    client.agg_to_server = RecordingChannel()
+    client.agg_from_server = RecordingChannel(
+        _global_response(
+            client.model.state_dict(),
+        ),
+        request_id_source=client.agg_to_server,
+    )
+
+    client.federative_aggregate(2)
+
+    payload = client.agg_to_server.messages[0].payload["state_dict"]
+    assert all(value.device.type == "cpu" for value in payload.values())
+    original_weight = payload["weight"].clone()
+    with torch.no_grad():
+        client.model.weight.add_(1)
+    assert torch.equal(payload["weight"], original_weight)
 
 
 def test_full_epoch_workload_does_not_stop_at_local_steps():

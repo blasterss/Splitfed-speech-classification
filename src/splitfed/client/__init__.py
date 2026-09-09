@@ -1,6 +1,6 @@
 """SplitFed client component."""
 
-from .client import Client
+from .client import Client, _cpu_state_dict_snapshot
 from .evaluation import _empty_metrics
 from .protocol import _extract_payload, _validate_global_update
 from .worker import (
@@ -12,6 +12,7 @@ from .worker import (
 
 __all__ = [
     "Client",
+    "_cpu_state_dict_snapshot",
     "_abort_barriers",
     "_client_worker",
     "_empty_metrics",
