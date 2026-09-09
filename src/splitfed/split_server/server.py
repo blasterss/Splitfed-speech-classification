@@ -39,6 +39,7 @@ class SplitServer:
         stop_event=None,
         mp_context=None,
         failure_queue=None,
+        resource_metrics_queue=None,
     ):
         self.config = config
         self.client_channels = client_channels
@@ -52,6 +53,7 @@ class SplitServer:
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
         self._failure_queue = failure_queue
+        self._resource_metrics_queue = resource_metrics_queue
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -72,6 +74,7 @@ class SplitServer:
                 self._stop_event,
                 self._result_queue,
                 self._failure_queue,
+                self._resource_metrics_queue,
             ),
             daemon=True,
             name="SplitServer",

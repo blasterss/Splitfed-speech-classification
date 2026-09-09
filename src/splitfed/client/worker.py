@@ -8,6 +8,10 @@ from ...utils.runtime import (
     ignore_parent_interrupts,
     publish_failure,
 )
+from ...utils.runtime.resource_metrics import (
+    ResourceTracker,
+    publish_resource_metric,
+)
 from ...utils.training import set_seed
 
 logger = logger.getChild("Client")
@@ -26,6 +30,7 @@ def _client_worker(
     metrics_path=None,
     dataset_report_queue=None,
     failure_queue=None,
+    resource_metrics_queue=None,
 ) -> None:
     """Run a persistent client process across configured training rounds."""
     ignore_parent_interrupts()
@@ -77,7 +82,34 @@ def _client_worker(
 
             last_round = round_idx
             current_round = round_idx
+            tracker = None
+            if resource_metrics_queue is not None:
+                tracker = ResourceTracker(
+                    "client", client.device, client_id=client.client_id
+                )
             client.train_one_round(round_idx)
+            if tracker is not None:
+                batches = min(
+                    len(client.train_loader),
+                    (
+                        len(client.train_loader)
+                        if cfg.runtime.workload_policy.value == "full_epoch_v1"
+                        else cfg.runtime.local_steps
+                    ),
+                )
+                samples = min(
+                    len(client.dataset.train_dataset),
+                    batches * cfg.runtime.batch_size,
+                )
+                publish_resource_metric(
+                    resource_metrics_queue,
+                    tracker.snapshot(
+                        round_idx=round_idx,
+                        phase="train",
+                        samples=samples,
+                        batches=batches,
+                    ),
+                )
 
             should_aggregate = (
                 training_cfg.mode
@@ -96,24 +128,48 @@ def _client_worker(
 
             # SplitFed evaluates the compatible pre-FedAvg encoder/server pair.
             if should_evaluate and training_cfg.mode is TrainingMode.splitfed:
+                if tracker is not None:
+                    tracker.reset()
                 _evaluate_at_barrier(
                     client,
                     round_idx,
                     eval_barrier,
                     training_cfg.barrier_timeout_sec,
                 )
+                if tracker is not None:
+                    publish_resource_metric(
+                        resource_metrics_queue,
+                        tracker.snapshot(
+                            round_idx=round_idx,
+                            phase="evaluation",
+                            samples=len(client.dataset.test_dataset),
+                            batches=len(client.test_loader),
+                        ),
+                    )
             if should_aggregate:
                 client.federative_aggregate(round_idx)
             if (
                 should_evaluate
                 and training_cfg.mode is not TrainingMode.splitfed
             ):
+                if tracker is not None:
+                    tracker.reset()
                 _evaluate_at_barrier(
                     client,
                     round_idx,
                     eval_barrier,
                     training_cfg.barrier_timeout_sec,
                 )
+                if tracker is not None:
+                    publish_resource_metric(
+                        resource_metrics_queue,
+                        tracker.snapshot(
+                            round_idx=round_idx,
+                            phase="evaluation",
+                            samples=len(client.dataset.test_dataset),
+                            batches=len(client.test_loader),
+                        ),
+                    )
 
         if last_round == 0:
             _evaluate_at_barrier(

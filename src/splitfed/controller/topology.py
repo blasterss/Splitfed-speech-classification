@@ -52,6 +52,7 @@ def build_servers(
     stop_event,
     mp_context,
     failure_queue,
+    resource_metrics_queue=None,
 ) -> tuple[SplitServer | None, FedServer | None]:
     """Construct the servers enabled by validated mode configuration."""
     split_server = None
@@ -69,6 +70,7 @@ def build_servers(
             stop_event=stop_event,
             mp_context=mp_context,
             failure_queue=failure_queue,
+            resource_metrics_queue=resource_metrics_queue,
         )
         split_server.training_mode = config.training.mode.value
 
@@ -88,6 +90,7 @@ def build_servers(
             stop_event=stop_event,
             mp_context=mp_context,
             failure_queue=failure_queue,
+            resource_metrics_queue=resource_metrics_queue,
         )
         fed_server.training_mode = config.training.mode.value
 

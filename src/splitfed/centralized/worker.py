@@ -11,6 +11,10 @@ from ...model.speech_model import SpeechRecognitionModel
 from ...schema import ConfigSchema
 from ...utils.persistence import serialize_state_dict
 from ...utils.runtime import ignore_parent_interrupts
+from ...utils.runtime.resource_metrics import (
+    ResourceTracker,
+    publish_resource_metric,
+)
 from ...utils.training import set_seed
 from .data import _pad_feature_batch, _validate_centralized_shapes
 
@@ -23,6 +27,7 @@ def _centralized_training_worker(
         list[tuple[torch.utils.data.Dataset, torch.utils.data.Dataset]] | None
     ) = None,
     dataset_report_queue=None,
+    resource_metrics_queue=None,
 ) -> None:
     """Train and evaluate one complete model over the combined dataset view."""
     ignore_parent_interrupts()
@@ -83,8 +88,10 @@ def _centralized_training_worker(
     )
 
     for round_idx in range(1, config.training.num_rounds + 1):
+        tracker = ResourceTracker("centralized", device)
         model.train()
         losses = []
+        sample_count = 0
         for features, labels in train_loader:
             if stop_event.is_set():
                 break
@@ -95,6 +102,7 @@ def _centralized_training_worker(
             loss.backward()
             optimizer.step()
             losses.append(loss.item())
+            sample_count += labels.numel()
         if stop_event.is_set():
             break
         logger.info(
@@ -103,11 +111,30 @@ def _centralized_training_worker(
             sum(losses) / len(losses) if losses else 0.0,
             len(losses),
         )
+        publish_resource_metric(
+            resource_metrics_queue,
+            tracker.snapshot(
+                round_idx=round_idx,
+                phase="train",
+                samples=sample_count,
+                batches=len(losses),
+            ),
+        )
         if round_idx % config.training.eval_every == 0 or round_idx == (
             config.training.num_rounds
         ):
+            tracker.reset()
             accuracy, sample_count = _evaluate_centralized(
                 model, test_loader, device
+            )
+            publish_resource_metric(
+                resource_metrics_queue,
+                tracker.snapshot(
+                    round_idx=round_idx,
+                    phase="evaluation",
+                    samples=sample_count,
+                    batches=len(test_loader),
+                ),
             )
             logger.info(
                 "Centralized round %d evaluation accuracy=%.6f samples=%d",

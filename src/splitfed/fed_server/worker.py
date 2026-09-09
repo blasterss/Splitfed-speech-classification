@@ -15,6 +15,10 @@ from ...utils.runtime import (
     ignore_parent_interrupts,
     publish_failure,
 )
+from ...utils.runtime.resource_metrics import (
+    ResourceTracker,
+    publish_resource_metric,
+)
 from ...utils.training import set_seed
 from .aggregation import aggregate_states
 from .protocol import quorum_decision, state_schema, validate_client_update
@@ -27,10 +31,12 @@ def _fed_server_worker(
     stop_event,
     result_queue: mp.Queue,
     failure_queue=None,
+    resource_metrics_queue=None,
 ) -> None:
     """Collect, validate, aggregate and broadcast federated updates."""
     ignore_parent_interrupts()
     set_seed(config.seed)
+    tracker = ResourceTracker("fed_server", config.device)
     client_ids = list(client_channels)
     logger.info("FedServer worker ready, serving clients: %s", client_ids)
 
@@ -198,6 +204,10 @@ def _fed_server_worker(
         stop_event.set()
         raise
     finally:
+        publish_resource_metric(
+            resource_metrics_queue,
+            tracker.snapshot(round_idx=None, phase="lifetime"),
+        )
         if latest_params is None:
             try:
                 result_queue.put_nowait(None)

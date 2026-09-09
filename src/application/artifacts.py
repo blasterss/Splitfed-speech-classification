@@ -1,6 +1,7 @@
 """Run artifact persistence and reproducibility metadata."""
 
 import copy
+import csv
 import hashlib
 import json
 import platform
@@ -46,7 +47,78 @@ def finalize_run_artifacts(
         client_manifests=controller.dataset_manifests,
     )
     _save_first_failure(controller.first_failure, artifact_paths.diagnostics)
+    _save_resource_metrics(
+        getattr(controller, "resource_metrics", []), artifact_paths.metrics
+    )
     _save_models(controller, artifact_paths.checkpoints)
+
+
+def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
+    """Persist process/round measurements and a compact run summary."""
+    if not metrics:
+        return
+    ordered = sorted(
+        metrics,
+        key=lambda item: (
+            str(item.get("role")),
+            str(item.get("client_id")),
+            item.get("round") or 0,
+            str(item.get("phase")),
+        ),
+    )
+    fieldnames = list(dict.fromkeys(key for row in ordered for key in row))
+    with (metrics_path / "resource_metrics.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(ordered)
+
+    numeric_maxima = {}
+    for field in (
+        "peak_rss_bytes",
+        "peak_cuda_allocated_bytes",
+        "peak_cuda_reserved_bytes",
+    ):
+        values = [row[field] for row in ordered if row.get(field) is not None]
+        numeric_maxima[f"max_{field}"] = max(values) if values else None
+    save_yaml(
+        metrics_path / "resource_summary.yaml",
+        {
+            "schema_version": 1,
+            "measurement_scope": (
+                "per-process peaks; values must not be summed as concurrent "
+                "host usage"
+            ),
+            "event_count": len(ordered),
+            "experiment_wall_time_seconds": next(
+                (
+                    row["wall_time_seconds"]
+                    for row in ordered
+                    if row["role"] == "controller"
+                    and row["phase"] == "experiment"
+                ),
+                None,
+            ),
+            "summed_process_interval_seconds": sum(
+                row["wall_time_seconds"] for row in ordered
+            ),
+            "total_cpu_user_seconds": sum(
+                row["cpu_user_seconds"] for row in ordered
+            ),
+            "total_cpu_system_seconds": sum(
+                row["cpu_system_seconds"] for row in ordered
+            ),
+            "total_transport_bytes": sum(
+                row.get("bytes_sent", 0) for row in ordered
+            ),
+            "total_transport_messages": sum(
+                row.get("messages_sent", 0) for row in ordered
+            ),
+            **numeric_maxima,
+            "roles": sorted({row["role"] for row in ordered}),
+        },
+    )
 
 
 def _stop_servers(controller) -> None:

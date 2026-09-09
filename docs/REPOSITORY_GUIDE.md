@@ -165,6 +165,10 @@ transport/aggregation policy versions are also explicit. Unavailable checkout
 or lock information is recorded as null rather than preventing checkpoint
 persistence; scheduler policy and container image digest are null for the
 current local runtime.
+Resource artifacts record per-process/round wall time, CPU time, peak RSS,
+PyTorch CUDA peaks, throughput where sample counts are known, and logical
+queue-message sizes. They do not measure energy, host-wide concurrent memory,
+or real network traffic.
 Captured client, SplitServer, FedServer and controller failures additionally
 produce the bounded versioned artifact `diagnostics/first_failure.yaml`.
 Workers publish original exception context before setting cancellation; if no
@@ -230,6 +234,13 @@ The E1 complete-model baselines are
 evaluation of the final validated checkpoint. The federated baseline starts
 aggregatable client models from `training.seed`, consumes a full local epoch,
 uses dataset-size weighting, and aggregates before final evaluation.
+
+Runs with an artifact root write `metrics/resource_metrics.csv` and
+`metrics/resource_summary.yaml`. Local cross-corpus runs place the same files
+inside their `local_cross_corpus` directory. RSS and CUDA values are
+per-process peaks and must not be summed as concurrent host usage. Transport
+bytes are logical tensor/envelope sizes for the local queue simulation, not
+measured network traffic.
 
 ## Change workflow
 

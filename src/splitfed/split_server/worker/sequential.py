@@ -18,6 +18,10 @@ from ....utils.runtime import (
     ignore_parent_interrupts,
     publish_failure,
 )
+from ....utils.runtime.resource_metrics import (
+    ResourceTracker,
+    publish_resource_metric,
+)
 from ....utils.training import _RoundStats, set_seed
 from ..operations import _handle_eval_single, _handle_train_concat
 from ..protocol import _validate_message
@@ -31,11 +35,13 @@ def _split_server_worker_sequential(
     stop_event,
     result_queue: mp.Queue,
     failure_queue=None,
+    resource_metrics_queue=None,
 ) -> None:
     """Train one client to round completion before serving the next client."""
     ignore_parent_interrupts()
     set_seed(config.seed)
     device = torch.device(config.model.device)
+    tracker = ResourceTracker("split_server", device)
     model = ServerSideModel(model_type="cnn_birnn").to(device)
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor(config.model.pos_weight, device=device)
@@ -138,6 +144,10 @@ def _split_server_worker_sequential(
         stop_event.set()
         raise
     finally:
+        publish_resource_metric(
+            resource_metrics_queue,
+            tracker.snapshot(round_idx=None, phase="lifetime"),
+        )
         state = {key: value.cpu() for key, value in model.state_dict().items()}
         try:
             result_queue.put_nowait(serialize_state_dict(state))

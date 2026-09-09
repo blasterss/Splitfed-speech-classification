@@ -18,6 +18,7 @@ class CentralizedTrainer:
         stop_event=None,
         mp_context=None,
         dataset_report_queue=None,
+        resource_metrics_queue=None,
     ):
         self.config = config
         self._mp_context = mp_context or mp.get_context("spawn")
@@ -29,6 +30,7 @@ class CentralizedTrainer:
         self._last_exitcode: int | None = None
         self._last_state_dict: dict | None = None
         self._dataset_report_queue = dataset_report_queue
+        self._resource_metrics_queue = resource_metrics_queue
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -40,6 +42,7 @@ class CentralizedTrainer:
                 self._result_queue,
                 None,
                 self._dataset_report_queue,
+                self._resource_metrics_queue,
             ),
             daemon=False,
             name="CentralizedTrainer",

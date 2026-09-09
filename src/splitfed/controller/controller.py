@@ -1,8 +1,11 @@
+import queue
+
 import torch.multiprocessing as mp
 
 from ...logger import get_logger
 from ...schema import ConfigSchema, TrainingMode
 from ...utils.persistence import ArtifactPaths
+from ...utils.runtime.resource_metrics import ResourceTracker
 from ..centralized import CentralizedTrainer
 from ..client import _client_worker
 from ..common.lifecycle import (
@@ -64,7 +67,9 @@ class TrainingController:
         self._stop_events: dict[str, mp.Event] = {}
         self._dataset_report_queue = None
         self._failure_queue = None
+        self._resource_metrics_queue = None
         self.dataset_manifests: dict[int, dict] = {}
+        self.resource_metrics: list[dict] = []
         self.first_failure: dict | None = None
 
     def setup(self) -> None:
@@ -79,6 +84,7 @@ class TrainingController:
         self._failure_queue = self._mp_context.Queue(
             maxsize=len(self.client_cfgs) + 3
         )
+        self._resource_metrics_queue = self._mp_context.Queue()
 
         logger.info("Initialising channels...")
         self._init_channels()
@@ -92,6 +98,7 @@ class TrainingController:
                 stop_event=self._stop_event,
                 mp_context=self._mp_context,
                 dataset_report_queue=self._dataset_report_queue,
+                resource_metrics_queue=self._resource_metrics_queue,
             )
 
         logger.info("=== SETUP COMPLETE ===")
@@ -104,6 +111,8 @@ class TrainingController:
         self._dataset_report_queue = None
         close_process_queue(getattr(self, "_failure_queue", None))
         self._failure_queue = None
+        close_process_queue(getattr(self, "_resource_metrics_queue", None))
+        self._resource_metrics_queue = None
 
         if self._manager is not None:
             if self._stop_event is not None:
@@ -132,6 +141,7 @@ class TrainingController:
             self._stop_event,
             self._mp_context,
             self._failure_queue,
+            self._resource_metrics_queue,
         )
         if self.split_server is not None:
             logger.info("SplitServer initialised")
@@ -143,6 +153,9 @@ class TrainingController:
         Starts distributed training across all clients and servers.
         """
 
+        if not hasattr(self, "resource_metrics"):
+            self.resource_metrics = []
+        run_tracker = ResourceTracker("controller", "cpu")
         if self.cfg.training.mode is TrainingMode.centralized:
             try:
                 self._start_centralized_training()
@@ -151,6 +164,9 @@ class TrainingController:
                 raise
             finally:
                 self._drain_dataset_reports()
+                self.resource_metrics.append(
+                    run_tracker.snapshot(round_idx=None, phase="experiment")
+                )
             return
         if (
             self.cfg.training.mode
@@ -224,6 +240,7 @@ class TrainingController:
                         metrics_path,
                         getattr(self, "_dataset_report_queue", None),
                         getattr(self, "_failure_queue", None),
+                        getattr(self, "_resource_metrics_queue", None),
                     ),
                     daemon=False,
                     name=f"Client-{cid}",
@@ -274,6 +291,11 @@ class TrainingController:
                 self.fed_server.stop()
 
             self._drain_dataset_reports()
+            self._collect_transport_metrics()
+            self._drain_resource_metrics()
+            self.resource_metrics.append(
+                run_tracker.snapshot(round_idx=None, phase="experiment")
+            )
             self._client_processes.clear()
 
         if training_error is not None:
@@ -292,6 +314,7 @@ class TrainingController:
             raise
         finally:
             self.centralized_trainer.stop()
+            self._drain_resource_metrics()
 
     def _drain_dataset_reports(self) -> None:
         report_queue = getattr(self, "_dataset_report_queue", None)
@@ -308,3 +331,40 @@ class TrainingController:
             getattr(self, "_failure_queue", None),
             fallback,
         )
+
+    def _drain_resource_metrics(self) -> None:
+        report_queue = getattr(self, "_resource_metrics_queue", None)
+        if report_queue is None:
+            return
+        while True:
+            try:
+                self.resource_metrics.append(report_queue.get_nowait())
+            except queue.Empty:
+                break
+
+    def _collect_transport_metrics(self) -> None:
+        for client_id, client_channels in self.channels.items():
+            for channel_name, channel in client_channels.items():
+                statistics = getattr(channel, "statistics", None)
+                if statistics is None:
+                    continue
+                self.resource_metrics.append(
+                    {
+                        "schema_version": 1,
+                        "role": "transport",
+                        "client_id": client_id,
+                        "round": None,
+                        "phase": channel_name,
+                        "wall_time_seconds": 0.0,
+                        "cpu_user_seconds": 0.0,
+                        "cpu_system_seconds": 0.0,
+                        "peak_rss_bytes": None,
+                        "peak_cuda_allocated_bytes": None,
+                        "peak_cuda_reserved_bytes": None,
+                        "samples": None,
+                        "batches": None,
+                        "samples_per_second": None,
+                        "batches_per_second": None,
+                        **statistics(),
+                    }
+                )

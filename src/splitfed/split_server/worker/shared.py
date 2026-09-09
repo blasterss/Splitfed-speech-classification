@@ -20,6 +20,10 @@ from ....utils.runtime import (
     ignore_parent_interrupts,
     publish_failure,
 )
+from ....utils.runtime.resource_metrics import (
+    ResourceTracker,
+    publish_resource_metric,
+)
 from ....utils.training import _RoundStats, set_seed
 from ..operations import _handle_eval_single, _handle_train_concat
 from ..protocol import (
@@ -38,11 +42,13 @@ def _split_server_worker_concat(
     stop_event,
     result_queue: mp.Queue,
     failure_queue=None,
+    resource_metrics_queue=None,
 ) -> None:
     ignore_parent_interrupts()
     set_seed(config.seed)  # Ensure deterministic behavior in server process,
 
     device = torch.device(config.model.device)
+    tracker = ResourceTracker("split_server", device)
     model = ServerSideModel(model_type="cnn_birnn").to(device)
     pos_weight = torch.tensor(config.model.pos_weight, device=device)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
@@ -199,6 +205,10 @@ def _split_server_worker_concat(
         raise
 
     finally:
+        publish_resource_metric(
+            resource_metrics_queue,
+            tracker.snapshot(round_idx=None, phase="lifetime"),
+        )
         stats.log_and_reset(current_round)
         state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         try:

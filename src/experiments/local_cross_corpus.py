@@ -9,6 +9,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from ..application.artifacts import _save_resource_metrics
 from ..dataset.dataset import (
     ConflictEmotionalDataset,
     EmotionalDataset,
@@ -18,6 +19,7 @@ from ..model.speech_model import SpeechRecognitionModel
 from ..schema import ConfigSchema, TrainingMode
 from ..utils.config import read_yaml, save_yaml
 from ..utils.persistence import save_checkpoint
+from ..utils.runtime.resource_metrics import ResourceTracker
 from ..utils.training import set_seed
 from .metrics import evaluate_binary_model
 
@@ -64,6 +66,7 @@ def run_local_cross_corpus(
     checkpoint_dir = destination / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     rows = []
+    resource_metrics = []
     checkpoints = {}
 
     for train_corpus, client_config in corpus_configs.items():
@@ -80,6 +83,8 @@ def run_local_cross_corpus(
             client_config,
             seed=config.training.seed,
             rounds=training_rounds,
+            resource_metrics=resource_metrics,
+            client_id=train_corpus,
         )
 
         checkpoint_path = checkpoint_dir / f"{_artifact_key(train_corpus)}.pt"
@@ -95,6 +100,9 @@ def run_local_cross_corpus(
         checkpoints[train_corpus] = str(checkpoint_path)
 
         for eval_corpus in corpus_configs:
+            tracker = ResourceTracker(
+                "local", client_config.runtime.device, client_id=train_corpus
+            )
             evaluation_dataset = _cross_corpus_evaluation_dataset(
                 source,
                 loaded[eval_corpus],
@@ -104,15 +112,24 @@ def run_local_cross_corpus(
                 batch_size=client_config.runtime.batch_size,
                 shuffle=False,
             )
+            evaluation_metrics = evaluate_binary_model(
+                model,
+                loader,
+                torch.device(client_config.runtime.device),
+            )
+            resource_metrics.append(
+                tracker.snapshot(
+                    round_idx=training_rounds,
+                    phase=f"evaluation:{eval_corpus}",
+                    samples=len(evaluation_dataset),
+                    batches=len(loader),
+                )
+            )
             rows.append(
                 {
                     "train_corpus": train_corpus,
                     "eval_corpus": eval_corpus,
-                    **evaluate_binary_model(
-                        model,
-                        loader,
-                        torch.device(client_config.runtime.device),
-                    ),
+                    **evaluation_metrics,
                 }
             )
 
@@ -141,6 +158,7 @@ def run_local_cross_corpus(
         summary,
         verbose=False,
     )
+    _save_resource_metrics(resource_metrics, destination)
     return summary
 
 
@@ -172,6 +190,8 @@ def _train_local_model(
     *,
     seed: int,
     rounds: int,
+    resource_metrics: list[dict] | None = None,
+    client_id: str | int | None = None,
 ) -> None:
     if client_config.model.optimizer.lower() != "adam":
         raise ValueError(
@@ -188,8 +208,11 @@ def _train_local_model(
         shuffle=True,
         generator=torch.Generator().manual_seed(seed),
     )
-    for _ in range(rounds):
+    for round_idx in range(1, rounds + 1):
+        tracker = ResourceTracker("local", device, client_id=client_id)
         model.train()
+        samples = 0
+        batches = 0
         for features, labels in loader:
             features = features.to(device)
             labels = labels.to(device).float().reshape(-1, 1)
@@ -203,6 +226,17 @@ def _train_local_model(
             loss = criterion(logits, labels)
             loss.backward()
             optimizer.step()
+            samples += labels.numel()
+            batches += 1
+        if resource_metrics is not None:
+            resource_metrics.append(
+                tracker.snapshot(
+                    round_idx=round_idx,
+                    phase="train",
+                    samples=samples,
+                    batches=batches,
+                )
+            )
 
 
 def _cross_corpus_evaluation_dataset(
