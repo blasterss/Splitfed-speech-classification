@@ -4,7 +4,14 @@ from pathlib import Path
 import torch.multiprocessing as mp
 
 from ...logger import logger
-from ...schema import ServerModelScope, SplitServerConfig, SplitServerStrategy
+from ...schema import (
+    FedServerConfig,
+    ServerModelScope,
+    SplitServerConfig,
+    SplitServerStrategy,
+    TrainingConfig,
+    TrainingMode,
+)
 from ...transport.base import Channel
 from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .worker import (
@@ -40,6 +47,8 @@ class SplitServer:
         mp_context=None,
         failure_queue=None,
         resource_metrics_queue=None,
+        training_config: TrainingConfig | None = None,
+        fed_server_config: FedServerConfig | None = None,
     ):
         self.config = config
         self.client_channels = client_channels
@@ -54,6 +63,8 @@ class SplitServer:
         self._last_state_dict: dict | None = None
         self._failure_queue = failure_queue
         self._resource_metrics_queue = resource_metrics_queue
+        self._training_config = training_config
+        self._fed_server_config = fed_server_config
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -66,16 +77,28 @@ class SplitServer:
             worker = _split_server_worker_sequential
         else:
             worker = _split_server_worker_concat
+        worker_args = (
+            self.config,
+            self.client_channels,
+            self._stop_event,
+            self._result_queue,
+            self._failure_queue,
+            self._resource_metrics_queue,
+        )
+        if self.config.model_scope is ServerModelScope.personalized:
+            training_mode = (
+                self._training_config.mode
+                if self._training_config is not None
+                else TrainingMode.split
+            )
+            worker_args = worker_args + (
+                training_mode,
+                self._training_config,
+                self._fed_server_config,
+            )
         self._process = self._mp_context.Process(
             target=worker,
-            args=(
-                self.config,
-                self.client_channels,
-                self._stop_event,
-                self._result_queue,
-                self._failure_queue,
-                self._resource_metrics_queue,
-            ),
+            args=worker_args,
             daemon=True,
             name="SplitServer",
         )

@@ -8,6 +8,31 @@ from ...transport.base import Message
 logger = logger.getChild("Client")
 
 
+def _validate_round_ack(
+    response: Message,
+    *,
+    client_id: str | int,
+    round_idx: int,
+    step: int,
+    request_id: str,
+) -> bool:
+    """Validate the personalized server's round-completion barrier ACK."""
+    response.validate_for_receive()
+    if response.sender != "split_server" or response.type != "ack":
+        raise ValueError(f"Client {client_id}: invalid round ACK sender/type")
+    if (response.round, response.step, response.request_id) != (
+        round_idx,
+        step,
+        request_id,
+    ):
+        raise ValueError(f"Client {client_id}: uncorrelated round ACK")
+    if response.payload.keys() != {"server_aggregated"} or not isinstance(
+        response.payload["server_aggregated"], bool
+    ):
+        raise ValueError(f"Client {client_id}: invalid round ACK payload")
+    return response.payload["server_aggregated"]
+
+
 def _extract_payload(
     response: Message | None,
     key: str,

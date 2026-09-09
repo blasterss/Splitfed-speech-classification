@@ -282,12 +282,14 @@ def test_split_personalized_rejects_federated_server_and_channels(tmp_path):
     assert config.fed_server is None
 
 
-def test_splitfed_rejects_personalized_server_scope(tmp_path):
+def test_splitfed_accepts_personalized_server_scope(tmp_path):
     raw = make_config(tmp_path).model_dump(by_alias=True)
     raw["split_server"]["model_scope"] = "personalized"
 
-    with pytest.raises(ValidationError, match="shared"):
-        ConfigSchema(**raw)
+    config = ConfigSchema(**raw)
+
+    assert config.training.mode is TrainingMode.splitfed
+    assert config.split_server.model_scope.value == "personalized"
 
 
 class FakeProcess:

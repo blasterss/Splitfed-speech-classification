@@ -3,8 +3,14 @@ import time
 
 import pytest
 import torch
+from torch import nn
 
-from src.schema import SplitServerConfig
+from src.schema import (
+    FedServerConfig,
+    SplitServerConfig,
+    TrainingConfig,
+    TrainingMode,
+)
 from src.splitfed.split_server import (
     SplitServer,
     _batch_is_ready,
@@ -12,6 +18,7 @@ from src.splitfed.split_server import (
     _evict_stale_batches,
     _forward_concat,
     _split_server_worker_concat,
+    _split_server_worker_personalized,
     _store_pending_batch,
     _validate_message,
 )
@@ -173,6 +180,105 @@ class RecordingDownlink:
 
     def send(self, message):
         self.messages.append(message)
+
+
+class ScriptedUplink:
+    def __init__(self, messages):
+        self.messages = list(messages)
+
+    def recv_nowait(self):
+        return self.messages.pop(0) if self.messages else None
+
+
+class StoppingDownlink(RecordingDownlink):
+    all_messages = []
+    stop_event = None
+
+    def send(self, message):
+        super().send(message)
+        self.all_messages.append(message)
+        if len(self.all_messages) == 4:
+            self.stop_event.set()
+
+
+def test_personalized_splitfed_aggregates_on_cadence_and_acks_rounds(
+    monkeypatch,
+):
+    stop_event = WorkerStopEvent()
+    StoppingDownlink.all_messages = []
+    StoppingDownlink.stop_event = stop_event
+    client_ids = ("client-0", "client-1")
+    models = {
+        client_id: nn.Linear(1, 1, bias=False) for client_id in client_ids
+    }
+    models["client-0"].weight.data.zero_()
+    models["client-1"].weight.data.fill_(2.0)
+    optimizers = {
+        client_id: torch.optim.SGD(model.parameters(), lr=0.1)
+        for client_id, model in models.items()
+    }
+    monkeypatch.setattr(
+        "src.splitfed.split_server.worker.personalized.build_personalized_models",
+        lambda *_: (models, optimizers),
+    )
+    channels = {}
+    for client_id, size in zip(client_ids, (1, 3), strict=True):
+        messages = [
+            Message(
+                type="round_end",
+                sender=client_id,
+                round=round_idx,
+                step=2,
+                deadline_at=FUTURE_DEADLINE,
+                payload={"dataset_size": size},
+            )
+            for round_idx in (1, 2)
+        ]
+        channels[client_id] = {
+            "uplink": ScriptedUplink(messages),
+            "downlink": StoppingDownlink(),
+        }
+    split_config = SplitServerConfig(
+        model={"lr": 0.001, "device": "cpu"},
+        model_scope="personalized",
+        seed=42,
+        split_uplink_channel="split_uplink",
+        split_downlink_channel="split_downlink",
+    )
+    training_config = TrainingConfig(
+        mode="splitfed",
+        num_rounds=2,
+        seed=42,
+        eval_every=2,
+        fed_every=2,
+        aggregate_final=True,
+    )
+    fed_config = FedServerConfig(
+        strategy="weighted_fedavg",
+        seed=42,
+        device="cpu",
+        aggregation_freq=2,
+        min_clients=2,
+        federated_uplink_channel="federated_uplink",
+        federated_downlink_channel="federated_downlink",
+    )
+
+    _split_server_worker_personalized(
+        split_config,
+        channels,
+        stop_event,
+        DiscardResultQueue(),
+        training_mode=TrainingMode.splitfed,
+        training_config=training_config,
+        fed_server_config=fed_config,
+    )
+
+    assert [
+        message.payload["server_aggregated"]
+        for message in StoppingDownlink.all_messages
+    ] == [False, False, True, True]
+    assert torch.equal(models["client-0"].weight, torch.tensor([[1.5]]))
+    assert torch.equal(models["client-1"].weight, torch.tensor([[1.5]]))
 
 
 def test_stale_batch_sends_correlated_error_to_waiting_clients(monkeypatch):

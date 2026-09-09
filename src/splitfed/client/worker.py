@@ -1,7 +1,12 @@
 """Client child-process lifecycle and round orchestration."""
 
 from ...logger import logger
-from ...schema import ClientConfig, TrainingConfig, TrainingMode
+from ...schema import (
+    ClientConfig,
+    ServerModelScope,
+    TrainingConfig,
+    TrainingMode,
+)
 from ...transport.base import Channel, ChannelCancelled
 from ...utils.runtime import (
     FailureRecord,
@@ -31,6 +36,7 @@ def _client_worker(
     dataset_report_queue=None,
     failure_queue=None,
     resource_metrics_queue=None,
+    split_server_scope: ServerModelScope | None = None,
 ) -> None:
     """Run a persistent client process across configured training rounds."""
     ignore_parent_interrupts()
@@ -57,6 +63,7 @@ def _client_worker(
             fed_downlink_channel=fed_downlink,
             mode=training_cfg.mode,
             metrics_path=metrics_path,
+            split_server_scope=split_server_scope,
         )
         if dataset_report_queue is not None:
             dataset_report_queue.put(

@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 from .base import StrictConfigModel
 from .channels import GRPCChannelConfig, QueueChannelConfig
 from .clients import ClientConfig
-from .enums import ServerModelScope, TrainingMode, TransportType
+from .enums import TrainingMode, TransportType
 from .experiment import ExperimentConfig, TrainingConfig
 from .servers import FedServerConfig, SplitServerConfig
 
@@ -109,11 +109,6 @@ class ConfigSchema(StrictConfigModel):
             raise ValueError(
                 f"fed_server is {requirement} for mode {mode.value}"
             )
-        if (
-            mode is TrainingMode.splitfed
-            and self.split_server.model_scope is not ServerModelScope.shared
-        ):
-            raise ValueError("splitfed requires shared server model scope")
         if self.fed_server and self.fed_server.min_clients > len(self.clients):
             raise ValueError(
                 "fed_server.min_clients cannot exceed client count"

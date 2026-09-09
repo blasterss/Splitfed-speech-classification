@@ -8,10 +8,19 @@ from ...dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
 from ...logger import logger
 from ...model.client_side_model import ClientSideModel
 from ...model.speech_model import SpeechRecognitionModel
-from ...schema import ClientConfig, TrainingMode, WorkloadPolicy
+from ...schema import (
+    ClientConfig,
+    ServerModelScope,
+    TrainingMode,
+    WorkloadPolicy,
+)
 from ...transport.base import Channel, Message
 from .evaluation import evaluate_client
-from .protocol import _extract_payload, _validate_global_update
+from .protocol import (
+    _extract_payload,
+    _validate_global_update,
+    _validate_round_ack,
+)
 
 logger = logger.getChild("Client")
 
@@ -47,11 +56,13 @@ class Client:
         fed_downlink_channel: Channel,
         mode: TrainingMode = TrainingMode.splitfed,
         metrics_path: str | Path | None = None,
+        split_server_scope: ServerModelScope | None = None,
     ):
         self.cfg = cfg
         self.client_id = cfg.client_id
         self.device = torch.device(cfg.runtime.device)
         self.mode = mode
+        self.split_server_scope = split_server_scope
         self.metrics_path = (
             Path(metrics_path) if metrics_path is not None else None
         )
@@ -195,15 +206,25 @@ class Client:
             if self._round_is_complete(step):
                 break
 
-        self.to_server.send(
-            Message(
-                type="round_end",
-                sender=self.client_id,
-                round=round,
-                step=last_step + 1,
-                payload={},
-            )
+        round_end = Message(
+            type="round_end",
+            sender=self.client_id,
+            round=round,
+            step=last_step + 1,
+            payload={"dataset_size": len(self.dataset.train_dataset)},
         )
+        self.to_server.send(round_end)
+        if (
+            self.mode is TrainingMode.splitfed
+            and self.split_server_scope is ServerModelScope.personalized
+        ):
+            _validate_round_ack(
+                self.from_server.recv(),
+                client_id=self.client_id,
+                round_idx=round,
+                step=round_end.step,
+                request_id=round_end.request_id,
+            )
 
     def _train_federated_round(self) -> None:
         for step, (x, y) in enumerate(self.train_loader, start=1):

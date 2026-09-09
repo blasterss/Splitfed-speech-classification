@@ -211,6 +211,7 @@ class TrainingController:
         eval_barrier = self._manager.Barrier(num_clients)
 
         training_error: BaseException | None = None
+        split_server_config = getattr(self.cfg, "split_server", None)
 
         try:
             if self.split_server is not None:
@@ -241,6 +242,11 @@ class TrainingController:
                         getattr(self, "_dataset_report_queue", None),
                         getattr(self, "_failure_queue", None),
                         getattr(self, "_resource_metrics_queue", None),
+                        (
+                            split_server_config.model_scope
+                            if split_server_config is not None
+                            else None
+                        ),
                     ),
                     daemon=False,
                     name=f"Client-{cid}",

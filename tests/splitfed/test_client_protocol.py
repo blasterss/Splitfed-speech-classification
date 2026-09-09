@@ -10,6 +10,7 @@ from src.splitfed.client import (
     _cpu_state_dict_snapshot,
     _extract_payload,
     _validate_global_update,
+    _validate_round_ack,
 )
 from src.transport.message import Message
 
@@ -160,6 +161,36 @@ def test_global_update_rejects_mismatched_request_id():
             expected,
             2,
             "fed-request",
+        )
+
+
+def test_round_ack_requires_exact_correlation_and_boolean_payload():
+    response = Message(
+        type="ack",
+        sender="split_server",
+        round=2,
+        step=4,
+        request_id="round-end",
+        deadline_at=FUTURE_DEADLINE,
+        payload={"server_aggregated": True},
+    )
+
+    assert _validate_round_ack(
+        response,
+        client_id="client-0",
+        round_idx=2,
+        step=4,
+        request_id="round-end",
+    )
+
+    response.request_id = "wrong"
+    with pytest.raises(ValueError, match="uncorrelated"):
+        _validate_round_ack(
+            response,
+            client_id="client-0",
+            round_idx=2,
+            step=4,
+            request_id="round-end",
         )
 
 

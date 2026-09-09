@@ -71,9 +71,9 @@ def build_servers(
             mp_context=mp_context,
             failure_queue=failure_queue,
             resource_metrics_queue=resource_metrics_queue,
+            training_config=config.training,
+            fed_server_config=config.fed_server,
         )
-        split_server.training_mode = config.training.mode.value
-
     fed_server = None
     if config.fed_server is not None:
         fed_channels = {
