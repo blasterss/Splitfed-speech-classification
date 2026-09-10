@@ -187,7 +187,7 @@ def test_client_evaluates_on_cadence_and_final_round(monkeypatch):
     [
         (
             TrainingMode.splitfed,
-            [("train", 1), ("evaluate", 1), ("aggregate", 1)],
+            [("train", 1), ("aggregate", 1), ("evaluate", 1)],
         ),
         (
             TrainingMode.federated,

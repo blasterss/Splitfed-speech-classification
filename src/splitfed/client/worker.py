@@ -133,32 +133,9 @@ def _client_worker(
                 training_cfg.eval_every,
             )
 
-            # SplitFed evaluates the compatible pre-FedAvg encoder/server pair.
-            if should_evaluate and training_cfg.mode is TrainingMode.splitfed:
-                if tracker is not None:
-                    tracker.reset()
-                _evaluate_at_barrier(
-                    client,
-                    round_idx,
-                    eval_barrier,
-                    training_cfg.barrier_timeout_sec,
-                )
-                if tracker is not None:
-                    publish_resource_metric(
-                        resource_metrics_queue,
-                        tracker.snapshot(
-                            round_idx=round_idx,
-                            phase="evaluation",
-                            samples=len(client.dataset.test_dataset),
-                            batches=len(client.test_loader),
-                        ),
-                    )
             if should_aggregate:
                 client.federative_aggregate(round_idx)
-            if (
-                should_evaluate
-                and training_cfg.mode is not TrainingMode.splitfed
-            ):
+            if should_evaluate:
                 if tracker is not None:
                     tracker.reset()
                 _evaluate_at_barrier(

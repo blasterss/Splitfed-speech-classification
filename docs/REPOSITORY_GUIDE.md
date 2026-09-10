@@ -429,8 +429,8 @@ split/personalized owns one server model and optimizer per client, and SplitFed
 combines split training with client-partition FedAvg. The matrix derives only
 the roles and channels owned by each topology, validates every derived
 configuration and writes a pass/fail and wall-time summary. SplitFed evaluates
-the compatible pre-FedAvg encoder/server pair on aggregation rounds; the
-aggregated encoder takes effect for the following round.
+the synchronized post-FedAvg encoder/server pair on aggregation rounds. The
+same aggregated encoder is then used to initialize the following round.
 
 Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
 model correctness, data semantics, and packaging changes into one patch.
