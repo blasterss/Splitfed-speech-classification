@@ -1,0 +1,76 @@
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \caption{Train/test split statistics for the E0 cross-corpus setup.}
+    \label{tab:e0_split_summary}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrr}
+        \toprule
+        Dataset & Split & Samples & Actors & Anger & Non-anger & Anger share \\
+        \midrule
+        CREMA-D & Train & 5890 & 72 & 1006 & 4884 & 17.08\% \\
+        CREMA-D & Test & 1552 & 19 & 265 & 1287 & 17.07\% \\
+        RAVDESS & Train & 1140 & 19 & 152 & 988 & 13.33\% \\
+        RAVDESS & Test & 300 & 5 & 40 & 260 & 13.33\% \\
+        SAVEE & Train & 360 & 3 & 45 & 315 & 12.50\% \\
+        SAVEE & Test & 120 & 1 & 15 & 105 & 12.50\% \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \caption{Aggregated dataset-level statistics for the E0 setup.}
+    \label{tab:e0_general_summary}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrr}
+        \toprule
+        Dataset & Samples & Actors & Anger & Non-anger & Mean dur. (s) & Std. dur. (s) \\
+        \midrule
+        CREMA-D & 7442 & 91 & 1271 & 6171 & 2.5429 & 0.5060 \\
+        RAVDESS & 1440 & 24 & 192 & 1248 & 3.7007 & 0.3367 \\
+        SAVEE & 480 & 4 & 60 & 420 & 3.8395 & 1.0780 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \caption{Pairwise Maximum Mean Discrepancy (MMD) across datasets without normalization.}
+    \label{tab:e0_mmd_raw}
+    \resizebox{0.72\textwidth}{!}{%
+    \begin{tabular}{lccc}
+        \toprule
+        Dataset & CREMA-D & RAVDESS & SAVEE \\
+        \midrule
+        CREMA-D & - & 0.381637 & 0.389779 \\
+        RAVDESS & 0.381637 & - & 0.332834 \\
+        SAVEE & 0.389779 & 0.332834 & - \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \caption{Pairwise Maximum Mean Discrepancy (MMD) across datasets after normalization.}
+    \label{tab:e0_mmd_normalized}
+    \resizebox{0.72\textwidth}{!}{%
+    \begin{tabular}{lccc}
+        \toprule
+        Dataset & CREMA-D & RAVDESS & SAVEE \\
+        \midrule
+        CREMA-D & - & 0.009802 & 0.018052 \\
+        RAVDESS & 0.009802 & - & 0.017652 \\
+        SAVEE & 0.018052 & 0.017652 & - \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
