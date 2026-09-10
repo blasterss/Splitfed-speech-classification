@@ -4,8 +4,9 @@ from types import SimpleNamespace
 import pytest
 import torch.multiprocessing as mp
 
-from src.schema import TrainingMode
+from src.schema import TrainingMode, WorkloadPolicy
 from src.splitfed.client import _client_worker
+from src.splitfed.client.worker import _round_workload_counts
 from src.splitfed.common.lifecycle import _cancel_training
 
 
@@ -56,6 +57,16 @@ class RecordingClient(NoOpClient):
         self.evaluated_rounds.append(round)
         self.events.append(("evaluate", round))
         return {}
+
+
+def test_fixed_steps_resource_counts_include_reused_samples():
+    assert _round_workload_counts(
+        loader_batches=45,
+        dataset_samples=360,
+        batch_size=8,
+        local_steps=100,
+        policy=WorkloadPolicy.fixed_steps_v1,
+    ) == (100, 800)
 
 
 def _barrier_waiter(barrier, ready_queue, result_queue):

@@ -17,6 +17,7 @@ from src.schema import (
     SplitServerConfig,
     SplitServerModelConfig,
     TrainingConfig,
+    WorkloadPolicy,
     _validate_device_available,
 )
 
@@ -111,6 +112,17 @@ def test_client_runtime_rejects_unknown_workload_policy():
             batch_size=1,
             seed=42,
         )
+
+
+def test_client_runtime_accepts_fixed_steps_workload_policy():
+    runtime = ClientRuntimeConfig(
+        local_steps=5,
+        workload_policy="fixed_steps_v1",
+        batch_size=1,
+        seed=42,
+    )
+
+    assert runtime.workload_policy is WorkloadPolicy.fixed_steps_v1
 
 
 def test_queue_channel_requires_positive_timeout():

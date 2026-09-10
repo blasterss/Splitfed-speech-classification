@@ -6,6 +6,7 @@ from ...schema import (
     ServerModelScope,
     TrainingConfig,
     TrainingMode,
+    WorkloadPolicy,
 )
 from ...transport.base import Channel, ChannelCancelled
 from ...utils.runtime import (
@@ -20,6 +21,31 @@ from ...utils.runtime.resource_metrics import (
 from ...utils.training import set_seed
 
 logger = logger.getChild("Client")
+
+
+def _round_workload_counts(
+    *,
+    loader_batches: int,
+    dataset_samples: int,
+    batch_size: int,
+    local_steps: int,
+    policy: WorkloadPolicy,
+) -> tuple[int, int]:
+    """Return batches and effective samples processed in one round."""
+    if policy is WorkloadPolicy.full_epoch_v1:
+        return loader_batches, dataset_samples
+    if policy is WorkloadPolicy.fixed_steps_v1:
+        if loader_batches <= 0:
+            return 0, 0
+        full_cycles, remaining_batches = divmod(local_steps, loader_batches)
+        samples = full_cycles * dataset_samples + min(
+            dataset_samples,
+            remaining_batches * batch_size,
+        )
+        return local_steps, samples
+
+    batches = min(loader_batches, local_steps)
+    return batches, min(dataset_samples, batches * batch_size)
 
 
 def _client_worker(
@@ -96,17 +122,12 @@ def _client_worker(
                 )
             client.train_one_round(round_idx)
             if tracker is not None:
-                batches = min(
-                    len(client.train_loader),
-                    (
-                        len(client.train_loader)
-                        if cfg.runtime.workload_policy.value == "full_epoch_v1"
-                        else cfg.runtime.local_steps
-                    ),
-                )
-                samples = min(
-                    len(client.dataset.train_dataset),
-                    batches * cfg.runtime.batch_size,
+                batches, samples = _round_workload_counts(
+                    loader_batches=len(client.train_loader),
+                    dataset_samples=len(client.dataset.train_dataset),
+                    batch_size=cfg.runtime.batch_size,
+                    local_steps=cfg.runtime.local_steps,
+                    policy=cfg.runtime.workload_policy,
                 )
                 publish_resource_metric(
                     resource_metrics_queue,

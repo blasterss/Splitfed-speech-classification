@@ -67,7 +67,7 @@ feature sequence, регулирует batch size неоднородных worke
 | Сопоставить качество всех методов | Одинаковые actor folds, normalization policy, seeds, stopping/data budget и единая tidy-схема | Local, Centralized и FedAvg используют общий metrics contract; complete-model checkpoint evaluator сохраняет per-corpus, macro и worst-corpus результаты | Распространить контракт на SFLv2/OUR; добавить validation actors, multi-seed CI и matched-budget accounting |
 | Сопоставить вычислительную стоимость | Per-process параметры/память, transmitted bytes, server wait, round и total time | Ограниченные lifecycle logs, deadlines, quorum и stale counters на уровне протокола | Версионированная телеметрия, единицы измерения, warm-up policy и экспорт в общую таблицу |
 | Проверить задержки и отказы | Seeded delay/drop/straggler без deadlock и без частично применённого шага | Тайм-ауты, cancellation, barrier abort, failure propagation и завершение процессов тестируются | Детерминированный fault simulator и транзакция `completed/aborted`, гарантирующая отсутствие server/client update при сорванном шаге |
-| Проверить неравную нагрузку | Явные `full_epoch`, `fixed_max_steps`, `equal_samples` с учётом повторов | Типизированы `max_steps_v1` и `full_epoch_v1`; разные длины loaders и `round_end` поддерживаются | Реализовать cycling/equal-samples, effective/repeated sample accounting, fairness и matched-budget experiments |
+| Проверить неравную нагрузку | Явные `full_epoch`, `fixed_steps`, `equal_samples` с учётом повторов | Типизированы `max_steps_v1`, `full_epoch_v1` и cycling `fixed_steps_v1`; разные длины loaders и `round_end` поддерживаются, effective resource samples учитывают повторы | Реализовать отдельный repeated-sample counter, equal-samples, fairness и matched-budget experiments |
 | Проверить перенос на неизвестный корпус | Held-out corpus исключён из обучения, нормализации и model selection | Local matrix измеряет перенос A → B/C, но обучающая постановка остаётся однокорпусной | Leave-one-corpus-out topology для методов совместного обучения и отдельный held-out evaluator |
 
 ### 2.2. Итог аудита текущего среза
@@ -141,8 +141,8 @@ checkpoint на train-corpus. Centralized и FedAvg используют общ�
 1. Определить транзакцию шага: `created -> completed` или `aborted`. Отменённый
    шаг не изменяет параметры ни клиента, ни сервера.
 2. Добавить seeded delay, jitter, message drop и длительный straggler.
-3. Добавить `full_epoch_v1`, `fixed_max_steps_v1` и `equal_samples_v1` с явным
-   учётом циклического и повторного использования данных.
+3. Расширить реализованные `full_epoch_v1` и cycling `fixed_steps_v1` политикой
+   `equal_samples_v1` и отдельным учётом повторно использованных данных.
 4. Записывать attempted/completed/aborted/stale steps, effective/repeated
    samples, server wait time, round time и bytes.
 

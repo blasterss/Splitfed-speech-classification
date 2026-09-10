@@ -176,7 +176,9 @@ Important configuration caveats:
   strategy for both partitions; a correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;
   `full_epoch_v1` consumes the complete local loader and makes `local_steps`
-  an unused compatibility value for that client;
+  an unused compatibility value for that client; `fixed_steps_v1` cycles a
+  non-empty loader as needed and completes exactly `local_steps`, so smaller
+  clients may reuse samples within one round;
 - `training.barrier_timeout_sec` bounds client ready/evaluation barriers;
 - `split_server.model.gradient_accumulation_steps` controls how many server
   batches are averaged per optimizer update; each round flushes its remainder;

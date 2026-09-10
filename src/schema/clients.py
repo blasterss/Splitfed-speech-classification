@@ -35,7 +35,8 @@ class ClientRuntimeConfig(StrictConfigModel):
     workload_policy: WorkloadPolicy = Field(
         default=WorkloadPolicy.max_steps_v1,
         description=(
-            "Whether a round stops at local_steps or exhausts the loader."
+            "Whether a round caps at local_steps, exhausts the loader, or "
+            "cycles the loader until exactly local_steps are completed."
         ),
     )
     batch_size: int = Field(gt=0, description="Local training batch size.")

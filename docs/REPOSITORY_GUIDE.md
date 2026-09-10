@@ -319,9 +319,11 @@ still missing.
   validated before controller setup.
 - `training.fed_every` controls aggregation cadence. `training.eval_every`
   schedules synchronized snapshots and the final round is always evaluated.
-- `clients[].runtime.workload_policy` is the typed `max_steps_v1` or
-  `full_epoch_v1` stopping rule. The latter exhausts the loader and ignores the
-  positive compatibility value in `local_steps`.
+- `clients[].runtime.workload_policy` is a typed stopping rule.
+  `max_steps_v1` caps a single loader pass, `full_epoch_v1` exhausts one loader
+  pass and ignores `local_steps`, and `fixed_steps_v1` cycles a non-empty
+  loader until exactly `local_steps` batches have completed. Resource sample
+  counts include repeated sample occurrences for the cycling policy.
 - Federated and SplitFed workers use the common `training.seed` for the model
   partition that FedAvg combines. Client-specific data-loader randomness still
   uses `clients[].runtime.seed`.

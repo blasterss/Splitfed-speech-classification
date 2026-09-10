@@ -317,6 +317,42 @@ def test_max_steps_workload_stops_at_configured_limit():
     assert client._round_is_complete(step=2)
 
 
+def test_fixed_steps_workload_cycles_loader_to_exact_limit():
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.cfg = SimpleNamespace(
+        runtime=SimpleNamespace(
+            local_steps=5,
+            workload_policy=WorkloadPolicy.fixed_steps_v1,
+        )
+    )
+    client.train_loader = ["batch-1", "batch-2"]
+
+    assert list(client._round_batches()) == [
+        "batch-1",
+        "batch-2",
+        "batch-1",
+        "batch-2",
+        "batch-1",
+    ]
+    assert client._round_is_complete(step=5)
+
+
+def test_fixed_steps_workload_rejects_empty_loader():
+    client = Client.__new__(Client)
+    client.client_id = "client-0"
+    client.cfg = SimpleNamespace(
+        runtime=SimpleNamespace(
+            local_steps=1,
+            workload_policy=WorkloadPolicy.fixed_steps_v1,
+        )
+    )
+    client.train_loader = []
+
+    with pytest.raises(RuntimeError, match="non-empty train loader"):
+        list(client._round_batches())
+
+
 def test_federated_evaluation_writes_to_experiment_metrics_path(tmp_path):
     client = Client.__new__(Client)
     client.client_id = "client-0"

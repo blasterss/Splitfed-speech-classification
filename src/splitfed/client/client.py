@@ -154,7 +154,7 @@ class Client:
             return
 
         last_step = 0
-        for step, (x, y) in enumerate(self.train_loader, start=1):
+        for step, (x, y) in enumerate(self._round_batches(), start=1):
             last_step = step
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
@@ -227,7 +227,7 @@ class Client:
             )
 
     def _train_federated_round(self) -> None:
-        for step, (x, y) in enumerate(self.train_loader, start=1):
+        for step, (x, y) in enumerate(self._round_batches(), start=1):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True).float().reshape(-1, 1)
             logits = self.model(x)
@@ -243,6 +243,31 @@ class Client:
             if self._round_is_complete(step):
                 break
 
+    def _round_batches(self):
+        """Yield the batches selected by the configured workload policy."""
+        policy = getattr(
+            self.cfg.runtime,
+            "workload_policy",
+            WorkloadPolicy.max_steps_v1,
+        )
+        if policy is not WorkloadPolicy.fixed_steps_v1:
+            yield from self.train_loader
+            return
+
+        if len(self.train_loader) == 0:
+            raise RuntimeError(
+                f"Client {self.client_id}: fixed_steps_v1 requires a "
+                "non-empty train loader"
+            )
+
+        loader_iterator = iter(self.train_loader)
+        for _ in range(self.cfg.runtime.local_steps):
+            try:
+                yield next(loader_iterator)
+            except StopIteration:
+                loader_iterator = iter(self.train_loader)
+                yield next(loader_iterator)
+
     def _round_is_complete(self, step: int) -> bool:
         policy = getattr(
             self.cfg.runtime,
@@ -250,7 +275,11 @@ class Client:
             WorkloadPolicy.max_steps_v1,
         )
         return (
-            policy is WorkloadPolicy.max_steps_v1
+            policy
+            in (
+                WorkloadPolicy.max_steps_v1,
+                WorkloadPolicy.fixed_steps_v1,
+            )
             and step >= self.cfg.runtime.local_steps
         )
 
