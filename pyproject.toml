@@ -27,13 +27,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "grpcio>=1.66,<2",
+    "grpcio>=1.81,<2",
     "librosa>=0.10.2,<0.12",
     "matplotlib>=3.8,<4",
     "numpy>=1.26,<3",
     "pandas>=2.2,<3",
     "pydantic>=2.11,<3",
-    "protobuf>=5.27,<7",
+    "protobuf>=6.33.5,<7",
     "PyYAML>=6.0.2,<7",
     "scikit-learn>=1.4,<2",
     "seaborn>=0.13.2,<0.14",
@@ -49,7 +49,7 @@ secureasr = "src.main:main"
 train = ["torch==2.7.1"]
 dev = [
     "black>=24.0,<26",
-    "grpcio-tools>=1.66,<2",
+    "grpcio-tools>=1.81,<2",
     "ipykernel>=7.3.0",
     "mypy>=1.10,<2",
     "pytest>=8,<9",

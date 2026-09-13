@@ -1,10 +1,17 @@
+import multiprocessing as mp
 import queue
+import socket
 import time
 
 import pytest
 
-from src.schema import QueueChannelConfig, TransportType
-from src.transport.base import ChannelCancelled, ChannelFactory, QueueChannel
+from src.schema import GRPCChannelConfig, QueueChannelConfig, TransportType
+from src.transport.base import (
+    ChannelCancelled,
+    ChannelFactory,
+    GrpcChannel,
+    QueueChannel,
+)
 from src.transport.message import Message, MessageType
 
 
@@ -104,3 +111,73 @@ def test_channel_factory_creates_queue_channel():
 
     assert isinstance(channel, QueueChannel)
     assert channel.timeout == 1
+
+
+def _free_address():
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return f"127.0.0.1:{listener.getsockname()[1]}"
+
+
+def _receive_in_spawned_process(channel, result_queue):
+    try:
+        result_queue.put(channel.recv())
+    finally:
+        channel.close()
+
+
+def test_grpc_channel_round_trips_through_spawned_receiver():
+    context = mp.get_context("spawn")
+    channel = GrpcChannel(
+        address=_free_address(),
+        timeout=5,
+        mp_context=context,
+    )
+    result_queue = context.Queue()
+    receiver = context.Process(
+        target=_receive_in_spawned_process,
+        args=(channel, result_queue),
+    )
+    receiver.start()
+    message = Message(
+        type="ack",
+        sender="server",
+        round=1,
+        step=1,
+    )
+
+    try:
+        channel.send(message)
+        received = result_queue.get(timeout=5)
+        receiver.join(timeout=5)
+    finally:
+        channel.close()
+        if receiver.is_alive():
+            receiver.terminate()
+            receiver.join(timeout=5)
+
+    assert receiver.exitcode == 0
+    assert received == message
+    assert channel.statistics()["messages_sent"] == 1
+    assert channel.statistics()["bytes_sent"] > 0
+
+
+def test_channel_factory_creates_insecure_grpc_channel():
+    config = GRPCChannelConfig(
+        transport=TransportType.grpc,
+        name="test",
+        address="127.0.0.1:50051",
+        use_tls=False,
+        timeout_sec=2,
+    )
+
+    channel = ChannelFactory.create(config)
+
+    assert isinstance(channel, GrpcChannel)
+    assert channel.address == "127.0.0.1:50051"
+    assert channel.timeout == 2
+
+
+def test_grpc_channel_rejects_unconfigured_tls():
+    with pytest.raises(ValueError, match="TLS credentials"):
+        GrpcChannel(address="127.0.0.1:50051", use_tls=True)

@@ -40,3 +40,9 @@ message Message {
   string request_id = 8;
   double deadline_at = 9;
 }
+
+message SendReply {}
+
+service Transport {
+  rpc Send(Message) returns (SendReply);
+}
