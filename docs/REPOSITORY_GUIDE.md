@@ -345,6 +345,11 @@ are still missing.
   order through `round_end`, updating the shared server after every client
   batch. `split_server.model.gradient_accumulation_steps` is fixed at `1`;
   server gradients are never averaged across batches.
+- `mergesfl_v1` implements the executable feature-merging and gradient-dispatch
+  rule from the public MergeSFL repository. It requires equal
+  `fixed_steps_v1` workloads, permits unequal configured client batch sizes,
+  and applies the published `sum(batch_sizes) / client_batch_size` gradient
+  factor. Automatic resource-aware batch-size optimization is not implemented.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
