@@ -1,4 +1,4 @@
-# SecureASR Repository Guide
+# SplitFed Speech Emotion Classification Repository Guide
 
 This document is the working instruction for changing and validating the
 repository. It describes the current implementation, not an idealized future
@@ -6,11 +6,15 @@ architecture.
 
 ## Project identity
 
-SecureASR is a pre-alpha research prototype for binary emotional-speech
-classification with Split Federated Learning (SplitFed). The positive class is
-anger (`ANG`); every other supported emotion is currently mapped to zero. It is
-not a speech-to-text ASR system and should not be described as a production
-privacy or security solution.
+SplitFed Speech Emotion Classification is a pre-alpha research framework for
+binary anger classification over acted emotional-speech corpora. The positive
+class is anger (`ANG`); every other supported emotion is currently mapped to
+zero. It is not a speech-to-text ASR system and should not be described as a
+production privacy or security solution.
+
+The distribution name, console command and protocol namespace remain
+`secureasr` for compatibility. Treat them as technical identifiers rather than
+the project or task name.
 
 The local queue transport simulates distributed participants inside one Unix
 host. It does not provide network isolation, cryptographic protection, secure
@@ -166,9 +170,10 @@ or lock information is recorded as null rather than preventing checkpoint
 persistence; scheduler policy and container image digest are null for the
 current local runtime.
 Resource artifacts record per-process/round wall time, CPU time, peak RSS,
-PyTorch CUDA peaks, throughput where sample counts are known, and logical
-queue-message sizes. They do not measure energy, host-wide concurrent memory,
-or real network traffic.
+PyTorch CUDA peaks, throughput where sample counts are known, and transport
+message sizes. Queue values are logical estimates; gRPC values are serialized
+protobuf sizes. They do not measure energy, host-wide concurrent memory, or
+host network-interface traffic.
 Captured client, SplitServer, FedServer and controller failures additionally
 produce the bounded versioned artifact `diagnostics/first_failure.yaml`.
 Workers publish original exception context before setting cancellation; if no
@@ -274,12 +279,12 @@ uv run python -c "from src.schema import ConfigSchema; from src.utils.config imp
 ```
 
 The repository has focused tests for schemas/configuration, dataset parsers,
-padding, models/FedAvg, queue transport and controller lifecycle. It also has a
-synthetic CPU `spawn` cycle covering unequal client steps, split training,
-FedAvg, evaluation, clean process exit and state handoff. Run them with
-`uv run pytest`. Reduced real-data and RTX 5060/CUDA 12.8 mode runs have been
-completed manually; an automated real-data/CUDA matrix and CI workflow are
-still missing.
+padding, models/FedAvg, queue and gRPC transports, and controller lifecycle. It
+also has synthetic CPU `spawn` cycles covering unequal client steps, split
+training, FedAvg, evaluation, clean process exit and state handoff. Run them
+with `uv run pytest`. Reduced real-data and RTX 5060/CUDA 12.8 mode runs have
+been completed manually; an automated real-data/CUDA matrix and CI workflow
+are still missing.
 
 ## Configuration invariants
 
@@ -290,9 +295,10 @@ still missing.
   `splitfed`.
 - `split_server.model_scope` supports `shared` and `personalized`. Personalized
   SplitFed keeps server models and optimizers isolated by client ID while
-  aggregating client-side models; this is not the canonical SFLv1 server-model
-  aggregation protocol. Personalized models, metrics and checkpoint files
-  remain isolated by client ID.
+  training locally and aggregates both model partitions at `fed_every` while
+  retaining personalized optimizer states. This working variant has not yet
+  been proven equivalent to canonical SFLv1. Personalized metrics and server
+  checkpoint files remain isolated by client ID.
 - The root field is `models_save_path` (plural), not `model_save_path`; it owns
   `<root>/<experiment.name>/{metadata,checkpoints,metrics}`.
 - Runs with `models_save_path` persist the validated JSON-compatible

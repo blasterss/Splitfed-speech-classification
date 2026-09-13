@@ -1,8 +1,8 @@
-# План полной доработки SecureASR
+# План развития SplitFed Speech Emotion Classification
 
 ## 1. Цель и границы
 
-SecureASR следует довести до воспроизводимой исследовательской платформы для
+Репозиторий следует довести до воспроизводимой исследовательской платформы для
 сравнения централизованного обучения, обычного Federated Learning, Split
 Learning и SplitFed. Split Learning должен поддерживать два режима серверной
 модели: одну общую модель для всех клиентов и отдельную персональную модель
@@ -85,16 +85,17 @@ validators, mode matrix, partial quorum, protocol correlation/deadlines/replay
 guard, configurable accumulation, actor split seed, mask-aware normalization,
 evaluation cadence и artifact scoping из плана удалены.
 
-1. `queue` работает только внутри одного Unix-хоста и не даёт сетевой,
-   криптографической или организационной изоляции. `GrpcChannel` и
-   сериализация `Message` не реализованы.
+1. `queue` и protobuf/gRPC работают между локальными процессами одного
+   Unix-хоста. Текущий gRPC transport не имеет TLS/mTLS, authentication,
+   health/readiness и проверенного container/network deployment, поэтому не
+   даёт криптографической или организационной изоляции.
 2. Нет контейнерной runtime-модели: клиентские процессы не имеют отдельных
    resource limits, health checks, network policies, image/version pinning или
    изолированных volume/secrets.
 3. Нет отдельного `ClientLoadController`: отсутствуют admission, heartbeat,
    telemetry windows, leases, quarantine, fairness debt и воспроизводимый
    выбор cohorts.
-4. Cancellation ограничена shared event, barrier abort и polling queue waits.
+4. Cancellation ограничена shared event, barrier abort и polling channel waits.
    Bounded structured first-failure report уже сохраняется, но нет typed
    cancellation delivery/envelope и restart/recovery protocol.
 5. Partial FedAvg quorum является arrival window, а не заранее выданным
@@ -108,8 +109,9 @@ evaluation cadence и artifact scoping из плана удалены.
    class-balanced sampler.
 8. Checkpoint schema v1 атомарно сохраняет validated model state и ownership,
    но не optimizer/RNG state и не обеспечивает resume equivalence.
-9. Метрики остаются локальными per-client CSV. Нет агрегированных
-   per-dataset/worst-client reports, multi-seed/leave-one-dataset-out harness и
+9. Есть per-client CSV, complete-model cross-corpus summaries и итоговая
+   resource telemetry. Нет общего агрегированного per-dataset/worst-client
+   contract для split-методов, multi-seed/leave-one-dataset-out harness и
    интервального учёта CPU/RAM/GPU/bytes по процессам.
 10. Activation noise отключается в evaluation, но clipping, privacy accounting,
     threat model и leakage benchmarks отсутствуют.
@@ -278,7 +280,7 @@ reduced budget, delayed cohort или отдельную asynchronous policy, а
 
 ### 3.5. Research Experiment Control Plane
 
-Поскольку SecureASR является исследовательским фреймворком, параметры запуска
+Поскольку это исследовательский фреймворк, параметры запуска
 нельзя зашивать в код или разносить по неявным переменным окружения. Ввести
 слои конфигурации с явным приоритетом:
 
@@ -692,7 +694,7 @@ reconstruction, membership-inference и attribute-inference baselines. Для
 network deployment добавить authentication, TLS, authorization, replay
 protection и secure secret handling.
 
-**Зависит от:** текущего validated queue protocol, этапов 1-5 и измеримых
+**Зависит от:** текущего validated transport protocol, этапов 1-5 и измеримых
 baseline artifacts из этапа 5.
 
 **Готово, когда:** для каждой privacy конфигурации есть заявленный threat
@@ -709,17 +711,19 @@ deadline/retry contract, payload limits и multi-process SplitFed smoke
 реализованы для локального runtime. TLS/mTLS, authentication, health checks и
 deployment configuration остаются в этом этапе.
 
-**Задачи:** выбрать protobuf schema, реализовать Message serialization,
-client/server RPC services, deadlines, reconnect policy, TLS/mTLS, health
-checks и deployment configuration. Не смешивать queue и gRPC semantics без
-общего contract test suite.
+**Задачи:** расширить работающий локальный gRPC transport политиками TLS/mTLS,
+authentication, health/readiness, reconnect/backoff и deployment
+configuration. Сохранить общий queue/gRPC contract suite и protobuf
+compatibility policy.
 
-**Зависит от:** текущего queue protocol и стабильных cancellation semantics
+**Зависит от:** текущего transport protocol и стабильных cancellation semantics
 этапа 2.
 
-**Готово, когда:** локальный in-process gRPC test и два отдельных процесса
-проходят тот же protocol suite, а сетевой timeout вызывает тот же отказ run,
-что и queue timeout.
+**Готово, когда:** TLS/mTLS и authentication имеют отрицательные и
+положительные contract tests, readiness ограничивает старт клиентов, а
+контейнерный multi-process smoke проходит по изолированной сети. Timeout,
+недоступный peer и shutdown должны приводить к тому же диагностируемому
+результату запуска, что и локальный queue transport.
 
 **Тесты:** protobuf compatibility, loopback RPC, TLS, unavailable peer,
 reconnect, payload size/compression, multi-process integration.
@@ -784,7 +788,7 @@ volume permissions, resource-limit behavior, container failure injection.
 ### P2: отдельный deployment/research scope
 
 - formal DP accounting and leakage studies;
-- gRPC, TLS/mTLS and authentication;
+- authenticated gRPC deployment с TLS/mTLS и health/readiness;
 - Kubernetes/operator deployment, registry and external secret manager;
 - containerized CPU smoke topology with health checks and resource limits;
 - streaming capture and segmentation;
@@ -850,7 +854,7 @@ volume permissions, resource-limit behavior, container failure injection.
 9. `test: prove resume equivalence`;
 10. `feat: aggregate per-dataset and worst-client metrics`;
 11. `feat: add privacy accounting and leakage benchmarks`;
-12. `feat: implement grpc transport`;
+12. `feat: secure grpc deployment transport`;
 13. `test: add multi-seed baselines and continuous integration`;
 14. `feat: add container runtime foundation`.
 

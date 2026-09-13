@@ -1,10 +1,12 @@
-# SecureASR Agent Instructions
+# SplitFed Speech Emotion Classification Agent Instructions
 
 ## Mission
 
-Treat this repository as a pre-alpha research prototype for binary emotional
-speech classification with Split Federated Learning. The positive label is
-anger (`ANG`); all other supported emotions currently map to zero.
+Treat this repository as the pre-alpha SplitFed Speech Emotion Classification
+research framework. Its current task is binary anger classification with Split
+Federated Learning. The positive label is anger (`ANG`); all other supported
+emotions currently map to zero. `secureasr` remains a legacy package, CLI and
+protocol identifier, not the product or research-task name.
 
 Do not describe the project as conventional speech-to-text ASR, conflict
 understanding, production infrastructure, cryptographically secure, or

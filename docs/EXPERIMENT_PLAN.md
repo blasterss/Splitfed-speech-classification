@@ -2,9 +2,10 @@
 
 ## 1. Область исследования и терминология
 
-SecureASR оценивается как pre-alpha фреймворк для бинарной классификации
-эмоциональной речи. `ANG` является положительным классом; все остальные
-поддерживаемые эмоции отображаются в класс `0`. Проект не является системой
+SplitFed Speech Emotion Classification оценивается как pre-alpha фреймворк для
+бинарной классификации эмоциональной речи. `ANG` является положительным
+классом; все остальные поддерживаемые эмоции отображаются в класс `0`. Проект
+не является системой
 распознавания речи speech-to-text и пока не предоставляет формальных гарантий
 приватности.
 
@@ -62,7 +63,7 @@ feature sequence, регулирует batch size неоднородных worke
 | Получить FedAvg reference | Полные клиентские модели, валидированный FedAvg и per-corpus evaluation | Общая инициализация, `full_epoch_v1`, sample-weighted финальная агрегация, checkpoint и автоматическая per-corpus оценка | Multi-seed aggregation, доверительные интервалы и effective-sample accounting |
 | Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
 | Зафиксировать OUR | Согласованные `(round, step)` batches объединяются перед одним server update; клиентские части проходят FedAvg | `concat_v1`, конкатенация activation, разделение activation gradients, один server update без batch-gradient averaging, stale-batch timeout и `spawn` smoke | Научный harness с тем же data/evaluation budget, телеметрия ожидания/bytes и multi-seed сравнение с SFLv2 |
-| Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized split хранит отдельные server models и optimizer states | Нет агрегации серверных частей, общего SFLv1 checkpoint contract и эталонного теста одного global round |
+| Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized SplitFed хранит отдельные server models/optimizers, агрегирует обе model partitions по `fed_every`, синхронизирует round ACK и сохраняет per-client server checkpoints | Нет детерминированного reference одного global round и доказательства полного соответствия каноническому SFLv1 |
 | Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | Только простая конкатенация в `concat_v1` | Весь алгоритмический baseline MergeSFL и его reference tests; `concat_v1` нельзя переименовывать в MergeSFL |
 | Сопоставить качество всех методов | Одинаковые actor folds, normalization policy, seeds, stopping/data budget и единая tidy-схема | Local, Centralized и FedAvg используют общий metrics contract; complete-model checkpoint evaluator сохраняет per-corpus, macro и worst-corpus результаты | Распространить контракт на SFLv2/OUR; добавить validation actors, multi-seed CI и matched-budget accounting |
 | Сопоставить вычислительную стоимость | Per-process параметры/память, transmitted bytes, server wait, round и total time | Ограниченные lifecycle logs, deadlines, quorum и stale counters на уровне протокола | Версионированная телеметрия, единицы измерения, warm-up policy и экспорт в общую таблицу |
@@ -80,10 +81,10 @@ feature sequence, регулирует batch size неоднородных worke
   checkpoint по каждому корпусу. SFLv2/OUR ещё не сведены к этому контракту.
 - Ближайший научно полезный срез — не новый transport или scheduler, а общий
   evaluator и matched-budget harness для уже реализованных методов.
-- SFLv1, MergeSFL, fault simulator, расширенные workload policies и
-  leave-one-corpus-out остаются отдельными последующими срезами; их нельзя
-  считать реализованными по наличию personalized mode, конкатенации или
-  тайм-аутов.
+- Каноническая верификация SFLv1, MergeSFL, fault simulator, расширенные
+  workload policies и leave-one-corpus-out остаются отдельными последующими
+  срезами. Personalized SplitFed является рабочим экспериментальным вариантом,
+  но ещё не доказан как точное воспроизведение SFLv1.
 
 ### 2.3. Ограничения данных
 
@@ -125,8 +126,9 @@ checkpoint на train-corpus. Centralized и FedAvg используют общ�
    число server optimizer steps и итоговые параметры на малой задаче.
 2. Записывать выбранную server strategy и фактический порядок клиентов в
    resolved artifacts каждого запуска.
-3. Реализовать `sflv1_v1`: изолированные серверные модели во время локального
-   обучения и их явная агрегация на глобальной границе.
+3. Зафиксировать реализованный personalized SplitFed как версионированную
+   policy `sflv1_v1` только после проверки ownership, aggregation weights,
+   optimizer-state semantics и checkpoint contract.
 4. Проверить эталонное поведение SFLv1 на synthetic задаче, затем
    отдельно на каждом речевом корпусе.
 5. Реализовывать MergeSFL только после фиксации feature ordering, batch

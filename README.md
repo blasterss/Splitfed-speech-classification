@@ -1,15 +1,18 @@
-# SecureASR
+# SplitFed Speech Emotion Classification
 
-SecureASR is an early research prototype for binary classification of emotional
-speech with Split Federated Learning (SplitFed). It combines a client-side
-feature extractor, a split-learning server and federated averaging of client
-models.
+SplitFed Speech Emotion Classification is an early research framework for
+binary anger classification from acted emotional speech. It compares local,
+centralized, federated, split-learning and SplitFed training topologies over
+CREMA-D, RAVDESS and SAVEE.
 
 Despite the repository name, the current task is **not automatic speech
 recognition in the conventional speech-to-text sense**. The implemented target
 is binary classification where anger is treated as the positive class. The
 project should therefore be understood as an experimental privacy-aware speech
-classifier, not as a production ASR or conflict-detection system.
+classifier, not as a production ASR or conflict-detection system. The installed
+Python distribution, CLI command and wire-protocol namespace retain the legacy
+name `secureasr` for compatibility; that name does not redefine the research
+task.
 
 > **Project status: pre-alpha research prototype.** The implementation is useful
 > for experiments and further development, but it is not fault-tolerant,
