@@ -61,8 +61,8 @@ directory can make valid repository-relative paths fail.
   controller remains the owner of process startup, cancellation, and cleanup.
 - `src/splitfed/centralized/`: centralized process facade, child-process
   training loop, and variable-length dataset collation/shape validation.
-- `src/transport/`: `Message`, queue channel, channel factory, and the
-  unimplemented gRPC channel.
+- `src/transport/`: `Message`, strict protobuf serialization, queue and gRPC
+  channels, generated protobuf contracts, and the channel factory.
 - `src/utils/`: shared utilities; `persistence/` owns artifact paths,
   checkpoint envelopes, and state-dict byte serialization; `runtime/` owns
   process signal policy and structured failure publication; `training/` owns
@@ -174,10 +174,11 @@ produce the bounded versioned artifact `diagnostics/first_failure.yaml`.
 Workers publish original exception context before setting cancellation; if no
 worker record is available, the controller writes its own fallback context.
 
-Every local queue `Message` validates `secureasr.queue` protocol version 3 and
-a bounded non-empty request ID, which are also represented in run metadata.
+Every queue or gRPC `Message` validates `secureasr.transport` protocol version
+4 and a bounded non-empty request ID, which are also represented in run
+metadata.
 Split responses and federated responses to accepted updates echo request IDs.
-Queue send stamps a hop deadline using the positive channel timeout; send,
+Channel send stamps a hop deadline using the positive channel timeout; send,
 receive and payload validators reject expired envelopes. It is not yet one
 end-to-end deadline spanning split batching or federated quorum waiting. With
 partial federated quorum, accepted clients receive the aggregate immediately;
@@ -358,8 +359,10 @@ still missing.
   and FedAvg strategy to both model partitions. Each client waits for a
   correlated SplitServer round ACK before it can start the next round, so
   server aggregation cannot mix adjacent rounds.
-- Only queue transport without compression is operational. gRPC/compression
-  selections and unknown optimizer/noise names fail schema validation.
+- Queue and insecure gRPC transports are operational for local processes.
+  Every gRPC logical channel requires a unique receiver address per integer
+  client ID. Compression, TLS and unknown optimizer/noise names fail schema
+  validation.
 
 ## Architecture and process boundaries
 
@@ -391,9 +394,10 @@ peer barriers. Remaining limitations include:
   remain incomplete;
 - joins use a polling loop and bounded terminate/kill fallback, but there is no
   recovery protocol;
-- local queue receive waits participate in the shared cancellation event, but
+- channel receive waits participate in the shared cancellation event, but
   cancellation is not yet represented as a typed transport message;
-- gRPC and message serialization are stubs.
+- gRPC retry is bounded by the message deadline, but health RPCs, TLS/mTLS,
+  authentication and distributed controller cancellation are not implemented.
 
 Changes to process coordination require a multiprocessing smoke test, not only
 an import test. `TrainingController` explicitly constructs its manager, queues
@@ -415,7 +419,8 @@ after kill and raise if a child still remains alive.
   failed counts and failure reason types; failed paths are not persisted.
 - Checkpoint metadata does not include full configuration, seed, or optimizer
   state.
-- `GrpcChannel` and message byte serialization are unimplemented.
+- gRPC is tested for local `spawn` processes but not container/network
+  deployment; TLS/mTLS, authentication and health RPCs are unimplemented.
 - Capture and segmentation modules are incomplete and are not part of the
   supported training path.
 

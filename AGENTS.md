@@ -63,8 +63,9 @@ implementation sequence and target architecture.
   separate from model aggregation and expose replayable policy decisions.
 - Keep multiprocessing `spawn` compatibility. Process coordination changes
   require a multiprocessing smoke test, not only an import test.
-- The current gRPC channel and message byte serialization are stubs. Do not
-  imply that selecting `grpc` makes the system operational.
+- The current gRPC channel is operational only for insecure local multi-process
+  runs. Do not imply that it provides TLS/mTLS, authentication, network
+  isolation, health checks, or container deployment.
 
 ## Non-Negotiable Invariants
 

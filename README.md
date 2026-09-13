@@ -26,6 +26,7 @@ The repository currently provides:
 - a client-side residual 1D CNN;
 - a server-side CNN with either global pooling or a bidirectional RNN;
 - local multiprocessing channels based on `multiprocessing.Queue`;
+- protobuf-serialized insecure gRPC channels for local multi-process runs;
 - explicit `local`, `centralized`, `federated`, `split/shared`,
   `split/personalized` and `splitfed` execution topologies;
 - synchronous split-learning forward/backward steps;
@@ -38,14 +39,13 @@ The repository currently provides:
 - experiment-scoped resolved config, provenance, dataset manifests, metrics and
   atomic ownership-aware model checkpoints;
 - per-process resource metrics for wall/CPU time, throughput, peak RSS and
-  PyTorch CUDA memory, plus logical queue-message byte counts;
+  PyTorch CUDA memory, plus transport-message byte counts;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
 
 The following are declared or partially scaffolded but are **not implemented as
 working features**:
 
-- gRPC transport and message serialization;
 - secure aggregation;
 - formal differential privacy accounting;
 - streaming microphone inference;
@@ -202,14 +202,35 @@ Important configuration caveats:
   quorum are validated before controller setup.
 - device values must be `cpu`, `cuda`, or `cuda:N`; requested CUDA devices are
   checked for availability before any child process is spawned.
-- optimizer and noise distribution names are typed registries. gRPC and channel
-  compression selections are rejected before setup because those paths remain
-  stubs.
+- optimizer and noise distribution names are typed registries. Channel
+  compression and gRPC TLS selections are rejected before setup because those
+  paths remain unimplemented;
 - `experiment.analysis_only: true` makes a dataset-analysis configuration
   valid for notebooks but rejects accidental dispatch to the training runtime;
 - `experiment.cross_corpus_evaluation: true` is available only for centralized
   and federated complete-model runs backed by `models_save_path`. Federated
   evaluation additionally requires an aggregation on the final round.
+
+For gRPC, set `experiment.transport: grpc` and configure a unique receiver
+address for every client on each logical channel. Client IDs are integer keys:
+
+```yaml
+channels:
+  split_uplink:
+    transport: grpc
+    name: split_uplink
+    addresses:
+      0: 127.0.0.1:51000
+      1: 127.0.0.1:51001
+    use_tls: false
+    timeout_sec: 30
+    max_message_bytes: 67108864
+```
+
+Apply the same structure with non-overlapping addresses to every channel owned
+by the selected mode. The current gRPC implementation is intended for local
+process research runs. TLS/mTLS, authentication, health RPCs and container
+deployment are not implemented.
 
 The repository also contains a forward-looking research plan for additional
 launch profiles, simulation, isolated client containers and throughput-aware
@@ -343,13 +364,14 @@ Expected generated artifacts include:
   with a bounded versioned record containing component, optional
   client/round/step context, exception type/message and traceback.
 
-Queue messages carry and validate protocol identity `secureasr.queue` version
-3 plus a bounded non-empty request ID. Split responses and accepted federated
-updates must echo the originating request ID in addition to matching sender,
-type, round and step. `QueueChannel.send()` stamps an unset hop deadline from
-the positive channel timeout; expired messages are rejected at send and receive
-boundaries and again before client/server payload use. This is not yet a single
-end-to-end RPC deadline across split batching or federated quorum waiting.
+Queue and gRPC messages carry and validate protocol identity
+`secureasr.transport` version 4 plus a bounded non-empty request ID. Split
+responses and accepted federated updates must echo the originating request ID
+in addition to matching sender, type, round and step. Channel send stamps an
+unset hop deadline from the positive channel timeout; expired messages are
+rejected at send and receive boundaries and again before client/server payload
+use. This is not yet a single end-to-end RPC deadline across split batching or
+federated quorum waiting.
 Split and federated workers reject request IDs repeated within a bounded FIFO
 window of 10,000 accepted messages. This in-process cache is reset on worker
 restart and is not durable broker-level replay protection.
@@ -403,10 +425,10 @@ Split learning prevents clients from sending raw waveform data directly to the
 server. This alone does not guarantee confidentiality.
 
 The current server receives intermediate activations and labels. The federated
-server receives complete client model parameters. Local queues provide no
-cryptographic isolation, and the gRPC/TLS path is not implemented. Intermediate
-activations may still reveal speaker identity, recording domain or speech
-content.
+server receives complete client model parameters. Local queues and the current
+insecure gRPC mode provide no cryptographic isolation. TLS/mTLS and
+authentication are not implemented. Intermediate activations may still reveal
+speaker identity, recording domain or speech content.
 
 The optional `PrivacyLayer` adds random noise, but it is **not a complete
 differential privacy implementation**:
@@ -500,7 +522,8 @@ tests.
 - Imports mix package-relative, `src.*` and top-level forms.
 - The microphone capture module contains undefined constants and empty methods.
 - The audio segmenter calls the audio loader with an incompatible signature.
-- Message byte serialization and `GrpcChannel` are stubs.
+- gRPC is limited to insecure local process endpoints; TLS/mTLS,
+  authentication, health RPCs and container orchestration are absent.
 - There is no CI workflow, resume-equivalence suite or CUDA test matrix yet.
   Synthetic CPU spawn and checkpoint contract round-trips are automated.
   Reduced real-data and RTX 5060/CUDA 12.8 runs have been executed manually,
@@ -527,7 +550,7 @@ work, in delivery order, is:
    per-dataset and worst-client metrics.
 7. Add multi-seed and leave-one-dataset-out experiments plus CI/static gates.
 8. Only after P0 stability, implement and test privacy accounting/leakage
-   baselines and the protobuf/gRPC/TLS deployment path.
+   baselines and the TLS/authenticated gRPC deployment path.
 9. Add the non-root Compose reference topology after the research runtime,
    policies and artifact contracts are stable.
 

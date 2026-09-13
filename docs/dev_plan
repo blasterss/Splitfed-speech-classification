@@ -704,6 +704,11 @@ serialization security, replay/invalid-auth tests, leakage benchmark smoke.
 
 ### Этап 7. gRPC и распределённый запуск
 
+**Текущий статус:** protobuf-сериализация, insecure loopback gRPC, общий
+deadline/retry contract, payload limits и multi-process SplitFed smoke
+реализованы для локального runtime. TLS/mTLS, authentication, health checks и
+deployment configuration остаются в этом этапе.
+
 **Задачи:** выбрать protobuf schema, реализовать Message serialization,
 client/server RPC services, deadlines, reconnect policy, TLS/mTLS, health
 checks и deployment configuration. Не смешивать queue и gRPC semantics без
