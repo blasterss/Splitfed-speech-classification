@@ -1,3 +1,5 @@
+import pytest
+
 from src.schema import MergeSFLPolicyConfig
 from src.splitfed.load_controller import (
     MergeSFLPlanner,
@@ -102,6 +104,33 @@ def test_planner_builds_replayable_round_plan_and_updates_ema():
     assert first.deadline_at == 400.0
     assert first.bandwidth_used <= _config().ingress_budget_bytes
     assert first.required_quorum == len(first.cohort)
+    assert first.decision_trace["refinement_policy"] == (
+        "integer_refinement_v1"
+    )
+    assert set(first.decision_trace["telemetry_inputs"]) == {"0", "1", "2"}
+
+
+def test_planner_fails_when_kl_constraint_is_infeasible():
+    config = _config().model_copy(
+        update={"min_clients": 1, "max_clients": 1, "kl_threshold": 0.01}
+    )
+    profiles = [
+        WorkerProfile(0, (1.0, 0.0)),
+        WorkerProfile(1, (0.0, 1.0)),
+    ]
+    telemetry = [
+        WorkerTelemetry(0, WorkerState(1.0, 1.0), 90.0),
+        WorkerTelemetry(1, WorkerState(1.0, 1.0), 90.0),
+    ]
+
+    with pytest.raises(ValueError, match="KL threshold"):
+        MergeSFLPlanner(config, 42).plan(
+            profiles,
+            telemetry,
+            round_idx=1,
+            model_version="model-0",
+            now=100.0,
+        )
 
 
 def test_planner_rejects_round_without_fresh_quorum():

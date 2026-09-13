@@ -2,7 +2,7 @@
 
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from ...schema import MergeSFLPolicyConfig
 from .mergesfl import (
@@ -99,6 +99,11 @@ class MergeSFLPlanner:
             if profile.client_id in selection.cohort
         ]
         merged = merged_label_distribution(selected_profiles, refined)
+        divergence = kl_divergence(merged, selection.reference_distribution)
+        if divergence > self.config.kl_threshold:
+            raise ValueError(
+                "no batch refinement satisfies the MergeSFL KL threshold"
+            )
         used = bandwidth_usage(
             selection.cohort,
             refined,
@@ -120,14 +125,30 @@ class MergeSFLPlanner:
             bandwidth_used=used,
             reference_distribution=selection.reference_distribution,
             merged_distribution=merged,
-            kl_divergence=kl_divergence(
-                merged, selection.reference_distribution
-            ),
+            kl_divergence=divergence,
             decision_trace={
                 **selection.trace,
+                "refinement_policy": "integer_refinement_v1",
                 "rejected": rejected,
+                "telemetry_inputs": {
+                    str(client_id): {
+                        "state": asdict(observation.state),
+                        "observed_at": observation.observed_at,
+                    }
+                    for client_id, observation in telemetry_by_id.items()
+                },
+                "worker_profiles": {
+                    str(profile.client_id): {
+                        "label_distribution": list(
+                            profile.label_distribution
+                        ),
+                        "participation_count": profile.participation_count,
+                    }
+                    for profile in eligible_profiles
+                },
                 "initial_batch_sizes": selection.batch_sizes,
                 "refined_batch_sizes": refined,
+                "kl_threshold_satisfied": True,
             },
         )
 
