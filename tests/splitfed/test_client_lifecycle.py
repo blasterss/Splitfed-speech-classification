@@ -1,4 +1,5 @@
 import queue
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from src.schema import TrainingMode, WorkloadPolicy
 from src.splitfed.client import _client_worker
 from src.splitfed.client.worker import _round_workload_counts
 from src.splitfed.common.lifecycle import _cancel_training
+from src.splitfed.load_controller import RoundPlan, WorkerState
 
 
 class FakeStopEvent:
@@ -57,6 +59,19 @@ class RecordingClient(NoOpClient):
         self.evaluated_rounds.append(round)
         self.events.append(("evaluate", round))
         return {}
+
+
+class PlannedClient(RecordingClient):
+    configured = []
+
+    def configure_round(self, **kwargs):
+        self.configured.append(kwargs)
+
+    def skip_round(self, round_idx):
+        self.events.append(("skip", round_idx))
+
+    def federative_aggregate(self, round, aggregation_weight=None):
+        self.events.append(("aggregate", round, aggregation_weight))
 
 
 def test_fixed_steps_resource_counts_include_reused_samples():
@@ -270,6 +285,98 @@ def test_final_federated_aggregation_can_be_disabled(monkeypatch):
         ("train", 2),
         ("evaluate", 2),
     ]
+
+
+def _round_plan(*, cohort=(0,), batch_size=4):
+    return RoundPlan(
+        round=1,
+        seed=17,
+        cohort=cohort,
+        batch_size_by_client={client_id: batch_size for client_id in cohort},
+        local_steps=3,
+        required_quorum=len(cohort),
+        deadline_at=time.time() + 10,
+        model_version="initial",
+        estimates={
+            client_id: WorkerState(0.01, 0.001) for client_id in cohort
+        },
+        bandwidth_used=batch_size * len(cohort),
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.5, 0.5),
+        kl_divergence=0.0,
+        decision_trace={},
+    )
+
+
+def test_client_executes_controller_round_plan(monkeypatch):
+    PlannedClient.events = []
+    PlannedClient.configured = []
+    monkeypatch.setattr("src.splitfed.client.Client", PlannedClient)
+    plan_queue = queue.Queue()
+    plan_queue.put(_round_plan())
+    cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=1,
+        eval_every=1,
+        fed_every=1,
+        seed=17,
+        mode=TrainingMode.splitfed,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        object(),
+        object(),
+        FakeStopEvent(),
+        FakeBarrier(),
+        FakeBarrier(),
+        round_plan_queue=plan_queue,
+    )
+
+    assert PlannedClient.configured == [
+        {"round_idx": 1, "batch_size": 4, "local_steps": 3}
+    ]
+    assert PlannedClient.events[:2] == [
+        ("train", 1),
+        ("aggregate", 1, 12),
+    ]
+
+
+def test_client_skips_round_outside_controller_cohort(monkeypatch):
+    PlannedClient.events = []
+    PlannedClient.configured = []
+    monkeypatch.setattr("src.splitfed.client.Client", PlannedClient)
+    plan_queue = queue.Queue()
+    plan_queue.put(_round_plan(cohort=(1,)))
+    cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
+    training_cfg = SimpleNamespace(
+        num_rounds=1,
+        eval_every=1,
+        fed_every=1,
+        seed=17,
+        mode=TrainingMode.splitfed,
+        barrier_timeout_sec=0.25,
+    )
+
+    _client_worker(
+        cfg,
+        training_cfg,
+        object(),
+        object(),
+        object(),
+        object(),
+        FakeStopEvent(),
+        FakeBarrier(),
+        FakeBarrier(),
+        round_plan_queue=plan_queue,
+    )
+
+    assert PlannedClient.configured == []
+    assert PlannedClient.events == [("skip", 1), ("evaluate", 1)]
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,8 @@
 """Client child-process lifecycle and round orchestration."""
 
+import queue
+import time
+
 from ...logger import logger
 from ...schema import (
     ClientConfig,
@@ -19,6 +22,7 @@ from ...utils.runtime.resource_metrics import (
     publish_resource_metric,
 )
 from ...utils.training import set_seed
+from ..load_controller import RoundPlan, WorkerState, WorkerTelemetry
 
 logger = logger.getChild("Client")
 
@@ -63,6 +67,8 @@ def _client_worker(
     failure_queue=None,
     resource_metrics_queue=None,
     split_server_scope: ServerModelScope | None = None,
+    round_plan_queue=None,
+    telemetry_queue=None,
 ) -> None:
     """Run a persistent client process across configured training rounds."""
     ignore_parent_interrupts()
@@ -115,12 +121,27 @@ def _client_worker(
 
             last_round = round_idx
             current_round = round_idx
+            plan = _receive_round_plan(
+                round_plan_queue,
+                round_idx=round_idx,
+                timeout=training_cfg.barrier_timeout_sec,
+            )
+            selected = plan is None or cfg.client_id in plan.cohort
+            if plan is not None and selected:
+                client.configure_round(
+                    round_idx=round_idx,
+                    batch_size=plan.batch_size_by_client[cfg.client_id],
+                    local_steps=plan.local_steps,
+                )
             tracker = None
             if resource_metrics_queue is not None:
                 tracker = ResourceTracker(
                     "client", client.device, client_id=client.client_id
                 )
-            client.train_one_round(round_idx)
+            if selected:
+                client.train_one_round(round_idx)
+            else:
+                client.skip_round(round_idx)
             if tracker is not None:
                 batches, samples = _round_workload_counts(
                     loader_batches=len(client.train_loader),
@@ -154,8 +175,25 @@ def _client_worker(
                 training_cfg.eval_every,
             )
 
-            if should_aggregate:
-                client.federative_aggregate(round_idx)
+            if should_aggregate and selected:
+                if plan is None:
+                    client.federative_aggregate(round_idx)
+                else:
+                    aggregation_weight = (
+                        plan.batch_size_by_client[cfg.client_id]
+                        * plan.local_steps
+                    )
+                    client.federative_aggregate(
+                        round_idx, aggregation_weight=aggregation_weight
+                    )
+            if plan is not None and telemetry_queue is not None and selected:
+                samples = (
+                    plan.batch_size_by_client[cfg.client_id]
+                    * plan.local_steps
+                )
+                telemetry_queue.put(
+                    _round_telemetry(client, plan, samples), timeout=5
+                )
             if should_evaluate:
                 if tracker is not None:
                     tracker.reset()
@@ -209,6 +247,38 @@ def _client_worker(
 
 def _should_evaluate(round_idx: int, num_rounds: int, eval_every: int) -> bool:
     return round_idx % eval_every == 0 or round_idx == num_rounds
+
+
+def _receive_round_plan(plan_queue, *, round_idx: int, timeout: float):
+    if plan_queue is None:
+        return None
+    try:
+        plan = plan_queue.get(timeout=timeout)
+    except queue.Empty as exc:
+        raise TimeoutError(f"No MergeSFL plan for round {round_idx}") from exc
+    if not isinstance(plan, RoundPlan) or plan.round != round_idx:
+        raise ValueError(f"Invalid MergeSFL plan for round {round_idx}")
+    if plan.deadline_at <= time.time():
+        raise TimeoutError(f"MergeSFL plan for round {round_idx} expired")
+    return plan
+
+
+def _round_telemetry(client, plan: RoundPlan, samples: int) -> WorkerTelemetry:
+    if samples <= 0:
+        raise ValueError("telemetry requires a positive sample count")
+    state = WorkerState(
+        compute_seconds_per_sample=max(
+            client.last_compute_seconds / samples, 1e-12
+        ),
+        transfer_seconds_per_sample=max(
+            client.last_transfer_seconds / samples, 1e-12
+        ),
+    )
+    return WorkerTelemetry(
+        client_id=client.client_id,
+        state=state,
+        observed_at=time.time(),
+    )
 
 
 def _evaluate_at_barrier(

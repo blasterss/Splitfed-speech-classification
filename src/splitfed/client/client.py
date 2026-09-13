@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import torch
@@ -86,6 +87,7 @@ class Client:
             generator=g,
             drop_last=cfg.runtime.drop_last,
         )
+        self._planned_local_steps: int | None = None
 
         self.test_loader = DataLoader(
             self.dataset.test_dataset,
@@ -121,6 +123,8 @@ class Client:
             ).to(self.device)
 
         self.optimizer = self._build_optimizer()
+        self.last_compute_seconds = 0.0
+        self.last_transfer_seconds = 0.0
 
         # ==== COMMUNICATION CHANNELS ====
         self.to_server = split_uplink_channel
@@ -131,6 +135,36 @@ class Client:
     def _build_optimizer(self) -> torch.optim.Optimizer:
         """Build optimizer for client-side model."""
         return build_optimizer(self.model.parameters(), self.cfg.model)
+
+    def configure_round(
+        self, *, round_idx: int, batch_size: int, local_steps: int
+    ) -> None:
+        """Apply a controller-issued workload to the next local round."""
+        if round_idx <= 0 or batch_size <= 0 or local_steps <= 0:
+            raise ValueError(
+                "planned round, batch size and steps must be positive"
+            )
+        generator = torch.Generator()
+        generator.manual_seed(self.cfg.runtime.seed + round_idx)
+        self.train_loader = DataLoader(
+            self.dataset.train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=self.device.type == "cuda",
+            generator=generator,
+            drop_last=self.cfg.runtime.drop_last,
+        )
+        if len(self.train_loader) == 0:
+            raise RuntimeError(
+                f"Client {self.client_id}: planned batch size {batch_size} "
+                "produces an empty train loader"
+            )
+        self._planned_local_steps = local_steps
+
+    def skip_round(self, round_idx: int) -> None:
+        """Tell the shared split server this client is not in the cohort."""
+        if self.mode is not TrainingMode.federated:
+            self._send_round_end(round_idx, last_step=0)
 
     def train_one_round(self, round: int) -> None:
         """
@@ -144,6 +178,8 @@ class Client:
         """
 
         self.model.train()
+        self.last_compute_seconds = 0.0
+        self.last_transfer_seconds = 0.0
 
         if self.mode is TrainingMode.federated:
             self._train_federated_round()
@@ -155,7 +191,9 @@ class Client:
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
 
+            compute_started = time.perf_counter()
             activations = self.model(x)
+            self.last_compute_seconds += time.perf_counter() - compute_started
 
             msg = Message(
                 type="train_step",
@@ -175,9 +213,12 @@ class Client:
                 step,
             )
 
+            transfer_started = time.perf_counter()
             self.to_server.send(msg)
-
             response = self.from_server.recv()
+            self.last_transfer_seconds += (
+                time.perf_counter() - transfer_started
+            )
 
             grad = _extract_payload(
                 response,
@@ -195,17 +236,22 @@ class Client:
                     f"response for round={round} step={step}"
                 )
 
+            compute_started = time.perf_counter()
             activations.backward(grad.to(self.device))
             self.optimizer.step()
             self.optimizer.zero_grad()
+            self.last_compute_seconds += time.perf_counter() - compute_started
 
             if self._round_is_complete(step):
                 break
 
+        self._send_round_end(round, last_step)
+
+    def _send_round_end(self, round_idx: int, last_step: int) -> None:
         round_end = Message(
             type="round_end",
             sender=self.client_id,
-            round=round,
+            round=round_idx,
             step=last_step + 1,
             payload={"dataset_size": len(self.dataset.train_dataset)},
         )
@@ -217,13 +263,14 @@ class Client:
             _validate_round_ack(
                 self.from_server.recv(),
                 client_id=self.client_id,
-                round_idx=round,
+                round_idx=round_idx,
                 step=round_end.step,
                 request_id=round_end.request_id,
             )
 
     def _train_federated_round(self) -> None:
         for step, (x, y) in enumerate(self._round_batches(), start=1):
+            compute_started = time.perf_counter()
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True).float().reshape(-1, 1)
             logits = self.model(x)
@@ -236,6 +283,7 @@ class Client:
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
+            self.last_compute_seconds += time.perf_counter() - compute_started
             if self._round_is_complete(step):
                 break
 
@@ -246,6 +294,16 @@ class Client:
             "workload_policy",
             WorkloadPolicy.max_steps_v1,
         )
+        planned_local_steps = getattr(self, "_planned_local_steps", None)
+        if planned_local_steps is not None:
+            loader_iterator = iter(self.train_loader)
+            for _ in range(planned_local_steps):
+                try:
+                    yield next(loader_iterator)
+                except StopIteration:
+                    loader_iterator = iter(self.train_loader)
+                    yield next(loader_iterator)
+            return
         if policy is not WorkloadPolicy.fixed_steps_v1:
             yield from self.train_loader
             return
@@ -270,13 +328,19 @@ class Client:
             "workload_policy",
             WorkloadPolicy.max_steps_v1,
         )
+        planned_local_steps = getattr(self, "_planned_local_steps", None)
+        step_limit = (
+            planned_local_steps
+            if planned_local_steps is not None
+            else self.cfg.runtime.local_steps
+        )
         return (
             policy
             in (
                 WorkloadPolicy.max_steps_v1,
                 WorkloadPolicy.fixed_steps_v1,
             )
-            and step >= self.cfg.runtime.local_steps
+            and step >= step_limit
         )
 
     def federative_aggregate(
@@ -305,9 +369,12 @@ class Client:
             "Client %s → fed_server: client_update r=%d", self.client_id, round
         )
 
+        transfer_started = time.perf_counter()
         self.agg_to_server.send(msg)
-
         response = self.agg_from_server.recv()
+        self.last_transfer_seconds = getattr(
+            self, "last_transfer_seconds", 0.0
+        ) + (time.perf_counter() - transfer_started)
         state_dict = _validate_global_update(
             response,
             self.model.state_dict(),
