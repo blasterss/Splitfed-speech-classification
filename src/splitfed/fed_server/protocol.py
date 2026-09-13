@@ -32,7 +32,8 @@ def validate_client_update(
     expected_client_id,
     expected_round: int | None,
     expected_schema: dict | None,
-) -> tuple[dict, int]:
+    require_aggregation_weight: bool = False,
+) -> tuple[dict, int, int | None]:
     message.validate_for_receive()
     if message.sender != expected_client_id:
         raise ValueError("Invalid client update sender")
@@ -46,10 +47,19 @@ def validate_client_update(
         raise ValueError("Invalid client update payload")
     state_dict = message.payload.get("state_dict")
     dataset_size = message.payload.get("dataset_size")
+    aggregation_weight = message.payload.get("aggregation_weight")
     if not isinstance(dataset_size, int) or isinstance(dataset_size, bool):
         raise ValueError("Invalid client update dataset_size")
     if dataset_size <= 0:
         raise ValueError("Invalid client update dataset_size")
+    if aggregation_weight is not None and (
+        not isinstance(aggregation_weight, int)
+        or isinstance(aggregation_weight, bool)
+        or aggregation_weight <= 0
+    ):
+        raise ValueError("Invalid client update aggregation_weight")
+    if require_aggregation_weight and aggregation_weight is None:
+        raise ValueError("Missing client update aggregation_weight")
     if not isinstance(state_dict, dict) or not state_dict:
         raise ValueError("Invalid client update state_dict")
     if not all(
@@ -65,4 +75,4 @@ def validate_client_update(
                 raise ValueError(f"Invalid client update shape for {key}")
             if value.dtype != dtype:
                 raise ValueError(f"Invalid client update dtype for {key}")
-    return state_dict, dataset_size
+    return state_dict, dataset_size, aggregation_weight

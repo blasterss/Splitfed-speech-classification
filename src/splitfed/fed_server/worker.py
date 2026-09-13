@@ -6,7 +6,7 @@ import time
 import torch.multiprocessing as mp
 
 from ...logger import logger
-from ...schema import FedServerConfig
+from ...schema import AggregationStrategy, FedServerConfig
 from ...transport.base import Channel, Message
 from ...transport.replay import ReplayGuard
 from ...utils.persistence import serialize_state_dict
@@ -44,6 +44,7 @@ def _fed_server_worker(
     latest_round = 1
     updates: dict[str, dict] = {}
     sizes: dict[str, int] = {}
+    aggregation_weights: dict[str, int] = {}
     request_ids: dict[str, str] = {}
     active_round: int | None = None
     last_completed_round = 0
@@ -76,6 +77,10 @@ def _fed_server_worker(
                         expected_client_id=client_id,
                         expected_round=msg.round,
                         expected_schema=None,
+                        require_aggregation_weight=(
+                            config.strategy
+                            is AggregationStrategy.mergesfl_batch_weighted_v1
+                        ),
                     )
                     if (
                         msg.round == last_completed_round
@@ -110,16 +115,24 @@ def _fed_server_worker(
                     active_round = msg.round
                     round_started_at = time.monotonic()
 
-                state_dict, dataset_size = validate_client_update(
+                state_dict, dataset_size, aggregation_weight = (
+                    validate_client_update(
                     msg,
                     expected_client_id=client_id,
                     expected_round=active_round,
                     expected_schema=expected_schema,
+                    require_aggregation_weight=(
+                        config.strategy
+                        is AggregationStrategy.mergesfl_batch_weighted_v1
+                    ),
+                )
                 )
                 if expected_schema is None:
                     expected_schema = state_schema(state_dict)
                 updates[client_id] = state_dict
                 sizes[client_id] = dataset_size
+                if aggregation_weight is not None:
+                    aggregation_weights[client_id] = aggregation_weight
                 request_ids[client_id] = msg.request_id
                 latest_round = active_round
                 logger.info(
@@ -151,7 +164,13 @@ def _fed_server_worker(
                 try:
                     latest_params = aggregate_states(
                         [updates[cid] for cid in participant_ids],
-                        [sizes[cid] for cid in participant_ids],
+                        [
+                            aggregation_weights[cid]
+                            if config.strategy
+                            is AggregationStrategy.mergesfl_batch_weighted_v1
+                            else sizes[cid]
+                            for cid in participant_ids
+                        ],
                         config.strategy,
                         device=config.device,
                     )
@@ -182,6 +201,7 @@ def _fed_server_worker(
                     )
                 updates.clear()
                 sizes.clear()
+                aggregation_weights.clear()
                 request_ids.clear()
                 last_completed_round = active_round
                 active_round = None

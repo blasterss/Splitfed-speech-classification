@@ -279,18 +279,26 @@ class Client:
             and step >= self.cfg.runtime.local_steps
         )
 
-    def federative_aggregate(self, round: int) -> None:
+    def federative_aggregate(
+        self, round: int, aggregation_weight: int | None = None
+    ) -> None:
         """Exchange local parameters for validated global weights."""
+
+        payload = {
+            "state_dict": _cpu_state_dict_snapshot(self.model),
+            "dataset_size": len(self.dataset.train_dataset),
+        }
+        if aggregation_weight is not None:
+            if aggregation_weight <= 0:
+                raise ValueError("aggregation_weight must be positive")
+            payload["aggregation_weight"] = aggregation_weight
 
         msg = Message(
             type="client_update",
             sender=self.client_id,
             round=round,
             step=1,
-            payload={
-                "state_dict": _cpu_state_dict_snapshot(self.model),
-                "dataset_size": len(self.dataset.train_dataset),
-            },
+            payload=payload,
         )
 
         logger.info(

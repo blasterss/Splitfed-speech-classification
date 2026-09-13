@@ -36,7 +36,7 @@ def _update(**overrides):
 def test_client_update_accepts_matching_round_and_schema():
     message = _update()
 
-    state, size = validate_client_update(
+    state, size, aggregation_weight = validate_client_update(
         message,
         expected_client_id="client-0",
         expected_round=2,
@@ -45,6 +45,35 @@ def test_client_update_accepts_matching_round_and_schema():
 
     assert state is message.payload["state_dict"]
     assert size == 3
+    assert aggregation_weight is None
+
+
+def test_mergesfl_client_update_requires_separate_aggregation_weight():
+    with pytest.raises(ValueError, match="Missing.*aggregation_weight"):
+        validate_client_update(
+            _update(),
+            expected_client_id="client-0",
+            expected_round=2,
+            expected_schema=None,
+            require_aggregation_weight=True,
+        )
+
+    message = _update(
+        payload={
+            "state_dict": {"weight": torch.ones(2)},
+            "dataset_size": 99,
+            "aggregation_weight": 8,
+        }
+    )
+    _, dataset_size, aggregation_weight = validate_client_update(
+        message,
+        expected_client_id="client-0",
+        expected_round=2,
+        expected_schema=None,
+        require_aggregation_weight=True,
+    )
+    assert dataset_size == 99
+    assert aggregation_weight == 8
 
 
 def test_client_update_rejects_expired_deadline():
@@ -156,6 +185,13 @@ class FakeDownlink:
             self.stop_event.stopped = True
 
 
+class StopAfterTwoDownlink(FakeDownlink):
+    def send(self, message):
+        self.messages.append(message)
+        if len(self.messages) == 2:
+            self.stop_event.stopped = True
+
+
 class FakeResultQueue:
     def __init__(self):
         self.value = None
@@ -224,6 +260,51 @@ def test_worker_aggregates_partial_quorum_and_catches_up_late_client():
     )
     saved_state = deserialize_state_dict(result_queue.value)
     assert torch.equal(saved_state["weight"], torch.tensor([7.5]))
+
+
+def test_worker_uses_mergesfl_weight_instead_of_dataset_size():
+    stop_event = FakeStopEvent()
+    broadcasts = []
+    updates = {
+        "client-0": _update(
+            sender="client-0",
+            payload={
+                "state_dict": {"weight": torch.tensor([0.0])},
+                "dataset_size": 100,
+                "aggregation_weight": 2,
+            },
+        ),
+        "client-1": _update(
+            sender="client-1",
+            payload={
+                "state_dict": {"weight": torch.tensor([10.0])},
+                "dataset_size": 1,
+                "aggregation_weight": 8,
+            },
+        ),
+    }
+    channels = {
+        client_id: {
+            "uplink": FakeUplink(message),
+            "downlink": StopAfterTwoDownlink(broadcasts, stop_event),
+        }
+        for client_id, message in updates.items()
+    }
+    config = SimpleNamespace(
+        seed=42,
+        device="cpu",
+        min_clients=2,
+        quorum_timeout_sec=1,
+        strategy=AggregationStrategy.mergesfl_batch_weighted_v1,
+    )
+    result_queue = FakeResultQueue()
+
+    _fed_server_worker(config, channels, 2, stop_event, result_queue)
+
+    assert all(
+        torch.equal(message.payload["weight"], torch.tensor([8.0]))
+        for message in broadcasts
+    )
 
 
 def test_worker_rejects_replayed_federated_request():
