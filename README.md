@@ -77,8 +77,9 @@ The controller creates only the processes and logical channels owned by the
 selected mode. It supervises child/server exit codes and coordinates bounded
 cancellation and shutdown.
 
-All components currently run on one Unix host. Queue transport simulates
-distributed participants but does not provide network isolation.
+The supported controller topology currently runs on one Unix host. Queue and
+insecure gRPC transports connect the local processes, but neither configuration
+provides participant isolation, authentication or encryption.
 
 ## Repository layout
 
@@ -97,16 +98,16 @@ src/
     analytics/            exploratory feature aggregation
   model/                  client-side and server-side neural networks
   splitfed/               clients, servers and training controller
-  transport/              message and local queue abstractions
+  transport/              message, protobuf, queue and gRPC transports
   main.py                 command-line entry point
   schema.py               Pydantic configuration models
 ```
 
 ## Environment
 
-The development target is Unix with Python 3.10-3.12. Queue transport runs
-locally; CUDA is optional and should be enabled only when an NVIDIA runtime is
-available.
+The development target is Unix with Python 3.10-3.12. Queue and insecure gRPC
+transports run locally; CUDA is optional and should be enabled only when a
+compatible NVIDIA runtime is available.
 
 ### Python dependencies
 
@@ -255,7 +256,7 @@ after stopping workers and persisting available artifacts, including setup,
 training and artifact failures. Forced process shutdown performs a final
 bounded join after kill and reports a process that still cannot be reaped.
 Spawned training workers ignore terminal SIGINT so the controller alone turns
-it into the shared stop event and barrier abort. Blocking queue receives poll
+it into the shared stop event and barrier abort. Blocking channel receives poll
 that event and exit without waiting for the full channel timeout.
 
 Centralized dataset views must use identical model, batch size, device, noise,
@@ -311,10 +312,10 @@ uv run python -m src.experiments.mode_matrix \
 
 Use repeatable `--mode` values to select a subset. The runner writes elapsed
 wall time and pass/fail status to `mode_matrix_summary.yaml`; it is a smoke and
-diagnostic runner, not a benchmark harness. In SplitFed, evaluation at an
-aggregation round occurs before FedAvg so that the client encoder and shared
-server model are a trained, compatible pair. The global client encoder is then
-installed for the next round.
+diagnostic runner, not a benchmark harness. In SplitFed, an aggregation round
+installs the correlated client-side FedAvg result before synchronized
+evaluation. Personalized SplitFed also completes server-side aggregation and
+its correlated ACK before clients enter the evaluation barrier.
 
 Run the E1 local-only cross-corpus baseline with:
 
@@ -340,6 +341,20 @@ Both configs evaluate the validated final checkpoint separately on each
 actor-disjoint test corpus and write rate metrics plus macro/worst-corpus
 summaries under `<experiment>/metrics/cross_corpus/`. The federated config uses
 `full_epoch_v1`, sample-weighted aggregation and a final global aggregation.
+
+Run the current E1.3 SplitFed experiment variants with:
+
+```bash
+uv run secureasr --config-file configs/experiments/config.e1.3_our.yaml
+uv run secureasr --config-file configs/experiments/config.e1.3_sflv1.yaml
+```
+
+The first uses one shared server model with synchronized concatenated
+activations. The second is the repository's personalized SplitFed variant: it
+keeps one server model and optimizer per client between synchronizations and
+aggregates both model partitions at `fed_every`. It should not be treated as a
+canonical SFLv1 reproduction without the matched protocol checks described in
+`docs/EXPERIMENT_PLAN.md`.
 
 Expected generated artifacts include:
 
@@ -391,16 +406,18 @@ mkdir -p logs
 ## Verification status
 
 The repository has focused tests for schema/configuration, dataset parsers,
-padding, models/FedAvg, queue transport and controller lifecycle. Run them with:
+padding, models/FedAvg, queue and gRPC transports, and controller lifecycle.
+Run them with:
 
 ```bash
 uv run pytest
 ```
 
-The suite includes a synthetic CPU `spawn` smoke cycle with two unequal clients,
-real split/federated workers, training, FedAvg and evaluation. It does not
-replace a reduced real-data or CUDA smoke test. Use a reduced dataset and one
-round before starting a long experiment.
+The suite includes synthetic CPU `spawn` smoke cycles with two unequal clients,
+real split/federated workers, training, FedAvg and evaluation. The gRPC variant
+uses all four logical channel roles and verifies that child processes terminate.
+These tests do not replace a reduced real-data or CUDA smoke test. Use a reduced
+dataset and one round before starting a long experiment.
 
 ## Dataset and evaluation assumptions
 
@@ -456,10 +473,10 @@ tests.
 - The controller has a polling supervision loop and propagates non-zero child
   exit codes. Client initialization and barrier failures now set the shared
   stop event, abort peer barriers and publish a bounded first-failure record,
-  but queue timeouts and server failures are not yet one complete cancellation
+  but channel timeouts and server failures are not yet one complete cancellation
   protocol. SplitServer and FedServer publish their original failure context
   before cancellation; recovery is not yet implemented.
-- Queue timeouts can still leave peers waiting in some failure paths.
+- Channel timeouts can still leave peers waiting in some failure paths.
 
 ### Numerical correctness
 
@@ -536,8 +553,8 @@ partial quorum, configurable accumulation, data-split controls, artifact
 metadata and mode baselines are intentionally omitted here. The remaining
 work, in delivery order, is:
 
-1. Add the typed policy registry, deterministic heterogeneous simulator and
-   remaining named research profiles.
+1. Extend the typed policy registry with a deterministic heterogeneous
+   simulator and the remaining named research profiles.
 2. Unify queue, quorum, barrier and shutdown deadlines under one typed
    cancellation protocol and persist explicit failed run status.
 3. Implement `ClientLoadController` telemetry, leases, fairness debt,
@@ -546,7 +563,7 @@ work, in delivery order, is:
    class-balance sampling policy.
 5. Extend checkpoints with optimizer/RNG/round/config/manifest state and prove
    resume equivalence.
-6. Persist process resource/transport telemetry and aggregate per-client,
+6. Extend the persisted process/transport telemetry and aggregate per-client,
    per-dataset and worst-client metrics.
 7. Add multi-seed and leave-one-dataset-out experiments plus CI/static gates.
 8. Only after P0 stability, implement and test privacy accounting/leakage
