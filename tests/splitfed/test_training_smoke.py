@@ -11,6 +11,7 @@ from src.model.speech_model import SpeechRecognitionModel
 from src.schema import FedServerConfig, SplitServerConfig
 from src.splitfed.client import _extract_payload, _validate_global_update
 from src.splitfed.fed_server import _fed_server_worker
+from src.splitfed.load_controller import RoundPlan, WorkerState
 from src.splitfed.split_server import (
     _split_server_worker_concat,
     _split_server_worker_personalized,
@@ -202,6 +203,94 @@ def _synthetic_federated_client_worker(
     result_queue.put((client_id, tuple(eval_logits.shape)))
 
 
+def _planned_mergesfl_client_worker(
+    client_id,
+    plan,
+    split_uplink,
+    split_downlink,
+    fed_uplink,
+    fed_downlink,
+    result_queue,
+):
+    torch.set_num_threads(1)
+    torch.manual_seed(500 + int(client_id[-1]))
+    model = ClientSideModel(input_channels=3, noise=False)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    selected = client_id in plan.cohort
+    if selected:
+        batch_size = plan.batch_size_by_client[client_id]
+        inputs = torch.randn(batch_size, 3, 64)
+        labels = torch.arange(batch_size).remainder(2).float()
+        activations = model(inputs)
+        split_request = Message(
+            type="train_step",
+            sender=client_id,
+            round=plan.round,
+            step=1,
+            payload={
+                "activations": activations.detach(),
+                "labels": labels,
+            },
+        )
+        split_uplink.send(split_request)
+        gradients = _extract_payload(
+            split_downlink.recv(),
+            "gradients",
+            "gradients",
+            client_id,
+            plan.round,
+            1,
+            split_request.request_id,
+        )
+        activations.backward(gradients)
+        optimizer.step()
+        split_uplink.send(
+            Message(
+                type="round_end",
+                sender=client_id,
+                round=plan.round,
+                step=2,
+            )
+        )
+        fed_request = Message(
+            type="client_update",
+            sender=client_id,
+            round=plan.round,
+            step=1,
+            payload={
+                "state_dict": model.state_dict(),
+                "dataset_size": 100,
+                "aggregation_weight": batch_size,
+            },
+        )
+    else:
+        split_uplink.send(
+            Message(
+                type="round_end",
+                sender=client_id,
+                round=plan.round,
+                step=1,
+            )
+        )
+        fed_request = Message(
+            type="model_sync",
+            sender=client_id,
+            round=plan.round,
+            step=1,
+        )
+    fed_uplink.send(fed_request)
+    global_update = fed_downlink.recv()
+    model.load_state_dict(
+        _validate_global_update(
+            global_update,
+            model.state_dict(),
+            plan.round,
+            fed_request.request_id,
+        )
+    )
+    result_queue.put((client_id, selected))
+
+
 def _synthetic_personalized_client_worker(
     client_id,
     local_steps,
@@ -363,6 +452,162 @@ def test_spawned_splitfed_training_cycle_with_unequal_client_steps(
         assert all(process.exitcode == 0 for process in processes[2:])
         results = {client_result_queue.get(timeout=2) for _ in client_ids}
         assert results == {("client-0", 1), ("client-1", 2)}
+    finally:
+        stop_event.set()
+        split_payload = split_result_queue.get(timeout=10)
+        fed_payload = fed_result_queue.get(timeout=10)
+        for process in processes:
+            process.join(timeout=10)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+    assert all(not process.is_alive() for process in processes)
+    assert all(process.exitcode == 0 for process in processes)
+    assert deserialize_state_dict(split_payload)
+    assert deserialize_state_dict(fed_payload)
+
+
+def test_spawned_mergesfl_algorithm1_plan_completes_without_orphans():
+    context = mp.get_context("spawn")
+    stop_event = context.Event()
+    split_result_queue = context.Queue(maxsize=1)
+    fed_result_queue = context.Queue(maxsize=1)
+    client_result_queue = context.Queue(maxsize=3)
+    split_plan_queue = context.Queue(maxsize=1)
+    fed_plan_queue = context.Queue(maxsize=1)
+    client_ids = ("client-0", "client-1", "client-2")
+    plan = RoundPlan(
+        round=1,
+        seed=42,
+        cohort=("client-0", "client-1"),
+        batch_size_by_client={"client-0": 1, "client-1": 2},
+        local_steps=1,
+        required_quorum=2,
+        deadline_at=time.time() + 30,
+        model_version="initial",
+        estimates={
+            client_id: WorkerState(0.01, 0.001)
+            for client_id in ("client-0", "client-1")
+        },
+        bandwidth_used=3,
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.5, 0.5),
+        kl_divergence=0.0,
+        decision_trace={},
+    )
+    channels = {
+        client_id: {
+            name: SpawnQueueChannel(context)
+            for name in (
+                "split_uplink",
+                "split_downlink",
+                "federated_uplink",
+                "federated_downlink",
+            )
+        }
+        for client_id in client_ids
+    }
+    split_channels = {
+        client_id: {
+            "uplink": channels[client_id]["split_uplink"],
+            "downlink": channels[client_id]["split_downlink"],
+        }
+        for client_id in client_ids
+    }
+    fed_channels = {
+        client_id: {
+            "uplink": channels[client_id]["federated_uplink"],
+            "downlink": channels[client_id]["federated_downlink"],
+        }
+        for client_id in client_ids
+    }
+    split_config = SplitServerConfig(
+        model={
+            "pos_weight": 1,
+            "optimizer": "sgd",
+            "lr": 0.01,
+            "device": "cpu",
+            "gradient_accumulation_steps": 1,
+            "batch_timeout_sec": 10,
+        },
+        seed=42,
+        model_scope="shared",
+        training_strategy="mergesfl_algorithm1_v1",
+        split_uplink_channel="split_uplink",
+        split_downlink_channel="split_downlink",
+    )
+    fed_config = FedServerConfig(
+        strategy="mergesfl_batch_weighted_v1",
+        seed=42,
+        device="cpu",
+        aggregation_freq=1,
+        min_clients=2,
+        quorum_timeout_sec=10,
+        federated_uplink_channel="federated_uplink",
+        federated_downlink_channel="federated_downlink",
+    )
+    split_plan_queue.put(plan)
+    fed_plan_queue.put(plan)
+    processes = [
+        context.Process(
+            target=_split_server_worker_concat,
+            args=(
+                split_config,
+                split_channels,
+                stop_event,
+                split_result_queue,
+                None,
+                None,
+                split_plan_queue,
+            ),
+            name="MergeSFLSplitServer",
+        ),
+        context.Process(
+            target=_fed_server_worker,
+            args=(
+                fed_config,
+                fed_channels,
+                3,
+                stop_event,
+                fed_result_queue,
+                None,
+                None,
+                fed_plan_queue,
+            ),
+            name="MergeSFLFedServer",
+        ),
+    ]
+    for client_id in client_ids:
+        processes.append(
+            context.Process(
+                target=_planned_mergesfl_client_worker,
+                args=(
+                    client_id,
+                    plan,
+                    channels[client_id]["split_uplink"],
+                    channels[client_id]["split_downlink"],
+                    channels[client_id]["federated_uplink"],
+                    channels[client_id]["federated_downlink"],
+                    client_result_queue,
+                ),
+                name=f"MergeSFL-{client_id}",
+            )
+        )
+
+    try:
+        for process in processes:
+            process.start()
+        for process in processes[2:]:
+            process.join(timeout=30)
+        assert all(not process.is_alive() for process in processes[2:])
+        assert all(process.exitcode == 0 for process in processes[2:])
+        results = {client_result_queue.get(timeout=2) for _ in client_ids}
+        assert results == {
+            ("client-0", True),
+            ("client-1", True),
+            ("client-2", False),
+        }
     finally:
         stop_event.set()
         split_payload = split_result_queue.get(timeout=10)
