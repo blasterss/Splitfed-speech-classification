@@ -199,6 +199,19 @@ def test_split_round_end_distinguishes_selected_and_skipped_clients():
     )
 
 
+def test_split_message_rejects_expired_round_plan():
+    plan = _controller_plan()
+    expired = RoundPlan(
+        **{
+            **plan.__dict__,
+            "deadline_at": time.time() - 1,
+        }
+    )
+
+    with pytest.raises(TimeoutError, match="deadline"):
+        validate_message_against_plan(_split_message(), "client-0", expired)
+
+
 def test_duplicate_split_step_is_rejected_as_replay():
     pending = {}
     message = _split_message()

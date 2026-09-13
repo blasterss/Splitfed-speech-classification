@@ -79,6 +79,10 @@ def validate_message_against_plan(
     message: Message, client_id, plan: RoundPlan
 ) -> None:
     """Enforce the controller-issued split workload for one client message."""
+    if not isinstance(plan, RoundPlan):
+        raise ValueError("invalid split-server RoundPlan")
+    if plan.deadline_at <= time.time():
+        raise TimeoutError("split-server RoundPlan deadline expired")
     if message.round != plan.round:
         raise ValueError("split message round differs from RoundPlan")
     selected = client_id in plan.cohort

@@ -52,6 +52,22 @@ def _round_workload_counts(
     return batches, min(dataset_samples, batches * batch_size)
 
 
+def _effective_round_workload(client, cfg, plan, selected) -> tuple[int, int]:
+    """Return effective batch/sample counts for static or planned work."""
+    if plan is not None:
+        if not selected:
+            return 0, 0
+        batches = plan.local_steps
+        return batches, plan.batch_size_by_client[cfg.client_id] * batches
+    return _round_workload_counts(
+        loader_batches=len(client.train_loader),
+        dataset_samples=len(client.dataset.train_dataset),
+        batch_size=cfg.runtime.batch_size,
+        local_steps=cfg.runtime.local_steps,
+        policy=cfg.runtime.workload_policy,
+    )
+
+
 def _client_worker(
     cfg: ClientConfig,
     training_cfg: TrainingConfig,
@@ -143,12 +159,8 @@ def _client_worker(
             else:
                 client.skip_round(round_idx)
             if tracker is not None:
-                batches, samples = _round_workload_counts(
-                    loader_batches=len(client.train_loader),
-                    dataset_samples=len(client.dataset.train_dataset),
-                    batch_size=cfg.runtime.batch_size,
-                    local_steps=cfg.runtime.local_steps,
-                    policy=cfg.runtime.workload_policy,
+                batches, samples = _effective_round_workload(
+                    client, cfg, plan, selected
                 )
                 publish_resource_metric(
                     resource_metrics_queue,

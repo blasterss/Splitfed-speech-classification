@@ -7,7 +7,10 @@ import torch.multiprocessing as mp
 
 from src.schema import TrainingMode, WorkloadPolicy
 from src.splitfed.client import _client_worker
-from src.splitfed.client.worker import _round_workload_counts
+from src.splitfed.client.worker import (
+    _effective_round_workload,
+    _round_workload_counts,
+)
 from src.splitfed.common.lifecycle import _cancel_training
 from src.splitfed.load_controller import RoundPlan, WorkerState
 
@@ -309,6 +312,14 @@ def _round_plan(*, cohort=(0,), batch_size=4):
         kl_divergence=0.0,
         decision_trace={},
     )
+
+
+def test_planned_resource_counts_use_effective_workload():
+    cfg = SimpleNamespace(client_id=0)
+    plan = _round_plan(batch_size=4)
+
+    assert _effective_round_workload(None, cfg, plan, True) == (3, 12)
+    assert _effective_round_workload(None, cfg, plan, False) == (0, 0)
 
 
 def test_client_executes_controller_round_plan(monkeypatch):
