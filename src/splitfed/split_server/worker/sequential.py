@@ -5,7 +5,6 @@ import queue
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
-import torch.optim as optim
 
 from ....logger import logger
 from ....model.server_side_model import ServerSideModel
@@ -22,7 +21,7 @@ from ....utils.runtime.resource_metrics import (
     ResourceTracker,
     publish_resource_metric,
 )
-from ....utils.training import _RoundStats, set_seed
+from ....utils.training import _RoundStats, build_optimizer, set_seed
 from ..operations import _handle_eval_single, _handle_train_concat
 from ..protocol import _validate_message
 
@@ -46,7 +45,7 @@ def _split_server_worker_sequential(
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor(config.model.pos_weight, device=device)
     ).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config.model.learning_rate)
+    optimizer = build_optimizer(model.parameters(), config.model)
     client_ids = list(client_channels)
     active_index = 0
     current_round = 1

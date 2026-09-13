@@ -27,6 +27,7 @@ class AggregationStrategy(str, Enum):
 
 class OptimizerType(str, Enum):
     adam = "adam"
+    sgd = "sgd"
 
 
 class NoiseType(str, Enum):

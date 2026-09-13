@@ -7,7 +7,6 @@ from collections import defaultdict
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
-import torch.optim as optim
 
 from ....logger import logger
 from ....model.server_side_model import ServerSideModel
@@ -24,7 +23,7 @@ from ....utils.runtime.resource_metrics import (
     ResourceTracker,
     publish_resource_metric,
 )
-from ....utils.training import _RoundStats, set_seed
+from ....utils.training import _RoundStats, build_optimizer, set_seed
 from ..operations import (
     _handle_eval_single,
     _handle_train_concat,
@@ -56,7 +55,7 @@ def _split_server_worker_concat(
     model = ServerSideModel(model_type="cnn_birnn").to(device)
     pos_weight = torch.tensor(config.model.pos_weight, device=device)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config.model.learning_rate)
+    optimizer = build_optimizer(model.parameters(), config.model)
 
     client_ids = list(client_channels.keys())
     pending_batches: dict[tuple, dict[str, Message]] = defaultdict(dict)

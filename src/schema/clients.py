@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .base import StrictConfigModel
 from .enums import (
@@ -23,6 +23,19 @@ class ClientModelConfig(StrictConfigModel):
     learning_rate: float = Field(
         gt=0, alias="lr", description="Learning rate."
     )
+    momentum: float = Field(default=0.0, ge=0, lt=1)
+    weight_decay: float = Field(default=0.0, ge=0)
+    nesterov: bool = False
+
+    @model_validator(mode="after")
+    def validate_optimizer_parameters(self):
+        if self.nesterov and (
+            self.optimizer is not OptimizerType.sgd or self.momentum <= 0
+        ):
+            raise ValueError("nesterov requires SGD with positive momentum")
+        if self.optimizer is OptimizerType.adam and self.momentum != 0:
+            raise ValueError("momentum is only supported for SGD")
+        return self
 
 
 class ClientRuntimeConfig(StrictConfigModel):

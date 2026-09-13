@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import torch
-import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from ...dataset.dataset import ConflictEmotionalDataset, build_dataset_manifest
@@ -15,6 +14,7 @@ from ...schema import (
     WorkloadPolicy,
 )
 from ...transport.base import Channel, Message
+from ...utils.training import build_optimizer
 from .evaluation import evaluate_client
 from .protocol import (
     _extract_payload,
@@ -128,14 +128,9 @@ class Client:
         self.agg_to_server = fed_uplink_channel
         self.agg_from_server = fed_downlink_channel
 
-    def _build_optimizer(self) -> optim.Optimizer:
+    def _build_optimizer(self) -> torch.optim.Optimizer:
         """Build optimizer for client-side model."""
-        if self.cfg.model.optimizer.lower() == "adam":
-            return optim.Adam(
-                self.model.parameters(),
-                lr=self.cfg.model.learning_rate,
-            )
-        raise ValueError(f"Unsupported optimizer: {self.cfg.model.optimizer}")
+        return build_optimizer(self.model.parameters(), self.cfg.model)
 
     def train_one_round(self, round: int) -> None:
         """

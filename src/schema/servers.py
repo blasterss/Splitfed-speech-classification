@@ -27,6 +27,9 @@ class SplitServerModelConfig(StrictConfigModel):
     learning_rate: float = Field(
         gt=0, alias="lr", description="Server-side learning rate."
     )
+    momentum: float = Field(default=0.0, ge=0, lt=1)
+    weight_decay: float = Field(default=0.0, ge=0)
+    nesterov: bool = False
     device: str = Field(default="cuda", description="Execution device.")
     gradient_accumulation_steps: Literal[1] = Field(
         default=1,
@@ -37,6 +40,16 @@ class SplitServerModelConfig(StrictConfigModel):
         gt=0,
         description="Maximum wait for missing peers in a split batch.",
     )
+
+    @model_validator(mode="after")
+    def validate_optimizer_parameters(self):
+        if self.nesterov and (
+            self.optimizer is not OptimizerType.sgd or self.momentum <= 0
+        ):
+            raise ValueError("nesterov requires SGD with positive momentum")
+        if self.optimizer is OptimizerType.adam and self.momentum != 0:
+            raise ValueError("momentum is only supported for SGD")
+        return self
 
 
 class SplitServerConfig(StrictConfigModel):

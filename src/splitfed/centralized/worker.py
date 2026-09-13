@@ -15,7 +15,7 @@ from ...utils.runtime.resource_metrics import (
     ResourceTracker,
     publish_resource_metric,
 )
-from ...utils.training import set_seed
+from ...utils.training import build_optimizer, set_seed
 from .data import _pad_feature_batch, _validate_centralized_shapes
 
 
@@ -65,13 +65,7 @@ def _centralized_training_worker(
         noise_std=owner.noise.std if owner.noise else 0.0,
         noise_type=owner.noise.type if owner.noise else None,
     ).to(device)
-    if owner.model.optimizer.lower() != "adam":
-        raise ValueError(
-            f"Unsupported centralized optimizer: {owner.model.optimizer}"
-        )
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=owner.model.learning_rate
-    )
+    optimizer = build_optimizer(model.parameters(), owner.model)
     criterion = nn.BCEWithLogitsLoss().to(device)
     generator = torch.Generator().manual_seed(config.training.seed)
     train_loader = DataLoader(

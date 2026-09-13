@@ -248,7 +248,25 @@ def test_device_validation_rejects_missing_cuda_index(monkeypatch):
 
 def test_schema_rejects_unsupported_optimizer():
     with pytest.raises(ValidationError, match="optimizer"):
-        ClientModelConfig(lr=0.001, optimizer="sgd")
+        ClientModelConfig(lr=0.001, optimizer="rmsprop")
+
+
+def test_schema_accepts_sgd_parameters():
+    config = ClientModelConfig(
+        lr=0.1,
+        optimizer="sgd",
+        momentum=0.9,
+        nesterov=True,
+        weight_decay=0.0005,
+    )
+
+    assert config.optimizer.value == "sgd"
+    assert config.momentum == 0.9
+
+
+def test_schema_rejects_nesterov_without_sgd_momentum():
+    with pytest.raises(ValidationError, match="nesterov requires SGD"):
+        ClientModelConfig(lr=0.1, optimizer="sgd", nesterov=True)
 
 
 def test_schema_rejects_unsupported_noise_type():

@@ -20,7 +20,7 @@ from ..schema import ConfigSchema, TrainingMode
 from ..utils.config import read_yaml, save_yaml
 from ..utils.persistence import save_checkpoint
 from ..utils.runtime.resource_metrics import ResourceTracker
-from ..utils.training import set_seed
+from ..utils.training import build_optimizer, set_seed
 from .metrics import evaluate_binary_model
 
 LOCAL_CROSS_CORPUS_SCHEMA_VERSION = 1
@@ -193,14 +193,8 @@ def _train_local_model(
     resource_metrics: list[dict] | None = None,
     client_id: str | int | None = None,
 ) -> None:
-    if client_config.model.optimizer.lower() != "adam":
-        raise ValueError(
-            f"Unsupported local optimizer: {client_config.model.optimizer}"
-        )
     device = torch.device(client_config.runtime.device)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=client_config.model.learning_rate
-    )
+    optimizer = build_optimizer(model.parameters(), client_config.model)
     criterion = nn.BCEWithLogitsLoss().to(device)
     loader = DataLoader(
         dataset,
