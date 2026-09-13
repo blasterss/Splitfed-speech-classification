@@ -206,8 +206,12 @@ def test_mergesfl_requires_equal_local_steps():
 
 def _mergesfl_algorithm1_config():
     raw = yaml.safe_load(Path("configs/config.example.yaml").read_text())
+    raw["training"]["fed_every"] = 1
     raw["split_server"]["training_strategy"] = "mergesfl_algorithm1_v1"
     raw["fed_server"]["strategy"] = "mergesfl_batch_weighted_v1"
+    raw["fed_server"]["aggregation_freq"] = 1
+    for client in raw["clients"]:
+        client["runtime"]["drop_last"] = True
     raw["load_controller"] = {
         "max_batch_size": 16,
         "local_steps": 42,

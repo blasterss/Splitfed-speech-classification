@@ -49,6 +49,7 @@ class SplitServer:
         resource_metrics_queue=None,
         training_config: TrainingConfig | None = None,
         fed_server_config: FedServerConfig | None = None,
+        round_plan_queue=None,
     ):
         self.config = config
         self.client_channels = client_channels
@@ -65,6 +66,7 @@ class SplitServer:
         self._resource_metrics_queue = resource_metrics_queue
         self._training_config = training_config
         self._fed_server_config = fed_server_config
+        self._round_plan_queue = round_plan_queue
 
     def start(self) -> None:
         """Spawn the server worker process."""
@@ -96,6 +98,8 @@ class SplitServer:
                 self._training_config,
                 self._fed_server_config,
             )
+        else:
+            worker_args = worker_args + (self._round_plan_queue,)
         self._process = self._mp_context.Process(
             target=worker,
             args=worker_args,

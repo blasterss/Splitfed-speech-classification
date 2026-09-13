@@ -34,6 +34,7 @@ from ..protocol import (
     _evict_stale_batches,
     _store_pending_batch,
     _validate_message,
+    validate_message_against_plan,
 )
 
 logger = logger.getChild("SplitServer")
@@ -46,6 +47,7 @@ def _split_server_worker_concat(
     result_queue: mp.Queue,
     failure_queue=None,
     resource_metrics_queue=None,
+    round_plan_queue=None,
 ) -> None:
     ignore_parent_interrupts()
     set_seed(config.seed)  # Ensure deterministic behavior in server process,
@@ -61,6 +63,7 @@ def _split_server_worker_concat(
     pending_batches: dict[tuple, dict[str, Message]] = defaultdict(dict)
     pending_timestamps: dict[tuple, float] = {}
     completed_rounds = defaultdict(set)
+    round_plans = {}
 
     logger.info("SplitServer worker ready, serving clients: %s", client_ids)
 
@@ -74,12 +77,22 @@ def _split_server_worker_concat(
     all_eval_labels = []
     train_handler = (
         _handle_train_mergesfl
-        if config.training_strategy.value == "mergesfl_v1"
+        if config.training_strategy.value
+        in ("mergesfl_v1", "mergesfl_algorithm1_v1")
         else _handle_train_concat
     )
     try:
         while not stop_event.is_set():
             served_any = False
+            if round_plan_queue is not None:
+                while True:
+                    try:
+                        plan = round_plan_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if plan.round in round_plans:
+                        raise ValueError("Duplicate split-server RoundPlan")
+                    round_plans[plan.round] = plan
 
             for client_id in client_ids:
                 uplink: Channel = client_channels[client_id]["uplink"]
@@ -95,6 +108,15 @@ def _split_server_worker_concat(
                     raise ValueError(
                         f"Invalid split message from client {client_id}"
                     )
+                if round_plan_queue is not None:
+                    plan = round_plans.get(msg.round)
+                    if plan is None:
+                        raise ValueError(
+                            "Missing split-server RoundPlan for round "
+                            f"{msg.round}"
+                        )
+                    if msg.type != "eval_step":
+                        validate_message_against_plan(msg, client_id, plan)
 
                 replay_guard.accept(msg.request_id)
 
@@ -153,7 +175,11 @@ def _split_server_worker_concat(
                     for key, batch in pending_batches.items()
                     if _batch_is_ready(
                         batch,
-                        set(client_ids),
+                        (
+                            set(round_plans[key[0]].cohort)
+                            if round_plan_queue is not None
+                            else set(client_ids)
+                        ),
                         completed_rounds[key[0]],
                     )
                 ]

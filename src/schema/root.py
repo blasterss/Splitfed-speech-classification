@@ -207,6 +207,12 @@ class ConfigSchema(StrictConfigModel):
             )
         if self.load_controller.max_clients > len(self.clients):
             raise ValueError("MergeSFL max_clients exceeds client count")
+        if self.training.fed_every != 1:
+            raise ValueError("MergeSFL Algorithm 1 requires fed_every=1")
+        if not self.training.aggregate_final:
+            raise ValueError("MergeSFL Algorithm 1 requires aggregate_final")
+        if any(not client.runtime.drop_last for client in self.clients):
+            raise ValueError("MergeSFL Algorithm 1 requires drop_last=true")
         client_ids = {client.client_id for client in self.clients}
         if set(self.load_controller.initial_worker_states) != client_ids:
             raise ValueError(

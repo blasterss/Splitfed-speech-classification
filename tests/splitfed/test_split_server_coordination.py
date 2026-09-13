@@ -11,6 +11,7 @@ from src.schema import (
     TrainingConfig,
     TrainingMode,
 )
+from src.splitfed.load_controller import RoundPlan, WorkerState
 from src.splitfed.split_server import (
     SplitServer,
     _batch_is_ready,
@@ -22,6 +23,7 @@ from src.splitfed.split_server import (
     _split_server_worker_personalized,
     _store_pending_batch,
     _validate_message,
+    validate_message_against_plan,
 )
 from src.transport.message import Message, MessageType
 
@@ -128,6 +130,72 @@ def test_split_message_requires_labels_with_matching_batch_size():
             }
         ),
         "client-0",
+    )
+
+
+def _controller_plan():
+    return RoundPlan(
+        round=1,
+        seed=42,
+        cohort=("client-0",),
+        batch_size_by_client={"client-0": 2},
+        local_steps=3,
+        required_quorum=1,
+        deadline_at=FUTURE_DEADLINE,
+        model_version="initial",
+        estimates={"client-0": WorkerState(0.01, 0.01)},
+        bandwidth_used=2,
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.5, 0.5),
+        kl_divergence=0.0,
+        decision_trace={},
+    )
+
+
+def test_split_message_must_match_planned_batch_and_cohort():
+    plan = _controller_plan()
+    validate_message_against_plan(_split_message(), "client-0", plan)
+
+    with pytest.raises(ValueError, match="batch size"):
+        validate_message_against_plan(
+            _split_message(
+                payload={
+                    "activations": torch.ones(1, 3),
+                    "labels": torch.ones(1),
+                }
+            ),
+            "client-0",
+            plan,
+        )
+    with pytest.raises(ValueError, match="outside planned cohort"):
+        validate_message_against_plan(
+            _split_message(sender="client-1"), "client-1", plan
+        )
+
+
+def test_split_round_end_distinguishes_selected_and_skipped_clients():
+    plan = _controller_plan()
+    validate_message_against_plan(
+        Message(
+            type="round_end",
+            sender="client-0",
+            round=1,
+            step=4,
+            deadline_at=FUTURE_DEADLINE,
+        ),
+        "client-0",
+        plan,
+    )
+    validate_message_against_plan(
+        Message(
+            type="round_end",
+            sender="client-1",
+            round=1,
+            step=1,
+            deadline_at=FUTURE_DEADLINE,
+        ),
+        "client-1",
+        plan,
     )
 
 

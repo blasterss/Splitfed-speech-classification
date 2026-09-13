@@ -9,6 +9,7 @@ from .protocol import (
     _evict_stale_batches,
     _store_pending_batch,
     _validate_message,
+    validate_message_against_plan,
 )
 from .server import SplitServer
 from .worker import (
@@ -29,4 +30,5 @@ __all__ = [
     "_split_server_worker_sequential",
     "_store_pending_batch",
     "_validate_message",
+    "validate_message_against_plan",
 ]

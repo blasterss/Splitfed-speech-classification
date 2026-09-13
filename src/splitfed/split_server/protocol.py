@@ -6,6 +6,7 @@ import torch
 
 from ...logger import logger
 from ...transport.base import Channel, Message
+from ..load_controller import RoundPlan
 
 
 def _validate_message(msg: Message, client_id: str) -> bool:
@@ -72,6 +73,28 @@ def _validate_message(msg: Message, client_id: str) -> bool:
         )
         return False
     return True
+
+
+def validate_message_against_plan(
+    message: Message, client_id, plan: RoundPlan
+) -> None:
+    """Enforce the controller-issued split workload for one client message."""
+    if message.round != plan.round:
+        raise ValueError("split message round differs from RoundPlan")
+    selected = client_id in plan.cohort
+    if message.type == "train_step":
+        if not selected:
+            raise ValueError("train step from client outside planned cohort")
+        if message.step > plan.local_steps:
+            raise ValueError("train step exceeds planned local_steps")
+        activations = message.payload["activations"]
+        if activations.shape[0] != plan.batch_size_by_client[client_id]:
+            raise ValueError("activation batch size differs from RoundPlan")
+        return
+    if message.type == "round_end":
+        expected_step = plan.local_steps + 1 if selected else 1
+        if message.step != expected_step:
+            raise ValueError("round_end step differs from RoundPlan")
 
 
 def _batch_is_ready(
