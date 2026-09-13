@@ -180,7 +180,7 @@ Workers publish original exception context before setting cancellation; if no
 worker record is available, the controller writes its own fallback context.
 
 Every queue or gRPC `Message` validates `secureasr.transport` protocol version
-4 and a bounded non-empty request ID, which are also represented in run
+5 and a bounded non-empty request ID, which are also represented in run
 metadata.
 Split responses and federated responses to accepted updates echo request IDs.
 Channel send stamps a hop deadline using the positive channel timeout; send,

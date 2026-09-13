@@ -37,6 +37,8 @@ The repository currently provides:
 - validated split message identity/correlation and duplicate-step rejection;
 - configured uniform or dataset-weighted FedAvg for the client-side model;
 - bounded partial-quorum FedAvg windows with correlated late-client catch-up;
+- reconstructed MergeSFL Algorithm 1 cohort selection, batch regulation,
+  plan enforcement, batch-weighted aggregation and replayable decisions;
 - strict configuration, a typed registry with a versioned smoke profile and
   typed CLI overrides;
 - experiment-scoped resolved config, provenance, dataset manifests, metrics and
