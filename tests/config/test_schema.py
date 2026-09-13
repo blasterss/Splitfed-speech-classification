@@ -173,6 +173,7 @@ def _mergesfl_config():
     raw["split_server"]["training_strategy"] = "mergesfl_v1"
     for client in raw["clients"]:
         client["runtime"]["workload_policy"] = "fixed_steps_v1"
+        client["runtime"]["drop_last"] = True
     return raw
 
 
@@ -200,6 +201,14 @@ def test_mergesfl_requires_equal_local_steps():
     raw["clients"][1]["runtime"]["local_steps"] += 1
 
     with pytest.raises(ValidationError, match="requires equal local_steps"):
+        ConfigSchema(**raw)
+
+
+def test_mergesfl_requires_dropping_incomplete_batches():
+    raw = _mergesfl_config()
+    raw["clients"][0]["runtime"]["drop_last"] = False
+
+    with pytest.raises(ValidationError, match="requires drop_last=true"):
         ConfigSchema(**raw)
 
 

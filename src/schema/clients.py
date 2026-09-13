@@ -40,6 +40,10 @@ class ClientRuntimeConfig(StrictConfigModel):
         ),
     )
     batch_size: int = Field(gt=0, description="Local training batch size.")
+    drop_last: bool = Field(
+        default=False,
+        description="Drop an incomplete final training batch.",
+    )
     seed: int = Field(description="Seed for client-side randomness.")
     device: str = Field(default="cpu", description="Execution device.")
 

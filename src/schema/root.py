@@ -155,6 +155,8 @@ class ConfigSchema(StrictConfigModel):
             raise ValueError(
                 "mergesfl_v1 requires fixed_steps_v1 for every client"
             )
+        if any(not client.runtime.drop_last for client in self.clients):
+            raise ValueError("mergesfl_v1 requires drop_last=true")
         local_steps = {client.runtime.local_steps for client in self.clients}
         if len(local_steps) != 1:
             raise ValueError(

@@ -84,6 +84,7 @@ class Client:
             shuffle=True,
             pin_memory=_pin,
             generator=g,
+            drop_last=cfg.runtime.drop_last,
         )
 
         self.test_loader = DataLoader(
