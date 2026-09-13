@@ -3,6 +3,7 @@ import math
 import pytest
 
 from src.splitfed.load_controller import (
+    RoundPlan,
     WorkerProfile,
     WorkerState,
     bandwidth_usage,
@@ -46,6 +47,31 @@ def test_algorithm1_math_is_independent_of_mapping_insertion_order():
     second = dict(reversed(tuple(first.items())))
 
     assert initial_batch_sizes(first, 8) == initial_batch_sizes(second, 8)
+
+
+def test_round_plan_serializes_typed_worker_state():
+    plan = RoundPlan(
+        round=1,
+        seed=42,
+        cohort=(0, 1),
+        batch_size_by_client={0: 8, 1: 4},
+        local_steps=42,
+        required_quorum=2,
+        deadline_at=100.0,
+        model_version="model-1",
+        estimates={0: WorkerState(0.5, 0.5), 1: WorkerState(1.0, 1.0)},
+        bandwidth_used=120,
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.6, 0.4),
+        kl_divergence=0.02,
+        decision_trace={"source": "reference"},
+    )
+
+    payload = plan.to_dict()
+
+    assert payload["policy_name"] == "mergesfl_algorithm1_v1"
+    assert payload["cohort"] == ["0", "1"]
+    assert payload["estimates"]["0"]["compute_seconds_per_sample"] == 0.5
 
 
 @pytest.mark.parametrize(

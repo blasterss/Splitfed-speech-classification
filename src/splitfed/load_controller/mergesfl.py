@@ -2,7 +2,7 @@
 
 import math
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 ClientId = Hashable
 
@@ -36,6 +36,69 @@ class WorkerState:
             self.compute_seconds_per_sample
             + self.transfer_seconds_per_sample
         )
+
+
+@dataclass(frozen=True)
+class RoundPlan:
+    """Replayable output of one MergeSFL control-policy decision."""
+
+    round: int
+    seed: int
+    cohort: tuple[ClientId, ...]
+    batch_size_by_client: dict[ClientId, int]
+    local_steps: int
+    required_quorum: int
+    deadline_at: float
+    model_version: str
+    estimates: dict[ClientId, WorkerState]
+    bandwidth_used: int
+    reference_distribution: tuple[float, ...]
+    merged_distribution: tuple[float, ...]
+    kl_divergence: float
+    decision_trace: dict
+    policy_name: str = "mergesfl_algorithm1_v1"
+
+    def __post_init__(self) -> None:
+        if self.round <= 0 or self.local_steps <= 0:
+            raise ValueError("round and local_steps must be positive")
+        if not self.cohort or len(self.cohort) != len(set(self.cohort)):
+            raise ValueError("cohort must contain unique clients")
+        if not 0 < self.required_quorum <= len(self.cohort):
+            raise ValueError("required_quorum must fit the cohort")
+        if set(self.batch_size_by_client) != set(self.cohort):
+            raise ValueError("batch-size map must exactly match the cohort")
+        if any(size <= 0 for size in self.batch_size_by_client.values()):
+            raise ValueError("planned batch sizes must be positive")
+        if set(self.estimates) != set(self.cohort):
+            raise ValueError("worker estimates must exactly match the cohort")
+        if not _is_positive_finite(self.deadline_at):
+            raise ValueError("deadline_at must be positive and finite")
+        if not self.model_version:
+            raise ValueError("model_version must not be empty")
+        if self.bandwidth_used <= 0:
+            raise ValueError("bandwidth_used must be positive")
+        _validate_distribution(self.reference_distribution)
+        _validate_distribution(self.merged_distribution)
+        if len(self.reference_distribution) != len(self.merged_distribution):
+            raise ValueError(
+                "plan distributions must use the same class order"
+            )
+        if not math.isfinite(self.kl_divergence) or self.kl_divergence < 0:
+            raise ValueError("kl_divergence must be finite and non-negative")
+
+    def to_dict(self) -> dict:
+        """Return a serialization-safe artifact/protocol representation."""
+        payload = asdict(self)
+        payload["estimates"] = {
+            str(client_id): asdict(state)
+            for client_id, state in self.estimates.items()
+        }
+        payload["batch_size_by_client"] = {
+            str(client_id): size
+            for client_id, size in self.batch_size_by_client.items()
+        }
+        payload["cohort"] = [str(client_id) for client_id in self.cohort]
+        return payload
 
 
 def estimate_worker_state(

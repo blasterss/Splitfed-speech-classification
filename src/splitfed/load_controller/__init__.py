@@ -1,6 +1,7 @@
 """Client admission and round-planning policies."""
 
 from .mergesfl import (
+    RoundPlan,
     WorkerProfile,
     WorkerState,
     bandwidth_usage,
@@ -14,6 +15,7 @@ from .mergesfl import (
 
 __all__ = [
     "WorkerProfile",
+    "RoundPlan",
     "WorkerState",
     "bandwidth_usage",
     "estimate_worker_state",

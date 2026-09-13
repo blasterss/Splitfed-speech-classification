@@ -29,6 +29,7 @@ from .enums import (
     WorkloadPolicy,
 )
 from .experiment import ExperimentConfig, TrainingConfig
+from .load_controller import MergeSFLPolicyConfig
 from .root import ConfigSchema, _validate_device_available
 from .servers import FedServerConfig, SplitServerConfig, SplitServerModelConfig
 
@@ -46,6 +47,7 @@ __all__ = [
     "FeatureType",
     "FedServerConfig",
     "GRPCChannelConfig",
+    "MergeSFLPolicyConfig",
     "NoiseConfig",
     "NoiseType",
     "OptimizerType",
