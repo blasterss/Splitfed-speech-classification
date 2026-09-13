@@ -60,6 +60,7 @@ def _make_smoke_channel(context, transport):
         )
     return SpawnQueueChannel(context)
 
+
 def _synthetic_client_worker(
     client_id,
     local_steps,

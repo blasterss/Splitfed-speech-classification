@@ -273,9 +273,7 @@ class GrpcChannel(Channel):
                     ),
                 ),
             )
-            self._stub = message_pb2_grpc.TransportStub(
-                self._client_channel
-            )
+            self._stub = message_pb2_grpc.TransportStub(self._client_channel)
 
     def _ensure_server(self) -> None:
         if self._server is not None:
