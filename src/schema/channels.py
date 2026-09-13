@@ -48,3 +48,8 @@ class GRPCChannelConfig(ChannelConfig):
         gt=0,
         description="Timeout for waiting on a gRPC response in seconds.",
     )
+    max_message_bytes: int = Field(
+        default=64 * 1024 * 1024,
+        gt=0,
+        description="Maximum serialized gRPC message size in bytes.",
+    )

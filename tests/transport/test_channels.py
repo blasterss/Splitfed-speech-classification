@@ -181,3 +181,35 @@ def test_channel_factory_creates_insecure_grpc_channel():
 def test_grpc_channel_rejects_unconfigured_tls():
     with pytest.raises(ValueError, match="TLS credentials"):
         GrpcChannel(address="127.0.0.1:50051", use_tls=True)
+
+
+def test_grpc_channel_rejects_oversized_message_before_network_io():
+    channel = GrpcChannel(
+        address="127.0.0.1:50051",
+        timeout=1,
+        max_message_bytes=16,
+    )
+    message = Message(
+        type="ack",
+        sender="server",
+        round=1,
+        step=1,
+        payload={"reason": "larger than sixteen bytes"},
+    )
+
+    with pytest.raises(ValueError, match="exceeds"):
+        channel.send(message)
+
+
+def test_grpc_channel_bounds_unavailable_peer_wait():
+    channel = GrpcChannel(address=_free_address(), timeout=0.2)
+    message = Message(type="ack", sender="server", round=1, step=1)
+    started = time.monotonic()
+
+    try:
+        with pytest.raises(TimeoutError, match="deadline"):
+            channel.send(message)
+    finally:
+        channel.close()
+
+    assert time.monotonic() - started < 1

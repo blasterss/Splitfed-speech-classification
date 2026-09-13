@@ -161,6 +161,7 @@ class GrpcChannel(Channel):
         address: str,
         timeout: float = 30,
         maxsize: int = 0,
+        max_message_bytes: int = 64 * 1024 * 1024,
         use_tls: bool = False,
         mp_context=None,
         stop_event=None,
@@ -171,6 +172,7 @@ class GrpcChannel(Channel):
         self.address = address
         self.timeout = timeout
         self.maxsize = maxsize
+        self.max_message_bytes = max_message_bytes
         self.stop_event = stop_event
         self._bytes_sent = context.Value("Q", 0)
         self._messages_sent = context.Value("Q", 0)
@@ -182,6 +184,11 @@ class GrpcChannel(Channel):
     def send(self, msg: Message) -> None:
         msg.ensure_deadline(self.timeout)
         request = message_pb2.Message.FromString(msg.to_bytes())
+        size = len(request.SerializeToString())
+        if size > self.max_message_bytes:
+            raise ValueError(
+                f"Serialized message exceeds {self.max_message_bytes} bytes"
+            )
         self._ensure_client()
         while True:
             if self.stop_event is not None and self.stop_event.is_set():
@@ -205,7 +212,6 @@ class GrpcChannel(Channel):
                 raise RuntimeError(
                     f"gRPC send failed with {exc.code().name}: {exc.details()}"
                 ) from exc
-        size = len(request.SerializeToString())
         with self._bytes_sent.get_lock():
             self._bytes_sent.value += size
         with self._messages_sent.get_lock():
@@ -254,7 +260,19 @@ class GrpcChannel(Channel):
 
     def _ensure_client(self) -> None:
         if self._stub is None:
-            self._client_channel = grpc.insecure_channel(self.address)
+            self._client_channel = grpc.insecure_channel(
+                self.address,
+                options=(
+                    (
+                        "grpc.max_send_message_length",
+                        self.max_message_bytes,
+                    ),
+                    (
+                        "grpc.max_receive_message_length",
+                        self.max_message_bytes,
+                    ),
+                ),
+            )
             self._stub = message_pb2_grpc.TransportStub(
                 self._client_channel
             )
@@ -263,7 +281,13 @@ class GrpcChannel(Channel):
         if self._server is not None:
             return
         self._messages = queue.Queue(maxsize=self.maxsize)
-        self._server = grpc.server(ThreadPoolExecutor(max_workers=1))
+        self._server = grpc.server(
+            ThreadPoolExecutor(max_workers=1),
+            options=(
+                ("grpc.max_receive_message_length", self.max_message_bytes),
+                ("grpc.max_send_message_length", self.max_message_bytes),
+            ),
+        )
         message_pb2_grpc.add_TransportServicer_to_server(
             _GrpcReceiver(self._messages), self._server
         )
@@ -300,6 +324,7 @@ class ChannelFactory:
                 address=channel_params.addresses[client_id],
                 timeout=channel_params.timeout_sec,
                 maxsize=channel_params.buffer_size,
+                max_message_bytes=channel_params.max_message_bytes,
                 use_tls=channel_params.use_tls,
                 mp_context=mp_context,
                 stop_event=stop_event,

@@ -1,4 +1,5 @@
 import queue
+import socket
 import time
 
 import pytest
@@ -15,6 +16,7 @@ from src.splitfed.split_server import (
     _split_server_worker_personalized,
     _split_server_worker_sequential,
 )
+from src.transport.base import GrpcChannel
 from src.transport.message import Message
 from src.utils.persistence import deserialize_state_dict
 
@@ -41,6 +43,22 @@ class SpawnQueueChannel:
         message.validate_for_receive()
         return message
 
+
+def _free_address():
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return f"127.0.0.1:{listener.getsockname()[1]}"
+
+
+def _make_smoke_channel(context, transport):
+    if transport == "grpc":
+        return GrpcChannel(
+            address=_free_address(),
+            timeout=10,
+            maxsize=8,
+            mp_context=context,
+        )
+    return SpawnQueueChannel(context)
 
 def _synthetic_client_worker(
     client_id,
@@ -234,14 +252,15 @@ def _synthetic_personalized_client_worker(
 
 
 @pytest.mark.parametrize(
-    ("split_worker", "strategy"),
+    ("split_worker", "strategy", "transport"),
     [
-        (_split_server_worker_concat, "concat_v1"),
-        (_split_server_worker_sequential, "sequential_v1"),
+        (_split_server_worker_concat, "concat_v1", "queue"),
+        (_split_server_worker_sequential, "sequential_v1", "queue"),
+        (_split_server_worker_concat, "concat_v1", "grpc"),
     ],
 )
 def test_spawned_splitfed_training_cycle_with_unequal_client_steps(
-    split_worker, strategy
+    split_worker, strategy, transport
 ):
     context = mp.get_context("spawn")
     stop_event = context.Event()
@@ -252,10 +271,10 @@ def test_spawned_splitfed_training_cycle_with_unequal_client_steps(
     channels = {}
     for client_id in client_ids:
         channels[client_id] = {
-            "split_uplink": SpawnQueueChannel(context),
-            "split_downlink": SpawnQueueChannel(context),
-            "federated_uplink": SpawnQueueChannel(context),
-            "federated_downlink": SpawnQueueChannel(context),
+            "split_uplink": _make_smoke_channel(context, transport),
+            "split_downlink": _make_smoke_channel(context, transport),
+            "federated_uplink": _make_smoke_channel(context, transport),
+            "federated_downlink": _make_smoke_channel(context, transport),
         }
 
     split_config = SplitServerConfig(
