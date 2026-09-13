@@ -154,7 +154,7 @@ def test_run_metadata_records_environment_and_seed_tree(tmp_path):
         "scheduler": None,
     }
     assert metadata["protocols"] == {
-        "message": {"name": "secureasr.queue", "version": 3}
+        "message": {"name": "secureasr.transport", "version": 4}
     }
     assert metadata["created_at_utc"].endswith("+00:00")
 

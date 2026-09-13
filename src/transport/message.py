@@ -7,8 +7,8 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-MESSAGE_PROTOCOL = "secureasr.queue"
-MESSAGE_PROTOCOL_VERSION = 3
+MESSAGE_PROTOCOL = "secureasr.transport"
+MESSAGE_PROTOCOL_VERSION = 4
 
 
 class MessageType(str, Enum):
