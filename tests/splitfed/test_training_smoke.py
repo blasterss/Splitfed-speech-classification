@@ -256,6 +256,7 @@ def _synthetic_personalized_client_worker(
     ("split_worker", "strategy", "transport"),
     [
         (_split_server_worker_concat, "concat_v1", "queue"),
+        (_split_server_worker_concat, "mergesfl_v1", "queue"),
         (_split_server_worker_sequential, "sequential_v1", "queue"),
         (_split_server_worker_concat, "concat_v1", "grpc"),
     ],

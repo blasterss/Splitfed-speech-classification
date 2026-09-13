@@ -59,6 +59,7 @@ class SplitServerStrategy(str, Enum):
     """Server update ordering for a shared split model."""
 
     concat_v1 = "concat_v1"
+    mergesfl_v1 = "mergesfl_v1"
     sequential_v1 = "sequential_v1"
 
 

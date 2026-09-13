@@ -176,6 +176,13 @@ Important configuration caveats:
   protocol. Personalized split keeps one server model, optimizer, metrics
   stream and checkpoint per client;
 - `training.fed_every` currently controls federated synchronization;
+- `split_server.training_strategy` supports `concat_v1`, `sequential_v1` and
+  `mergesfl_v1`. The MergeSFL path follows the public reference implementation:
+  it merges matched client activations into one batch and rescales each
+  dispatched gradient by the merged batch size divided by that client's batch
+  size. It requires `fixed_steps_v1` and equal `local_steps`; per-client
+  `batch_size` remains explicit configuration rather than an automatic
+  resource optimizer;
 - personalized SplitFed uses the same synchronization cadence and aggregation
   strategy for both partitions; a correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;

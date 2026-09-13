@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 from .base import StrictConfigModel
 from .channels import GRPCChannelConfig, QueueChannelConfig
 from .clients import ClientConfig
-from .enums import TrainingMode
+from .enums import SplitServerStrategy, TrainingMode, WorkloadPolicy
 from .experiment import ExperimentConfig, TrainingConfig
 from .servers import FedServerConfig, SplitServerConfig
 
@@ -42,6 +42,7 @@ class ConfigSchema(StrictConfigModel):
         self._validate_devices()
         self._validate_clients()
         self._validate_mode_ownership()
+        self._validate_split_strategy()
         self._validate_experiment_contract()
         self._validate_channels()
         return self
@@ -137,6 +138,27 @@ class ConfigSchema(StrictConfigModel):
         ):
             raise ValueError(
                 "fed_server.aggregation_freq must equal training.fed_every"
+            )
+
+    def _validate_split_strategy(self) -> None:
+        if (
+            self.split_server is None
+            or self.split_server.training_strategy
+            is not SplitServerStrategy.mergesfl_v1
+        ):
+            return
+        if any(
+            client.runtime.workload_policy
+            is not WorkloadPolicy.fixed_steps_v1
+            for client in self.clients
+        ):
+            raise ValueError(
+                "mergesfl_v1 requires fixed_steps_v1 for every client"
+            )
+        local_steps = {client.runtime.local_steps for client in self.clients}
+        if len(local_steps) != 1:
+            raise ValueError(
+                "mergesfl_v1 requires equal local_steps for every client"
             )
 
     def _validate_channels(self) -> None:

@@ -17,6 +17,7 @@ from src.splitfed.split_server import (
     _build_personalized_models,
     _evict_stale_batches,
     _forward_concat,
+    _forward_mergesfl,
     _split_server_worker_concat,
     _split_server_worker_personalized,
     _store_pending_batch,
@@ -66,6 +67,42 @@ def _split_message(**overrides):
     }
     values.update(overrides)
     return Message(**values)
+
+
+def test_mergesfl_rescales_dispatched_gradients_by_merged_batch_size():
+    model = nn.Linear(1, 1, bias=False)
+    model.weight.data.fill_(0.5)
+    criterion = nn.BCEWithLogitsLoss()
+    messages = {
+        "client-0": _split_message(
+            sender="client-0",
+            payload={
+                "activations": torch.tensor([[1.0]]),
+                "labels": torch.tensor([1.0]),
+            },
+        ),
+        "client-1": _split_message(
+            sender="client-1",
+            payload={
+                "activations": torch.tensor([[1.0], [2.0], [3.0]]),
+                "labels": torch.tensor([0.0, 1.0, 0.0]),
+            },
+        ),
+    }
+
+    concat_grads, _ = _forward_concat(
+        messages, model, criterion, torch.device("cpu")
+    )
+    mergesfl_grads, _ = _forward_mergesfl(
+        messages, model, criterion, torch.device("cpu")
+    )
+
+    assert torch.allclose(
+        mergesfl_grads["client-0"], concat_grads["client-0"] * 4
+    )
+    assert torch.allclose(
+        mergesfl_grads["client-1"], concat_grads["client-1"] * (4 / 3)
+    )
 
 
 def test_split_message_validates_channel_sender_and_correlation():

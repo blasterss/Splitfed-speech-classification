@@ -1,6 +1,6 @@
 """Split-learning server component."""
 
-from .operations import _forward_concat
+from .operations import _forward_concat, _forward_mergesfl
 from .optimization import (
     build_personalized_models as _build_personalized_models,
 )
@@ -23,6 +23,7 @@ __all__ = [
     "_build_personalized_models",
     "_evict_stale_batches",
     "_forward_concat",
+    "_forward_mergesfl",
     "_split_server_worker_concat",
     "_split_server_worker_personalized",
     "_split_server_worker_sequential",

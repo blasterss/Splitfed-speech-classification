@@ -168,6 +168,41 @@ def test_sequential_strategy_requires_shared_server_model():
         )
 
 
+def _mergesfl_config():
+    raw = yaml.safe_load(Path("configs/config.example.yaml").read_text())
+    raw["split_server"]["training_strategy"] = "mergesfl_v1"
+    for client in raw["clients"]:
+        client["runtime"]["workload_policy"] = "fixed_steps_v1"
+    return raw
+
+
+def test_mergesfl_accepts_fixed_equal_steps_and_unequal_batch_sizes():
+    raw = _mergesfl_config()
+    raw["clients"][0]["runtime"]["batch_size"] = 4
+    raw["clients"][1]["runtime"]["batch_size"] = 8
+    raw["clients"][2]["runtime"]["batch_size"] = 16
+
+    config = ConfigSchema(**raw)
+
+    assert config.split_server.training_strategy.value == "mergesfl_v1"
+
+
+def test_mergesfl_requires_fixed_steps_policy():
+    raw = _mergesfl_config()
+    raw["clients"][1]["runtime"]["workload_policy"] = "max_steps_v1"
+
+    with pytest.raises(ValidationError, match="requires fixed_steps_v1"):
+        ConfigSchema(**raw)
+
+
+def test_mergesfl_requires_equal_local_steps():
+    raw = _mergesfl_config()
+    raw["clients"][1]["runtime"]["local_steps"] += 1
+
+    with pytest.raises(ValidationError, match="requires equal local_steps"):
+        ConfigSchema(**raw)
+
+
 def test_fed_server_requires_positive_quorum_timeout():
     with pytest.raises(ValidationError, match="quorum_timeout_sec"):
         FedServerConfig(

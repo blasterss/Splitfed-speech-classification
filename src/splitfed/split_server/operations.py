@@ -35,6 +35,33 @@ def _handle_train_concat(
     return batch_loss
 
 
+def _handle_train_mergesfl(
+    batch_msgs: dict[str, Message],
+    model: ServerSideModel,
+    criterion: nn.Module,
+    device: torch.device,
+    client_channels: dict[str, dict[str, Channel]],
+) -> float | None:
+    """Train one merged batch using the public MergeSFL gradient rule."""
+    model.train()
+    result = _forward_mergesfl(batch_msgs, model, criterion, device)
+    if result is None:
+        return None
+    grads_per_client, batch_loss = result
+    for client_id, message in batch_msgs.items():
+        client_channels[client_id]["downlink"].send(
+            Message(
+                type="gradients",
+                sender="split_server",
+                round=message.round,
+                step=message.step,
+                request_id=message.request_id,
+                payload={"gradients": grads_per_client[client_id]},
+            )
+        )
+    return batch_loss
+
+
 def _forward_concat(
     batch_msgs: dict[str, Message],
     model: ServerSideModel,
@@ -42,6 +69,40 @@ def _forward_concat(
     device: torch.device,
 ) -> tuple[dict[str, torch.Tensor], float] | None:
     """Run one concatenated forward/backward and split activation gradients."""
+    return _forward_merged(
+        batch_msgs,
+        model,
+        criterion,
+        device,
+        rescale_client_gradients=False,
+    )
+
+
+def _forward_mergesfl(
+    batch_msgs: dict[str, Message],
+    model: ServerSideModel,
+    criterion: nn.Module,
+    device: torch.device,
+) -> tuple[dict[str, torch.Tensor], float] | None:
+    """Merge features and apply MergeSFL's per-client gradient scaling."""
+    return _forward_merged(
+        batch_msgs,
+        model,
+        criterion,
+        device,
+        rescale_client_gradients=True,
+    )
+
+
+def _forward_merged(
+    batch_msgs: dict[str, Message],
+    model: ServerSideModel,
+    criterion: nn.Module,
+    device: torch.device,
+    *,
+    rescale_client_gradients: bool,
+) -> tuple[dict[str, torch.Tensor], float] | None:
+    """Run a merged forward/backward and split activation gradients."""
     activations_list, labels_list, sizes, client_order = [], [], [], []
     for client_id in sorted(batch_msgs):
         message = batch_msgs[client_id]
@@ -76,10 +137,15 @@ def _forward_concat(
     else:
         gradients = combined.grad.detach()
     splits = torch.split(gradients, sizes, dim=0)
-    return {
-        client_id: gradient.cpu()
-        for client_id, gradient in zip(client_order, splits, strict=True)
-    }, loss_value
+    total_size = sum(sizes)
+    grads_per_client = {}
+    for client_id, gradient, client_size in zip(
+        client_order, splits, sizes, strict=True
+    ):
+        if rescale_client_gradients:
+            gradient = gradient * (total_size / client_size)
+        grads_per_client[client_id] = gradient.cpu()
+    return grads_per_client, loss_value
 
 
 def _handle_eval_single(

@@ -25,7 +25,11 @@ from ....utils.runtime.resource_metrics import (
     publish_resource_metric,
 )
 from ....utils.training import _RoundStats, set_seed
-from ..operations import _handle_eval_single, _handle_train_concat
+from ..operations import (
+    _handle_eval_single,
+    _handle_train_concat,
+    _handle_train_mergesfl,
+)
 from ..protocol import (
     _batch_is_ready,
     _evict_stale_batches,
@@ -69,6 +73,11 @@ def _split_server_worker_concat(
 
     all_eval_probs = []
     all_eval_labels = []
+    train_handler = (
+        _handle_train_mergesfl
+        if config.training_strategy.value == "mergesfl_v1"
+        else _handle_train_concat
+    )
     try:
         while not stop_event.is_set():
             served_any = False
@@ -159,7 +168,7 @@ def _split_server_worker_concat(
                         current_round = batch_round
 
                     optimizer.zero_grad()
-                    batch_loss = _handle_train_concat(
+                    batch_loss = train_handler(
                         batch_msgs,
                         model,
                         criterion,

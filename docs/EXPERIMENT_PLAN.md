@@ -64,7 +64,7 @@ feature sequence, регулирует batch size неоднородных worke
 | Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
 | Зафиксировать OUR | Согласованные `(round, step)` batches объединяются перед одним server update; клиентские части проходят FedAvg | `concat_v1`, конкатенация activation, разделение activation gradients, один server update без batch-gradient averaging, stale-batch timeout и `spawn` smoke | Научный harness с тем же data/evaluation budget, телеметрия ожидания/bytes и multi-seed сравнение с SFLv2 |
 | Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized SplitFed хранит отдельные server models/optimizers, агрегирует обе model partitions по `fed_every`, синхронизирует round ACK и сохраняет per-client server checkpoints | Нет детерминированного reference одного global round и доказательства полного соответствия каноническому SFLv1 |
-| Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | Только простая конкатенация в `concat_v1` | Весь алгоритмический baseline MergeSFL и его reference tests; `concat_v1` нельзя переименовывать в MergeSFL |
+| Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | `mergesfl_v1` воспроизводит merge и множитель градиента `sum(batch sizes) / client batch size` из публичного кода; batch sizes задаются явно, workload фиксирован и покрыт numerical/spawn reference tests | Автоматическая resource-aware batch-size optimization и matched-budget benchmark; `concat_v1` остаётся отдельным OUR baseline |
 | Сопоставить качество всех методов | Одинаковые actor folds, normalization policy, seeds, stopping/data budget и единая tidy-схема | Local, Centralized и FedAvg используют общий metrics contract; complete-model checkpoint evaluator сохраняет per-corpus, macro и worst-corpus результаты | Распространить контракт на SFLv2/OUR; добавить validation actors, multi-seed CI и matched-budget accounting |
 | Сопоставить вычислительную стоимость | Per-process параметры/память, transmitted bytes, server wait, round и total time | Ограниченные lifecycle logs, deadlines, quorum и stale counters на уровне протокола | Версионированная телеметрия, единицы измерения, warm-up policy и экспорт в общую таблицу |
 | Проверить задержки и отказы | Seeded delay/drop/straggler без deadlock и без частично применённого шага | Тайм-ауты, cancellation, barrier abort, failure propagation и завершение процессов тестируются | Детерминированный fault simulator и транзакция `completed/aborted`, гарантирующая отсутствие server/client update при сорванном шаге |
@@ -75,13 +75,14 @@ feature sequence, регулирует batch size неоднородных worke
 
 - Инженерный runtime уже поддерживает пять режимов (`local`, `centralized`,
   `federated`, `split`, `splitfed`) и две явные стратегии общей split-server
-  модели: `concat_v1` и `sequential_v1`.
+  модели: `concat_v1`, `sequential_v1` и ограниченный `mergesfl_v1` baseline.
 - E0 остаётся notebook-анализом и помечен `analysis_only`. Local создаёт полную
   матрицу, а Centralized/FedAvg автоматически оценивают финальный complete-model
   checkpoint по каждому корпусу. SFLv2/OUR ещё не сведены к этому контракту.
 - Ближайший научно полезный срез — не новый transport или scheduler, а общий
   evaluator и matched-budget harness для уже реализованных методов.
-- Каноническая верификация SFLv1, MergeSFL, fault simulator, расширенные
+- Каноническая верификация SFLv1, автоматической MergeSFL batch regulation,
+  fault simulator, расширенные
   workload policies и leave-one-corpus-out остаются отдельными последующими
   срезами. Personalized SplitFed является рабочим экспериментальным вариантом,
   но ещё не доказан как точное воспроизведение SFLv1.
