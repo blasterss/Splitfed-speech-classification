@@ -1,5 +1,9 @@
 # План развития SplitFed Speech Emotion Classification
 
+Детальный исполнимый набросок control policy из MergeSFL Algorithm 1,
+включая границы реконструкции отсутствующих GA/Lagrange деталей, находится в
+[`docs/MERGESFL_ALGORITHM1_DESIGN.md`](MERGESFL_ALGORITHM1_DESIGN.md).
+
 ## 1. Цель и границы
 
 Репозиторий следует довести до воспроизводимой исследовательской платформы для
