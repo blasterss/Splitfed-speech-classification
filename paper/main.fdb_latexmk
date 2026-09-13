@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1789321192.76989 "/home/blasterss/Splitfed-speech-classification/paper/main.tex" "main.pdf" "main" 1789321193.83871 0
+["pdflatex"] 1789335884.96045 "/home/blasterss/Splitfed-speech-classification/paper/main.tex" "main.pdf" "main" 1789335885.16135 0
   "/etc/texmf/web2c/texmf.cnf" 1789076122.78411 475 c0e671620eb5563b2130f56340a5fde8 ""
   "/home/blasterss/Splitfed-speech-classification/paper/main.tex" 1789321192.27523 532 e8078267da51f6a4848d3ea7824d7a70 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -71,13 +71,13 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1789076129.10909 128028 f533b797fba58d231669ea19e894e23e ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1789076139 6800792 9127e7ed148d2abe43f44562126c0334 ""
-  "main.aux" 1789321192.90594 2243 e37606d0d3437acdf82fc39d78313bf3 "pdflatex"
+  "main.aux" 1789335885.13607 2243 e37606d0d3437acdf82fc39d78313bf3 "pdflatex"
   "main.tex" 1789321192.27523 532 e8078267da51f6a4848d3ea7824d7a70 ""
   "tables/e0_heterogeneity.tex" 1789080282.69967 2371 0c88179e19afb03f59c6d7a3eabaa374 ""
   "tables/e1_centralized_fedavg.tex" 1789080349.52237 691 399ef903920bc163bc6c6bd172ece85e ""
   "tables/e1_local_transfer.tex" 1789080068.91641 513 2752d1a0e6b4e5689747ca22e90e5246 ""
   "tables/e1_resource_summary.tex" 1789080068.91641 790 2622566b2bd0783193ba5b9fac9952d6 ""
-  "tables/e1_workload_policy_comparison.tex" 1789321192.08446 1824 0db0fccfa2f0439b52c5d103e0e439b9 ""
+  "tables/e1_workload_policy_comparison.tex" 1789335884.70357 1838 b58de39151096e1714a18f510f83a2ab ""
   (generated)
   "main.aux"
   "main.log"

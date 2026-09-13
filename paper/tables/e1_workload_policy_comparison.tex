@@ -11,9 +11,9 @@
         \toprule
         Policy & CREMA-D F1 & RAVDESS F1 & SAVEE F1 & Anger F1 & Macro F1 & UAR & PR-AUC \\
         \midrule
-        \texttt{max\_steps\_v1}   & 0.6113 & 0.6087 & 0.7000 & 0.6400 & 0.7848 & 0.8201 & 0.7202 \\
-        \texttt{fixed\_steps\_v1} & 0.6513 & 0.6774 & 0.7317 & 0.6868 & 0.8163 & 0.8313 & 0.7809 \\
-        \texttt{full\_epoch\_v1}  & 0.6541 & 0.5517 & 0.8387 & 0.6815 & 0.8139 & 0.8148 & 0.7884 \\
+        \texttt{Full Local Epoch}  & 0.6541 & 0.5517 & 0.8387 & 0.6815 & 0.8139 & 0.8148 & 0.7884 \\
+        \texttt{Fixed Maximum Steps} & 0.6513 & 0.6774 & 0.7317 & 0.6868 & 0.8163 & 0.8313 & 0.7809 \\
+        \texttt{Balanced Workload}   & 0.6113 & 0.6087 & 0.7000 & 0.6400 & 0.7848 & 0.8201 & 0.7202 \\
         \bottomrule
     \end{tabular}%
     }
@@ -32,9 +32,9 @@
         \toprule
         Policy & Batches/round & Wall time (s) & CPU user (s) & CPU sys (s) & Transport (GB) & Messages & Peak RSS (GB) \\
         \midrule
-        \texttt{max\_steps\_v1}   & 64/64/45   & 184.84 & 358.55  & 60.87  & 4.865  & 19950 & 1.913 \\
-        \texttt{fixed\_steps\_v1} & 143/143/143 & 307.28 & 842.08  & 129.82 & 11.566 & 45550 & 1.918 \\
-        \texttt{full\_epoch\_v1}  & 737/143/45 & 787.29 & 1657.40 & 303.29 & 24.555 & 95150 & 1.930 \\
+        \texttt{Full Local Epoch}  & 737/143/45 & 787.29 & 1657.40 & 303.29 & 24.555 & 95150 & 1.930 \\
+        \texttt{Fixed Maximum Steps} & 143/143/143 & 307.28 & 842.08  & 129.82 & 11.566 & 45550 & 1.918 \\
+        \texttt{Balanced Workload}   & 64/64/45   & 184.84 & 358.55  & 60.87  & 4.865  & 19950 & 1.913 \\
         \bottomrule
     \end{tabular}%
     }
