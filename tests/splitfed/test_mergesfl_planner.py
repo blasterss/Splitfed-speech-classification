@@ -1,7 +1,9 @@
 from src.schema import MergeSFLPolicyConfig
 from src.splitfed.load_controller import (
+    MergeSFLPlanner,
     WorkerProfile,
     WorkerState,
+    WorkerTelemetry,
     select_cohort_binary_ga,
 )
 
@@ -70,3 +72,55 @@ def test_binary_ga_is_independent_of_input_order():
     )
 
     assert first == second
+
+
+def test_planner_builds_replayable_round_plan_and_updates_ema():
+    profiles, states = _inputs()
+    telemetry = [
+        WorkerTelemetry(client_id, state, observed_at=90.0)
+        for client_id, state in states.items()
+    ]
+    first_planner = MergeSFLPlanner(_config(), experiment_seed=42)
+    second_planner = MergeSFLPlanner(_config(), experiment_seed=42)
+
+    first = first_planner.plan(
+        profiles,
+        telemetry,
+        round_idx=1,
+        model_version="model-0",
+        now=100.0,
+    )
+    second = second_planner.plan(
+        profiles,
+        telemetry,
+        round_idx=1,
+        model_version="model-0",
+        now=100.0,
+    )
+
+    assert first == second
+    assert first.deadline_at == 400.0
+    assert first.bandwidth_used <= _config().ingress_budget_bytes
+    assert first.required_quorum == len(first.cohort)
+
+
+def test_planner_rejects_round_without_fresh_quorum():
+    profiles, states = _inputs()
+    telemetry = [
+        WorkerTelemetry(client_id, state, observed_at=1.0)
+        for client_id, state in states.items()
+    ]
+    planner = MergeSFLPlanner(_config(), experiment_seed=42)
+
+    try:
+        planner.plan(
+            profiles,
+            telemetry,
+            round_idx=1,
+            model_version="model-0",
+            now=1000.0,
+        )
+    except ValueError as exc:
+        assert "not enough eligible" in str(exc)
+    else:
+        raise AssertionError("stale telemetry unexpectedly formed a quorum")

@@ -39,6 +39,19 @@ class WorkerState:
 
 
 @dataclass(frozen=True)
+class WorkerTelemetry:
+    """One timestamped per-sample timing observation from a client."""
+
+    client_id: ClientId
+    state: WorkerState
+    observed_at: float
+
+    def __post_init__(self) -> None:
+        if not _is_positive_finite(self.observed_at):
+            raise ValueError("observed_at must be positive and finite")
+
+
+@dataclass(frozen=True)
 class RoundPlan:
     """Replayable output of one MergeSFL control-policy decision."""
 

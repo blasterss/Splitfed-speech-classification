@@ -1,6 +1,7 @@
 """Deterministic MergeSFL Algorithm 1 round planner."""
 
 import random
+import time
 from dataclasses import dataclass
 
 from ...schema import MergeSFLPolicyConfig
@@ -8,7 +9,9 @@ from .mergesfl import (
     ClientId,
     WorkerProfile,
     WorkerState,
+    WorkerTelemetry,
     bandwidth_usage,
+    estimate_worker_state,
     initial_batch_sizes,
     kl_divergence,
     merged_label_distribution,
@@ -26,6 +29,158 @@ class CohortSelection:
     kl: float
     bandwidth_used: int
     trace: dict
+
+
+class MergeSFLPlanner:
+    """Stateful Algorithm 1 planner owned by the training controller."""
+
+    def __init__(self, config: MergeSFLPolicyConfig, experiment_seed: int):
+        self.config = config
+        self.experiment_seed = experiment_seed
+        self.estimates: dict[ClientId, WorkerState] = {}
+
+    def plan(
+        self,
+        profiles: list[WorkerProfile],
+        telemetry: list[WorkerTelemetry],
+        *,
+        round_idx: int,
+        model_version: str,
+        now: float | None = None,
+    ):
+        """Create a validated, replayable plan from current observations."""
+        from .mergesfl import RoundPlan
+
+        current_time = time.time() if now is None else now
+        telemetry_by_id = {item.client_id: item for item in telemetry}
+        eligible_profiles = []
+        next_estimates = {}
+        rejected = {}
+        for profile in sorted(profiles, key=lambda item: str(item.client_id)):
+            observation = telemetry_by_id.get(profile.client_id)
+            if observation is None:
+                rejected[str(profile.client_id)] = "missing_telemetry"
+                continue
+            age = current_time - observation.observed_at
+            if age < 0 or age > self.config.telemetry_max_age_sec:
+                rejected[str(profile.client_id)] = "stale_telemetry"
+                continue
+            estimate = estimate_worker_state(
+                observation.state,
+                self.estimates.get(profile.client_id),
+                alpha=self.config.ema_alpha,
+            )
+            eligible_profiles.append(profile)
+            next_estimates[profile.client_id] = estimate
+        if len(eligible_profiles) < self.config.min_clients:
+            raise ValueError("not enough eligible clients for MergeSFL round")
+
+        selection = select_cohort_binary_ga(
+            eligible_profiles,
+            next_estimates,
+            self.config,
+            experiment_seed=self.experiment_seed,
+            round_idx=round_idx,
+        )
+        refined = refine_batch_sizes(
+            [
+                profile
+                for profile in eligible_profiles
+                if profile.client_id in selection.cohort
+            ],
+            selection.batch_sizes,
+            next_estimates,
+            selection.reference_distribution,
+            self.config,
+        )
+        selected_profiles = [
+            profile
+            for profile in eligible_profiles
+            if profile.client_id in selection.cohort
+        ]
+        merged = merged_label_distribution(selected_profiles, refined)
+        used = bandwidth_usage(
+            selection.cohort,
+            refined,
+            self.config.feature_bytes_per_sample,
+        )
+        self.estimates.update(next_estimates)
+        return RoundPlan(
+            round=round_idx,
+            seed=self.experiment_seed,
+            cohort=selection.cohort,
+            batch_size_by_client=refined,
+            local_steps=self.config.local_steps,
+            required_quorum=len(selection.cohort),
+            deadline_at=current_time + self.config.round_timeout_sec,
+            model_version=model_version,
+            estimates={
+                item: next_estimates[item] for item in selection.cohort
+            },
+            bandwidth_used=used,
+            reference_distribution=selection.reference_distribution,
+            merged_distribution=merged,
+            kl_divergence=kl_divergence(
+                merged, selection.reference_distribution
+            ),
+            decision_trace={
+                **selection.trace,
+                "rejected": rejected,
+                "initial_batch_sizes": selection.batch_sizes,
+                "refined_batch_sizes": refined,
+            },
+        )
+
+
+def refine_batch_sizes(
+    profiles,
+    initial_batches,
+    states,
+    reference,
+    config,
+) -> dict[ClientId, int]:
+    """Deterministically refine integer batches under KL and bandwidth."""
+    batches = dict(initial_batches)
+
+    def score(candidate):
+        merged = merged_label_distribution(profiles, candidate)
+        divergence = kl_divergence(merged, reference)
+        added_time = sum(
+            abs(candidate[item] - initial_batches[item]) * states[item].cost
+            for item in candidate
+        ) / len(candidate)
+        return (
+            divergence > config.kl_threshold,
+            max(0.0, divergence - config.kl_threshold),
+            added_time,
+            divergence,
+        )
+
+    for _ in range(config.max_batch_size * len(batches)):
+        current_score = score(batches)
+        candidates = []
+        for client_id in sorted(batches, key=str):
+            for delta in (-1, 1):
+                value = batches[client_id] + delta
+                if not 1 <= value <= config.max_batch_size:
+                    continue
+                candidate = {**batches, client_id: value}
+                if bandwidth_usage(
+                    tuple(candidate),
+                    candidate,
+                    config.feature_bytes_per_sample,
+                ) <= config.ingress_budget_bytes:
+                    candidates.append(candidate)
+        if not candidates:
+            break
+        best = min(
+            candidates,
+            key=lambda item: (score(item), tuple(item.values())),
+        )
+        if score(best) >= current_score:
+            break
+        batches = best
+    return batches
 
 
 def select_cohort_binary_ga(
