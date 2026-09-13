@@ -23,7 +23,10 @@ def aggregate_states(
 
     if strategy is AggregationStrategy.fedavg:
         weights = [1.0 / len(client_params_list)] * len(client_params_list)
-    elif strategy is AggregationStrategy.weighted_fedavg:
+    elif strategy in (
+        AggregationStrategy.weighted_fedavg,
+        AggregationStrategy.mergesfl_batch_weighted_v1,
+    ):
         total_samples = sum(client_sizes)
         weights = [size / total_samples for size in client_sizes]
     else:

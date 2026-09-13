@@ -28,6 +28,21 @@ def test_uniform_fedavg_does_not_weight_by_dataset_size():
     assert torch.equal(aggregated["weight"], torch.tensor([5.0]))
 
 
+def test_mergesfl_aggregation_weights_bottom_models_by_batch_size():
+    client_params = [
+        {"weight": torch.tensor([0.0])},
+        {"weight": torch.tensor([10.0])},
+    ]
+
+    aggregated = FedServer.aggregate(
+        client_params,
+        [2, 8],
+        AggregationStrategy.mergesfl_batch_weighted_v1,
+    )
+
+    assert torch.equal(aggregated["weight"], torch.tensor([8.0]))
+
+
 def test_fedavg_preserves_integer_buffer_from_largest_client():
     client_params = [
         {"weight": torch.tensor([1.0]), "counter": torch.tensor(2)},

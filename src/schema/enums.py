@@ -23,6 +23,7 @@ class AggregationStrategy(str, Enum):
 
     fedavg = "fedavg"
     weighted_fedavg = "weighted_fedavg"
+    mergesfl_batch_weighted_v1 = "mergesfl_batch_weighted_v1"
 
 
 class OptimizerType(str, Enum):
