@@ -62,6 +62,7 @@ class SplitServerStrategy(str, Enum):
 
     concat_v1 = "concat_v1"
     mergesfl_v1 = "mergesfl_v1"
+    mergesfl_algorithm1_v1 = "mergesfl_algorithm1_v1"
     sequential_v1 = "sequential_v1"
 
 

@@ -204,6 +204,57 @@ def test_mergesfl_requires_equal_local_steps():
         ConfigSchema(**raw)
 
 
+def _mergesfl_algorithm1_config():
+    raw = yaml.safe_load(Path("configs/config.example.yaml").read_text())
+    raw["split_server"]["training_strategy"] = "mergesfl_algorithm1_v1"
+    raw["fed_server"]["strategy"] = "mergesfl_batch_weighted_v1"
+    raw["load_controller"] = {
+        "max_batch_size": 16,
+        "local_steps": 42,
+        "ingress_budget_bytes": 4096,
+        "feature_bytes_per_sample": 128,
+        "min_clients": 2,
+        "max_clients": 3,
+        "initial_worker_states": {
+            client["client_id"]: {
+                "compute_seconds_per_sample": 0.01,
+                "transfer_seconds_per_sample": 0.001,
+            }
+            for client in raw["clients"]
+        },
+    }
+    return raw
+
+
+def test_algorithm1_requires_consistent_control_plane():
+    config = ConfigSchema(**_mergesfl_algorithm1_config())
+
+    assert config.load_controller.name == "mergesfl_algorithm1_v1"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (
+            lambda raw: raw["fed_server"].update(strategy="fedavg"),
+            "batch-weighted",
+        ),
+        (
+            lambda raw: raw["load_controller"][
+                "initial_worker_states"
+            ].pop(2),
+            "initial_worker_states",
+        ),
+    ],
+)
+def test_algorithm1_rejects_inconsistent_control_plane(mutation, match):
+    raw = _mergesfl_algorithm1_config()
+    mutation(raw)
+
+    with pytest.raises(ValidationError, match=match):
+        ConfigSchema(**raw)
+
+
 def test_mergesfl_requires_dropping_incomplete_batches():
     raw = _mergesfl_config()
     raw["clients"][0]["runtime"]["drop_last"] = False

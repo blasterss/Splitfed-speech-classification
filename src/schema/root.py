@@ -6,8 +6,15 @@ from pydantic import Field, model_validator
 from .base import StrictConfigModel
 from .channels import GRPCChannelConfig, QueueChannelConfig
 from .clients import ClientConfig
-from .enums import SplitServerStrategy, TrainingMode, WorkloadPolicy
+from .enums import (
+    AggregationStrategy,
+    ServerModelScope,
+    SplitServerStrategy,
+    TrainingMode,
+    WorkloadPolicy,
+)
 from .experiment import ExperimentConfig, TrainingConfig
+from .load_controller import MergeSFLPolicyConfig
 from .servers import FedServerConfig, SplitServerConfig
 
 
@@ -32,6 +39,9 @@ class ConfigSchema(StrictConfigModel):
     fed_server: FedServerConfig | None = Field(
         default=None, description="Optional federated server."
     )
+    load_controller: MergeSFLPolicyConfig | None = Field(
+        default=None, description="Optional dynamic client round policy."
+    )
     channels: dict[str, QueueChannelConfig | GRPCChannelConfig] = Field(
         description="Logical communication channels."
     )
@@ -43,6 +53,7 @@ class ConfigSchema(StrictConfigModel):
         self._validate_clients()
         self._validate_mode_ownership()
         self._validate_split_strategy()
+        self._validate_load_controller()
         self._validate_experiment_contract()
         self._validate_channels()
         return self
@@ -161,6 +172,45 @@ class ConfigSchema(StrictConfigModel):
         if len(local_steps) != 1:
             raise ValueError(
                 "mergesfl_v1 requires equal local_steps for every client"
+            )
+
+    def _validate_load_controller(self) -> None:
+        strategy = (
+            self.split_server.training_strategy
+            if self.split_server is not None
+            else None
+        )
+        algorithm1 = strategy is SplitServerStrategy.mergesfl_algorithm1_v1
+        if algorithm1 != (self.load_controller is not None):
+            raise ValueError(
+                "mergesfl_algorithm1_v1 requires exactly one load_controller"
+            )
+        if not algorithm1:
+            return
+        assert self.load_controller is not None
+        assert self.split_server is not None
+        assert self.fed_server is not None
+        if self.training.mode is not TrainingMode.splitfed:
+            raise ValueError("MergeSFL Algorithm 1 requires splitfed mode")
+        if self.split_server.model_scope is not ServerModelScope.shared:
+            raise ValueError("MergeSFL Algorithm 1 requires shared server")
+        if (
+            self.fed_server.strategy
+            is not AggregationStrategy.mergesfl_batch_weighted_v1
+        ):
+            raise ValueError(
+                "MergeSFL Algorithm 1 requires batch-weighted aggregation"
+            )
+        if self.fed_server.min_clients != self.load_controller.min_clients:
+            raise ValueError(
+                "MergeSFL policy and FedServer min_clients must match"
+            )
+        if self.load_controller.max_clients > len(self.clients):
+            raise ValueError("MergeSFL max_clients exceeds client count")
+        client_ids = {client.client_id for client in self.clients}
+        if set(self.load_controller.initial_worker_states) != client_ids:
+            raise ValueError(
+                "MergeSFL initial_worker_states must match client IDs"
             )
 
     def _validate_channels(self) -> None:

@@ -29,7 +29,7 @@ from .enums import (
     WorkloadPolicy,
 )
 from .experiment import ExperimentConfig, TrainingConfig
-from .load_controller import MergeSFLPolicyConfig
+from .load_controller import MergeSFLPolicyConfig, WorkerTimingConfig
 from .root import ConfigSchema, _validate_device_available
 from .servers import FedServerConfig, SplitServerConfig, SplitServerModelConfig
 
@@ -61,6 +61,7 @@ __all__ = [
     "TrainingMode",
     "TransportType",
     "WorkloadPolicy",
+    "WorkerTimingConfig",
     "_validate_device_available",
     "torch",
 ]

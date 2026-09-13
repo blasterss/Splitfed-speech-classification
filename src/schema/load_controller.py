@@ -7,6 +7,13 @@ from pydantic import Field, model_validator
 from .base import StrictConfigModel
 
 
+class WorkerTimingConfig(StrictConfigModel):
+    """Bootstrap per-sample timing used before runtime telemetry exists."""
+
+    compute_seconds_per_sample: float = Field(gt=0)
+    transfer_seconds_per_sample: float = Field(gt=0)
+
+
 class MergeSFLPolicyConfig(StrictConfigModel):
     """Versioned configuration for reconstructed MergeSFL Algorithm 1."""
 
@@ -25,6 +32,9 @@ class MergeSFLPolicyConfig(StrictConfigModel):
     mutation_probability: float = Field(default=0.05, ge=0, le=1)
     telemetry_max_age_sec: float = Field(default=300.0, gt=0)
     round_timeout_sec: float = Field(default=300.0, gt=0)
+    initial_worker_states: dict[int, WorkerTimingConfig] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_policy_constraints(self):
