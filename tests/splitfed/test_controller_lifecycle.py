@@ -153,11 +153,36 @@ def test_config_rejects_swapped_federated_channel_roles(tmp_path):
         ConfigSchema(**raw)
 
 
-def test_config_rejects_grpc_stub_before_setup(tmp_path):
+def test_config_accepts_unique_grpc_endpoints_for_every_client(tmp_path):
     raw = make_config(tmp_path).model_dump(by_alias=True)
     raw["experiment"]["transport"] = "grpc"
+    for index, name in enumerate(raw["channels"]):
+        raw["channels"][name] = {
+            "transport": "grpc",
+            "name": name,
+            "addresses": {0: f"127.0.0.1:{51000 + index}"},
+            "use_tls": False,
+            "timeout_sec": 1,
+        }
 
-    with pytest.raises(ValidationError, match="grpc is a stub"):
+    config = ConfigSchema(**raw)
+
+    assert config.experiment.transport.value == "grpc"
+
+
+def test_config_rejects_grpc_address_map_without_every_client(tmp_path):
+    raw = make_config(tmp_path).model_dump(by_alias=True)
+    raw["experiment"]["transport"] = "grpc"
+    for index, name in enumerate(raw["channels"]):
+        raw["channels"][name] = {
+            "transport": "grpc",
+            "name": name,
+            "addresses": {1: f"127.0.0.1:{51000 + index}"},
+            "use_tls": False,
+            "timeout_sec": 1,
+        }
+
+    with pytest.raises(ValidationError, match="configured client IDs"):
         ConfigSchema(**raw)
 
 

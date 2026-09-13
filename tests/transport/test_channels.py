@@ -166,12 +166,12 @@ def test_channel_factory_creates_insecure_grpc_channel():
     config = GRPCChannelConfig(
         transport=TransportType.grpc,
         name="test",
-        address="127.0.0.1:50051",
+        addresses={1: "127.0.0.1:50051"},
         use_tls=False,
         timeout_sec=2,
     )
 
-    channel = ChannelFactory.create(config)
+    channel = ChannelFactory.create(config, client_id=1)
 
     assert isinstance(channel, GrpcChannel)
     assert channel.address == "127.0.0.1:50051"

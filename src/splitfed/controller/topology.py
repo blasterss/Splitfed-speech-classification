@@ -32,6 +32,7 @@ def build_channels(config: ConfigSchema, mp_context, stop_event) -> dict:
                 continue
             client_channels[name] = ChannelFactory.create(
                 params,
+                client_id=client_id,
                 mp_context=mp_context,
                 stop_event=stop_event,
             )

@@ -36,12 +36,15 @@ class QueueChannelConfig(ChannelConfig):
 
 
 class GRPCChannelConfig(ChannelConfig):
-    """Configuration contract for the non-operational gRPC stub."""
+    """Per-client endpoint configuration for a gRPC logical channel."""
 
-    address: str = Field(description="gRPC service address in host:port form.")
-    use_tls: bool = Field(default=True, description="Whether to use TLS.")
-    timeout_sec: int = Field(
-        default=30,
+    addresses: dict[int, str] = Field(
+        min_length=1,
+        description="Receiver address keyed by configured client ID.",
+    )
+    use_tls: bool = Field(default=False, description="Whether to use TLS.")
+    timeout_sec: float = Field(
+        default=30.0,
         gt=0,
         description="Timeout for waiting on a gRPC response in seconds.",
     )

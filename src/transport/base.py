@@ -280,6 +280,7 @@ class ChannelFactory:
     @staticmethod
     def create(
         channel_params: QueueChannelConfig | GRPCChannelConfig,
+        client_id: int | None = None,
         mp_context=None,
         stop_event=None,
     ) -> Channel:
@@ -293,8 +294,10 @@ class ChannelFactory:
                 stop_event=stop_event,
             )
         elif transport == "grpc":
+            if client_id is None:
+                raise ValueError("client_id is required for a gRPC channel")
             return GrpcChannel(
-                address=channel_params.address,
+                address=channel_params.addresses[client_id],
                 timeout=channel_params.timeout_sec,
                 maxsize=channel_params.buffer_size,
                 use_tls=channel_params.use_tls,

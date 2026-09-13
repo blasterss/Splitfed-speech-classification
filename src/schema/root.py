@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 from .base import StrictConfigModel
 from .channels import GRPCChannelConfig, QueueChannelConfig
 from .clients import ClientConfig
-from .enums import TrainingMode, TransportType
+from .enums import TrainingMode
 from .experiment import ExperimentConfig, TrainingConfig
 from .servers import FedServerConfig, SplitServerConfig
 
@@ -47,19 +47,37 @@ class ConfigSchema(StrictConfigModel):
         return self
 
     def _validate_transport(self) -> None:
-        if self.experiment.transport is not TransportType.queue:
-            raise ValueError(
-                "Only queue transport is operational; grpc is a stub"
-            )
+        client_ids = {client.client_id for client in self.clients}
+        addresses = []
         for channel_name, channel in self.channels.items():
-            if channel.transport is not TransportType.queue:
+            if channel.transport is not self.experiment.transport:
                 raise ValueError(
-                    f"Channel {channel_name!r} selects non-operational grpc"
+                    f"Channel {channel_name!r} transport must match experiment"
                 )
             if channel.compression is not None:
                 raise ValueError(
                     f"Channel {channel_name!r} compression is not implemented"
                 )
+            if isinstance(channel, GRPCChannelConfig):
+                if channel.use_tls:
+                    raise ValueError(
+                        "gRPC TLS credentials are not implemented; "
+                        "use_tls must be false"
+                    )
+                if set(channel.addresses) != client_ids:
+                    raise ValueError(
+                        f"Channel {channel_name!r} gRPC addresses must match "
+                        "configured client IDs"
+                    )
+                for client_id, address in channel.addresses.items():
+                    if not address.strip():
+                        raise ValueError(
+                            f"Channel {channel_name!r} has an empty gRPC "
+                            f"address for client {client_id!r}"
+                        )
+                    addresses.append(address)
+        if len(addresses) != len(set(addresses)):
+            raise ValueError("gRPC channel addresses must be unique")
 
     def _validate_devices(self) -> None:
         device_fields = [
