@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package secureasr.transport.v1;
+
+message Tensor {
+  repeated int64 shape = 1;
+  string dtype = 2;
+  bytes data = 3;
+}
+
+message Value {
+  oneof kind {
+    Tensor tensor_value = 1;
+    Mapping mapping_value = 2;
+    int64 int_value = 3;
+    double float_value = 4;
+    bool bool_value = 5;
+    string string_value = 6;
+    bytes bytes_value = 7;
+  }
+}
+
+message Entry {
+  string key = 1;
+  Value value = 2;
+}
+
+message Mapping {
+  repeated Entry entries = 1;
+}
+
+message Message {
+  string type = 1;
+  string sender = 2;
+  int64 round = 3;
+  int64 step = 4;
+  Mapping payload = 5;
+  string protocol = 6;
+  uint32 protocol_version = 7;
+  string request_id = 8;
+  double deadline_at = 9;
+}

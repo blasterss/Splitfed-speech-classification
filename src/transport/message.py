@@ -88,15 +88,16 @@ class Message:
                 f"Message {self.request_id} deadline expired before receive"
             )
 
-    # ------------------------------------------------------------------
-    # Serialization (stubs for future gRPC transport)
-    # ------------------------------------------------------------------
     def to_bytes(self) -> bytes:
-        raise NotImplementedError
+        from .serialization import serialize_message
+
+        return serialize_message(self)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Message:
-        raise NotImplementedError
+        from .serialization import deserialize_message
+
+        return deserialize_message(data, cls)
 
     def __repr__(self) -> str:
         payload_keys = list(self.payload.keys())
