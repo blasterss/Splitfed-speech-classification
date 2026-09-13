@@ -236,6 +236,23 @@ def test_algorithm1_requires_consistent_control_plane():
     assert config.load_controller.name == "mergesfl_algorithm1_v1"
 
 
+def test_algorithm1_experiment_config_is_schema_valid(monkeypatch):
+    monkeypatch.setattr(
+        "src.schema.root._validate_device_available", lambda *args: None
+    )
+    raw = yaml.safe_load(
+        Path(
+            "configs/experiments/config.e1.3_mergesfl_algorithm1.yaml"
+        ).read_text()
+    )
+
+    config = ConfigSchema(**raw)
+
+    assert config.split_server.training_strategy.value == (
+        "mergesfl_algorithm1_v1"
+    )
+
+
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [

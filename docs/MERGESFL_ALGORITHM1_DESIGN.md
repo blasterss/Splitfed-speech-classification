@@ -2,10 +2,11 @@
 
 ## Status and scope
 
-This document is an implementation sketch, not a claim of implemented
-behavior. The current `mergesfl_v1` runtime implements feature merging and the
-gradient dispatch rule from the public MergeSFL code. The control policy below
-targets Algorithm 1 in the paper, which is not implemented in that repository.
+The `mergesfl_algorithm1_v1` runtime implements the control and execution
+contracts described below. The separate `mergesfl_v1` runtime remains the
+static feature-merging and gradient-dispatch baseline from the public MergeSFL
+code. The Algorithm 1 GA and integer refinement are explicitly versioned
+reconstructions because their implementation details are absent upstream.
 
 The policy belongs to `ClientLoadController`, not to `SplitServer` or
 `FedServer`. The controller produces a replayable `RoundPlan`; model workers
@@ -146,29 +147,24 @@ RoundPlan(
 ```
 
 Clients rebuild their training DataLoader from the plan with `drop_last=True`.
-Only cohort members receive model state and participate in split/FedAvg
-barriers. The split server merges exactly the planned clients for every step.
+Only cohort members contribute train steps and model updates. Non-participants
+send typed round-completion and model-sync requests so synchronized evaluation
+uses the same global client-side model. The split server merges exactly the
+planned clients for every step.
 The federated server weights bottom-model states by planned batch size as in
 Equation 17. A dropout aborts the synchronous merged step; it must not produce
 a partial server update.
 
-## Implementation slices and acceptance criteria
+## Implemented contracts and remaining experimental acceptance
 
-1. Pure policy math: EMA, batches, bandwidth, distributions, KL and priority;
-   deterministic unit vectors reproduce hand-calculated values.
-2. GA and integer refinement: replay with the same seed is byte-identical;
-   all returned plans satisfy cohort, batch and bandwidth invariants.
-3. Protocol: typed plan messages, model version, deadlines and rejection of
-   unplanned clients/batch shapes.
-4. Dynamic client DataLoader: planned batch size, exactly `local_steps`, no
-   incomplete batches and explicit failure for insufficient data.
-5. Runtime cohort topology: selected-only barriers, cancellation and a spawn
-   smoke test with a slow/dropout client and no surviving processes.
-6. Equation 17 aggregation: deterministic floating/non-floating buffer policy
-   and a reference state-dict test.
-7. Artifacts: resolved policy config, telemetry inputs, complete decision trace,
-   unique/repeated samples, effective batches, waiting time and bytes.
-8. Matched experiment: identical seed, actor folds, model, loss, evaluation
+1. Implemented: policy math, deterministic GA/refinement, strict KL failure,
+   typed plans, dynamic loaders, server-side plan enforcement, Equation 17,
+   telemetry/decision artifacts and a multi-process selected/skipped smoke.
+2. Remaining experimental validation: calibrated bootstrap timings, explicit
+   slow/dropout fault injection, repeated-sample and waiting-time accounting,
+   and a matched multi-seed benchmark with confidence intervals.
+3. Matched experiment requires identical seed, actor folds, model, loss,
+   evaluation
    cadence and total effective-sample budget for `sequential_v1`, `concat_v1`,
    repo-faithful `mergesfl_v1` and `mergesfl_algorithm1_v1`.
 

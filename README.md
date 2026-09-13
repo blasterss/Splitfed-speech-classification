@@ -176,13 +176,22 @@ Important configuration caveats:
   protocol. Personalized split keeps one server model, optimizer, metrics
   stream and checkpoint per client;
 - `training.fed_every` currently controls federated synchronization;
-- `split_server.training_strategy` supports `concat_v1`, `sequential_v1` and
-  `mergesfl_v1`. The MergeSFL path follows the public reference implementation:
+- `split_server.training_strategy` supports `concat_v1`, `sequential_v1`,
+  `mergesfl_v1` and `mergesfl_algorithm1_v1`. The static `mergesfl_v1` path
+  follows the public reference implementation:
   it merges matched client activations into one batch and rescales each
   dispatched gradient by the merged batch size divided by that client's batch
   size. It requires `fixed_steps_v1` and equal `local_steps`; per-client
   `batch_size` remains explicit configuration rather than an automatic
   resource optimizer;
+- `mergesfl_algorithm1_v1` enables the reconstructed Algorithm 1 control
+  plane. `TrainingController` deterministically selects a cohort, regulates
+  batch sizes from timestamped compute/transfer telemetry, enforces bandwidth
+  and KL constraints, and sends one correlated `RoundPlan` to clients and both
+  servers. It requires shared SplitFed, `drop_last: true`, `fed_every: 1`,
+  final aggregation and `mergesfl_batch_weighted_v1`. This is a documented
+  reconstruction because the public repository does not publish its GA and
+  batch-refinement solver details;
 - personalized SplitFed uses the same synchronization cadence and aggregation
   strategy for both partitions; a correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;
@@ -357,6 +366,8 @@ Run the current E1.3 SplitFed experiment variants with:
 ```bash
 uv run secureasr --config-file configs/experiments/config.e1.3_our.yaml
 uv run secureasr --config-file configs/experiments/config.e1.3_sflv1.yaml
+uv run secureasr --config-file \
+  configs/experiments/config.e1.3_mergesfl_algorithm1.yaml
 ```
 
 The first uses one shared server model with synchronized concatenated
@@ -365,6 +376,13 @@ keeps one server model and optimizer per client between synchronizations and
 aggregates both model partitions at `fed_every`. It should not be treated as a
 canonical SFLv1 reproduction without the matched protocol checks described in
 `docs/EXPERIMENT_PLAN.md`.
+
+The third config runs the Algorithm 1 reconstruction with SGD, dynamic
+two-client cohorts and per-client batch regulation. Its initial timing values
+are bootstrap estimates, not benchmark measurements; replace them with a
+calibrated run before reporting results. Every decision is written to
+`<experiment>/metadata/mergesfl_round_plans.yaml` with telemetry inputs, EMA
+estimates, GA trace, batch refinement and constraint results.
 
 Expected generated artifacts include:
 

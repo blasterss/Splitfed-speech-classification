@@ -349,7 +349,15 @@ are still missing.
   rule from the public MergeSFL repository. It requires equal
   `fixed_steps_v1` workloads, permits unequal configured client batch sizes,
   and applies the published `sum(batch_sizes) / client_batch_size` gradient
-  factor. Automatic resource-aware batch-size optimization is not implemented.
+  factor. It remains the static, repository-faithful baseline.
+- `mergesfl_algorithm1_v1` is the separate Algorithm 1 reconstruction. The
+  controller owns dataset profiles, timing EMA, deterministic cohort search,
+  integer batch refinement, deadlines and replay artifacts. Clients rebuild
+  their loaders from the plan; the shared split server rejects unplanned
+  clients, steps and batch shapes; the federated server applies Equation 17
+  weights and synchronizes non-participants before evaluation. Because the
+  upstream code omits GA/refinement details, this mode must be identified as
+  `binary_ga_v1` plus `integer_refinement_v1`, not as copied upstream code.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
   waiting contributors receive a correlated error and fail into cancellation.
 - `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
