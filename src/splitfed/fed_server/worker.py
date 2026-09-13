@@ -21,6 +21,7 @@ from ...utils.runtime.resource_metrics import (
 )
 from ...utils.training import set_seed
 from .aggregation import aggregate_states
+from .planned_worker import run_planned_federated_rounds
 from .protocol import quorum_decision, state_schema, validate_client_update
 
 
@@ -32,6 +33,7 @@ def _fed_server_worker(
     result_queue: mp.Queue,
     failure_queue=None,
     resource_metrics_queue=None,
+    round_plan_queue=None,
 ) -> None:
     """Collect, validate, aggregate and broadcast federated updates."""
     ignore_parent_interrupts()
@@ -56,6 +58,14 @@ def _fed_server_worker(
     current_step = None
 
     try:
+        if round_plan_queue is not None:
+            latest_params = run_planned_federated_rounds(
+                config,
+                client_channels,
+                stop_event,
+                round_plan_queue,
+            )
+            return
         while not stop_event.is_set():
             served_any = False
             for client_id in client_ids:

@@ -76,3 +76,18 @@ def validate_client_update(
             if value.dtype != dtype:
                 raise ValueError(f"Invalid client update dtype for {key}")
     return state_dict, dataset_size, aggregation_weight
+
+
+def validate_model_sync_request(
+    message: Message, *, expected_client_id, expected_round: int
+) -> None:
+    """Validate a non-participant request for the round's global model."""
+    message.validate_for_receive()
+    if message.sender != expected_client_id:
+        raise ValueError("Invalid model sync sender")
+    if message.type != "model_sync":
+        raise ValueError("Invalid model sync type")
+    if message.round != expected_round or message.step != 1:
+        raise ValueError("Invalid model sync round or step")
+    if message.payload != {}:
+        raise ValueError("Invalid model sync payload")

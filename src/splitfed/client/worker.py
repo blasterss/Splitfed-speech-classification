@@ -186,6 +186,8 @@ def _client_worker(
                     client.federative_aggregate(
                         round_idx, aggregation_weight=aggregation_weight
                     )
+            elif should_aggregate and plan is not None:
+                client.synchronize_global_model(round_idx)
             if plan is not None and telemetry_queue is not None and selected:
                 samples = (
                     plan.batch_size_by_client[cfg.client_id]

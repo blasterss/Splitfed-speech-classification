@@ -389,5 +389,28 @@ class Client:
             round,
         )
 
+    def synchronize_global_model(self, round_idx: int) -> None:
+        """Fetch the aggregated model without contributing a local update."""
+        request = Message(
+            type="model_sync",
+            sender=self.client_id,
+            round=round_idx,
+            step=1,
+            payload={},
+        )
+        transfer_started = time.perf_counter()
+        self.agg_to_server.send(request)
+        response = self.agg_from_server.recv()
+        self.last_transfer_seconds = getattr(
+            self, "last_transfer_seconds", 0.0
+        ) + (time.perf_counter() - transfer_started)
+        state_dict = _validate_global_update(
+            response,
+            self.model.state_dict(),
+            round_idx,
+            request.request_id,
+        )
+        self.model.load_state_dict(state_dict)
+
     def evaluate(self, round: int = 0) -> dict[str, float | int]:
         return evaluate_client(self, round)

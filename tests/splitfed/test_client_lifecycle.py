@@ -73,6 +73,9 @@ class PlannedClient(RecordingClient):
     def federative_aggregate(self, round, aggregation_weight=None):
         self.events.append(("aggregate", round, aggregation_weight))
 
+    def synchronize_global_model(self, round_idx):
+        self.events.append(("sync", round_idx))
+
 
 def test_fixed_steps_resource_counts_include_reused_samples():
     assert _round_workload_counts(
@@ -376,7 +379,11 @@ def test_client_skips_round_outside_controller_cohort(monkeypatch):
     )
 
     assert PlannedClient.configured == []
-    assert PlannedClient.events == [("skip", 1), ("evaluate", 1)]
+    assert PlannedClient.events == [
+        ("skip", 1),
+        ("sync", 1),
+        ("evaluate", 1),
+    ]
 
 
 @pytest.mark.parametrize(

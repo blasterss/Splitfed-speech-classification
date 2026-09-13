@@ -10,7 +10,9 @@ from src.splitfed.fed_server import _fed_server_worker
 from src.splitfed.fed_server.protocol import (
     quorum_decision,
     validate_client_update,
+    validate_model_sync_request,
 )
+from src.splitfed.load_controller import RoundPlan, WorkerState
 from src.transport.message import Message
 from src.utils.persistence import deserialize_state_dict
 
@@ -74,6 +76,21 @@ def test_mergesfl_client_update_requires_separate_aggregation_weight():
     )
     assert dataset_size == 99
     assert aggregation_weight == 8
+
+
+def test_model_sync_request_is_typed_and_correlated():
+    request = Message(
+        type="model_sync",
+        sender="client-2",
+        round=1,
+        step=1,
+        deadline_at=FUTURE_DEADLINE,
+        payload={},
+    )
+
+    validate_model_sync_request(
+        request, expected_client_id="client-2", expected_round=1
+    )
 
 
 def test_client_update_rejects_expired_deadline():
@@ -301,6 +318,92 @@ def test_worker_uses_mergesfl_weight_instead_of_dataset_size():
 
     _fed_server_worker(config, channels, 2, stop_event, result_queue)
 
+    assert all(
+        torch.equal(message.payload["weight"], torch.tensor([8.0]))
+        for message in broadcasts
+    )
+
+
+def test_planned_worker_uses_exact_cohort_and_syncs_nonparticipant():
+    stop_event = FakeStopEvent()
+    broadcasts = []
+    plan = RoundPlan(
+        round=1,
+        seed=42,
+        cohort=("client-0", "client-1"),
+        batch_size_by_client={"client-0": 2, "client-1": 8},
+        local_steps=1,
+        required_quorum=2,
+        deadline_at=FUTURE_DEADLINE,
+        model_version="initial",
+        estimates={
+            "client-0": WorkerState(0.01, 0.01),
+            "client-1": WorkerState(0.01, 0.01),
+        },
+        bandwidth_used=10,
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.5, 0.5),
+        kl_divergence=0.0,
+        decision_trace={},
+    )
+    updates = {
+        "client-0": _update(
+            sender="client-0",
+            round=1,
+            payload={
+                "state_dict": {"weight": torch.tensor([0.0])},
+                "dataset_size": 100,
+                "aggregation_weight": 2,
+            },
+        ),
+        "client-1": _update(
+            sender="client-1",
+            round=1,
+            payload={
+                "state_dict": {"weight": torch.tensor([10.0])},
+                "dataset_size": 1,
+                "aggregation_weight": 8,
+            },
+        ),
+        "client-2": Message(
+            type="model_sync",
+            sender="client-2",
+            round=1,
+            step=1,
+            deadline_at=FUTURE_DEADLINE,
+            payload={},
+        ),
+    }
+    channels = {
+        client_id: {
+            "uplink": FakeUplink(message),
+            "downlink": FakeDownlink(broadcasts, stop_event),
+        }
+        for client_id, message in updates.items()
+    }
+    plan_queue = queue.Queue()
+    plan_queue.put(plan)
+    config = SimpleNamespace(
+        seed=42,
+        device="cpu",
+        min_clients=2,
+        quorum_timeout_sec=1,
+        strategy=AggregationStrategy.mergesfl_batch_weighted_v1,
+    )
+
+    _fed_server_worker(
+        config,
+        channels,
+        3,
+        stop_event,
+        FakeResultQueue(),
+        round_plan_queue=plan_queue,
+    )
+
+    assert len(broadcasts) == 3
+    assert {message.request_id for message in broadcasts} == {
+        message.request_id for message in updates.values()
+    }
     assert all(
         torch.equal(message.payload["weight"], torch.tensor([8.0]))
         for message in broadcasts

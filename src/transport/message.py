@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 MESSAGE_PROTOCOL = "secureasr.transport"
-MESSAGE_PROTOCOL_VERSION = 4
+MESSAGE_PROTOCOL_VERSION = 5
 
 
 class MessageType(str, Enum):
@@ -22,6 +22,7 @@ class MessageType(str, Enum):
     # federated
     CLIENT_UPDATE = "client_update"
     GLOBAL_UPDATE = "global_update"
+    MODEL_SYNC = "model_sync"
 
     # control
     ACK = "ack"
