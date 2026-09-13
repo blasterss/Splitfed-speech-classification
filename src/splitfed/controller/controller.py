@@ -5,6 +5,7 @@ import torch.multiprocessing as mp
 
 from ...logger import get_logger
 from ...schema import ConfigSchema, TrainingMode
+from ...utils.config import save_yaml
 from ...utils.persistence import ArtifactPaths
 from ...utils.runtime.resource_metrics import ResourceTracker
 from ..centralized import CentralizedTrainer
@@ -15,10 +16,17 @@ from ..common.lifecycle import (
     _wait_for_training_processes,
 )
 from ..fed_server import FedServer
+from ..load_controller import (
+    MergeSFLPlanner,
+    bootstrap_telemetry,
+    collect_selected_telemetry,
+    profiles_from_manifests,
+)
 from ..split_server import SplitServer
 from .reporting import (
     capture_first_failure,
     close_process_queue,
+    collect_dataset_reports,
     drain_dataset_reports,
 )
 from .topology import (
@@ -69,10 +77,15 @@ class TrainingController:
         self._dataset_report_queue = None
         self._failure_queue = None
         self._resource_metrics_queue = None
+        self._telemetry_queue = None
+        self._client_round_plan_queues: dict[int, object] = {}
+        self._split_round_plan_queue = None
+        self._fed_round_plan_queue = None
         self.dataset_manifests: dict[int, dict] = {}
         self.resource_metrics: list[dict] = []
         self.first_failure: dict | None = None
         self.run_started_at: float | None = None
+        self.mergesfl_round_plans: list[dict] = []
 
     def setup(self) -> None:
         """
@@ -87,6 +100,14 @@ class TrainingController:
             maxsize=len(self.client_cfgs) + 3
         )
         self._resource_metrics_queue = self._mp_context.Queue()
+        if self.cfg.load_controller is not None:
+            self._telemetry_queue = self._mp_context.Queue()
+            self._client_round_plan_queues = {
+                client.client_id: self._mp_context.Queue(maxsize=1)
+                for client in self.client_cfgs
+            }
+            self._split_round_plan_queue = self._mp_context.Queue(maxsize=1)
+            self._fed_round_plan_queue = self._mp_context.Queue(maxsize=1)
 
         logger.info("Initialising channels...")
         self._init_channels()
@@ -115,6 +136,16 @@ class TrainingController:
         self._failure_queue = None
         close_process_queue(getattr(self, "_resource_metrics_queue", None))
         self._resource_metrics_queue = None
+        close_process_queue(getattr(self, "_telemetry_queue", None))
+        self._telemetry_queue = None
+        client_plan_queues = getattr(self, "_client_round_plan_queues", {})
+        for plan_queue in client_plan_queues.values():
+            close_process_queue(plan_queue)
+        self._client_round_plan_queues = {}
+        close_process_queue(getattr(self, "_split_round_plan_queue", None))
+        self._split_round_plan_queue = None
+        close_process_queue(getattr(self, "_fed_round_plan_queue", None))
+        self._fed_round_plan_queue = None
 
         if self._manager is not None:
             if self._stop_event is not None:
@@ -144,6 +175,8 @@ class TrainingController:
             self._mp_context,
             self._failure_queue,
             self._resource_metrics_queue,
+            getattr(self, "_split_round_plan_queue", None),
+            getattr(self, "_fed_round_plan_queue", None),
         )
         if self.split_server is not None:
             logger.info("SplitServer initialised")
@@ -208,7 +241,12 @@ class TrainingController:
             ).metrics
 
         # Barrier: ensures all clients are ready before training begins
-        ready_barrier = self._manager.Barrier(num_clients)
+        controller_joins_ready = (
+            getattr(self.cfg, "load_controller", None) is not None
+        )
+        ready_barrier = self._manager.Barrier(
+            num_clients + int(controller_joins_ready)
+        )
 
         # Barrier: ensures all clients finish training before evaluation
         eval_barrier = self._manager.Barrier(num_clients)
@@ -250,6 +288,10 @@ class TrainingController:
                             if split_server_config is not None
                             else None
                         ),
+                        getattr(
+                            self, "_client_round_plan_queues", {}
+                        ).get(cid),
+                        getattr(self, "_telemetry_queue", None),
                     ),
                     daemon=False,
                     name=f"Client-{cid}",
@@ -259,6 +301,9 @@ class TrainingController:
                 self._client_processes.append(p)
 
                 logger.info("Client '%s' process started (pid=%d)", cid, p.pid)
+
+            if controller_joins_ready:
+                self._run_mergesfl_control_loop(ready_barrier)
 
             _wait_for_training_processes(
                 self._client_processes,
@@ -309,6 +354,69 @@ class TrainingController:
 
         if training_error is not None:
             raise training_error
+
+    def _run_mergesfl_control_loop(self, ready_barrier) -> None:
+        policy = self.cfg.load_controller
+        if policy is None:
+            return
+        expected_clients = {client.client_id for client in self.client_cfgs}
+        collect_dataset_reports(
+            self._dataset_report_queue,
+            self.dataset_manifests,
+            expected_client_ids=expected_clients,
+            timeout=self.cfg.training.barrier_timeout_sec,
+        )
+        participation = {client_id: 0 for client_id in expected_clients}
+        latest_telemetry = bootstrap_telemetry(policy)
+        planner = MergeSFLPlanner(policy, self.cfg.training.seed)
+
+        for round_idx in range(1, self.cfg.training.num_rounds + 1):
+            profiles = profiles_from_manifests(
+                self.dataset_manifests, participation
+            )
+            plan = planner.plan(
+                profiles,
+                list(latest_telemetry.values()),
+                round_idx=round_idx,
+                model_version=f"round-{round_idx - 1}",
+            )
+            self._dispatch_round_plan(plan)
+            self.mergesfl_round_plans.append(plan.to_dict())
+            self._persist_mergesfl_plans()
+            if round_idx == 1:
+                ready_barrier.wait(
+                    timeout=self.cfg.training.barrier_timeout_sec
+                )
+            observations = collect_selected_telemetry(
+                self._telemetry_queue,
+                selected_client_ids=set(plan.cohort),
+                round_deadline_at=plan.deadline_at,
+            )
+            latest_telemetry.update(observations)
+            for client_id in plan.cohort:
+                participation[client_id] += 1
+
+    def _dispatch_round_plan(self, plan) -> None:
+        self._split_round_plan_queue.put(plan, timeout=5)
+        self._fed_round_plan_queue.put(plan, timeout=5)
+        for plan_queue in self._client_round_plan_queues.values():
+            plan_queue.put(plan, timeout=5)
+
+    def _persist_mergesfl_plans(self) -> None:
+        if not getattr(self.cfg, "models_save_path", None):
+            return
+        paths = ArtifactPaths.from_root(
+            self.cfg.models_save_path, self.cfg.experiment.name
+        )
+        paths.mkdir()
+        save_yaml(
+            paths.metadata / "mergesfl_round_plans.yaml",
+            {
+                "policy": self.cfg.load_controller.name,
+                "round_plans": self.mergesfl_round_plans,
+            },
+            verbose=False,
+        )
 
     def _start_centralized_training(self) -> None:
         if self._manager is None or self._stop_event is None:

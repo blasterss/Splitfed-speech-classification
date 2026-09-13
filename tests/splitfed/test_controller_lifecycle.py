@@ -1,11 +1,12 @@
 import copy
 import queue
+import time
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
-from src.schema import ConfigSchema, TrainingMode
+from src.schema import ConfigSchema, MergeSFLPolicyConfig, TrainingMode
 from src.splitfed.common.lifecycle import (
     _cancel_training,
     _raise_for_failed_processes,
@@ -14,6 +15,7 @@ from src.splitfed.common.lifecycle import (
     _wait_for_training_processes,
 )
 from src.splitfed.controller import TrainingController
+from src.splitfed.load_controller import WorkerState, WorkerTelemetry
 
 
 def make_config(dataset_root):
@@ -397,6 +399,10 @@ class FakeBarrier:
     def __init__(self, error=None):
         self.abort_called = False
         self.error = error
+        self.wait_timeouts = []
+
+    def wait(self, timeout):
+        self.wait_timeouts.append(timeout)
 
     def abort(self):
         self.abort_called = True
@@ -492,6 +498,74 @@ def test_controller_drains_bounded_dataset_reports_by_client_id():
     assert controller.dataset_manifests == {
         2: {"client_id": 2, "dataset": "SAVEE"}
     }
+
+
+def test_controller_dispatches_replayable_mergesfl_round_plan():
+    policy = MergeSFLPolicyConfig(
+        max_batch_size=4,
+        local_steps=2,
+        ingress_budget_bytes=512,
+        feature_bytes_per_sample=64,
+        min_clients=2,
+        max_clients=2,
+        initial_worker_states={
+            client_id: {
+                "compute_seconds_per_sample": 0.01,
+                "transfer_seconds_per_sample": 0.001,
+            }
+            for client_id in (0, 1)
+        },
+    )
+    controller = TrainingController.__new__(TrainingController)
+    controller.cfg = SimpleNamespace(
+        load_controller=policy,
+        training=SimpleNamespace(
+            seed=42, num_rounds=1, barrier_timeout_sec=1
+        ),
+        models_save_path=None,
+    )
+    controller.client_cfgs = [
+        SimpleNamespace(client_id=0),
+        SimpleNamespace(client_id=1),
+    ]
+    controller.dataset_manifests = {
+        client_id: {
+            "coverage": {
+                "train": {"class_0": 3, "class_1": 1, "samples": 4}
+            }
+        }
+        for client_id in (0, 1)
+    }
+    controller._dataset_report_queue = queue.Queue()
+    controller._telemetry_queue = queue.Queue()
+    for client_id in (0, 1):
+        controller._telemetry_queue.put(
+            WorkerTelemetry(
+                client_id,
+                WorkerState(0.02, 0.002),
+                time.time(),
+            )
+        )
+    controller._split_round_plan_queue = queue.Queue()
+    controller._fed_round_plan_queue = queue.Queue()
+    controller._client_round_plan_queues = {
+        0: queue.Queue(),
+        1: queue.Queue(),
+    }
+    controller.mergesfl_round_plans = []
+    ready_barrier = FakeBarrier()
+
+    controller._run_mergesfl_control_loop(ready_barrier)
+
+    split_plan = controller._split_round_plan_queue.get_nowait()
+    assert split_plan == controller._fed_round_plan_queue.get_nowait()
+    assert split_plan.cohort == (0, 1)
+    assert all(
+        plan_queue.get_nowait() == split_plan
+        for plan_queue in controller._client_round_plan_queues.values()
+    )
+    assert controller.mergesfl_round_plans == [split_plan.to_dict()]
+    assert ready_barrier.wait_timeouts == [1]
 
 
 def test_controller_keeps_worker_first_failure_over_fallback():

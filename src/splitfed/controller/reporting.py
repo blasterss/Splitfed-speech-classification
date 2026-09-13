@@ -1,6 +1,7 @@
 """Controller-owned queue cleanup and diagnostic report collection."""
 
 import queue
+import time
 
 from ...utils.runtime import FailureRecord
 
@@ -29,6 +30,37 @@ def drain_dataset_reports(report_queue, manifests: dict[int, dict]) -> None:
         client_id = report.get("client_id")
         if not isinstance(client_id, int):
             raise ValueError("Dataset report has invalid client_id")
+        if client_id in manifests:
+            raise ValueError(
+                f"Duplicate dataset report for client {client_id}"
+            )
+        manifests[client_id] = report
+
+
+def collect_dataset_reports(
+    report_queue,
+    manifests: dict[int, dict],
+    *,
+    expected_client_ids: set[int],
+    timeout: float,
+) -> None:
+    """Wait for the exact client manifest set before planning starts."""
+    deadline = time.monotonic() + timeout
+    while set(manifests) != expected_client_ids:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            missing = sorted(expected_client_ids - set(manifests))
+            raise TimeoutError(f"missing dataset reports from {missing}")
+        try:
+            report = report_queue.get(timeout=remaining)
+        except queue.Empty as exc:
+            missing = sorted(expected_client_ids - set(manifests))
+            raise TimeoutError(
+                f"missing dataset reports from {missing}"
+            ) from exc
+        client_id = report.get("client_id")
+        if client_id not in expected_client_ids:
+            raise ValueError("Dataset report has unknown client_id")
         if client_id in manifests:
             raise ValueError(
                 f"Duplicate dataset report for client {client_id}"
