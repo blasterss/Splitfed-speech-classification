@@ -1,4 +1,5 @@
 import queue
+import threading
 import time
 
 import pytest
@@ -25,9 +26,49 @@ from src.splitfed.split_server import (
     _validate_message,
     validate_message_against_plan,
 )
+from src.splitfed.split_server.worker.shared import _wait_for_round_plan
 from src.transport.message import Message, MessageType
 
 FUTURE_DEADLINE = time.time() + 3600
+
+
+def test_split_server_waits_for_delayed_round_plan():
+    plan_queue = queue.Queue()
+    stop_event = threading.Event()
+    plan = RoundPlan(
+        round=1,
+        seed=42,
+        cohort=("client-0", "client-1"),
+        batch_size_by_client={"client-0": 2, "client-1": 2},
+        local_steps=1,
+        required_quorum=2,
+        deadline_at=time.time() + 1,
+        model_version="round-0",
+        estimates={
+            client_id: WorkerState(0.01, 0.001)
+            for client_id in ("client-0", "client-1")
+        },
+        bandwidth_used=4,
+        reference_distribution=(0.5, 0.5),
+        merged_distribution=(0.5, 0.5),
+        kl_divergence=0.0,
+        decision_trace={},
+    )
+    timer = threading.Timer(0.01, plan_queue.put, args=(plan,))
+    timer.start()
+
+    try:
+        received = _wait_for_round_plan(
+            plan_queue,
+            {},
+            expected_round=1,
+            deadline_at=time.time() + 1,
+            stop_event=stop_event,
+        )
+    finally:
+        timer.join()
+
+    assert received is plan
 
 
 def _train_message(sender, step):

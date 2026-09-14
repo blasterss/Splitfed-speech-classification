@@ -40,6 +40,34 @@ from ..protocol import (
 logger = logger.getChild("SplitServer")
 
 
+def _wait_for_round_plan(
+    round_plan_queue,
+    round_plans,
+    *,
+    expected_round: int,
+    deadline_at: float,
+    stop_event,
+):
+    """Wait boundedly for a plan that may still be in the queue feeder."""
+    while not stop_event.is_set():
+        remaining = deadline_at - time.time()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"Split-server RoundPlan {expected_round} was not received "
+                "before the message deadline"
+            )
+        try:
+            plan = round_plan_queue.get(timeout=min(remaining, 0.1))
+        except queue.Empty:
+            continue
+        if plan.round in round_plans:
+            raise ValueError("Duplicate split-server RoundPlan")
+        round_plans[plan.round] = plan
+        if plan.round == expected_round:
+            return plan
+    return None
+
+
 def _split_server_worker_concat(
     config: SplitServerConfig,
     client_channels: dict[str, dict[str, Channel]],
@@ -111,10 +139,15 @@ def _split_server_worker_concat(
                 if round_plan_queue is not None:
                     plan = round_plans.get(msg.round)
                     if plan is None:
-                        raise ValueError(
-                            "Missing split-server RoundPlan for round "
-                            f"{msg.round}"
+                        plan = _wait_for_round_plan(
+                            round_plan_queue,
+                            round_plans,
+                            expected_round=msg.round,
+                            deadline_at=msg.deadline_at,
+                            stop_event=stop_event,
                         )
+                    if plan is None:
+                        break
                     if msg.type != "eval_step":
                         validate_message_against_plan(msg, client_id, plan)
 
