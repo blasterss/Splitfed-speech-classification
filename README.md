@@ -191,9 +191,13 @@ Important configuration caveats:
   batch sizes from timestamped compute/transfer telemetry, enforces bandwidth
   and KL constraints, and sends one correlated `RoundPlan` to clients and both
   servers. It requires shared SplitFed, `drop_last: true`, `fed_every: 1`,
-  final aggregation and `mergesfl_batch_weighted_v1`. This is a documented
-  reconstruction because the public repository does not publish its GA and
-  batch-refinement solver details;
+  final aggregation, SGD on both model partitions and
+  `mergesfl_batch_weighted_v1`. Planned batches are capped by each train split;
+  client learning rates scale with their planned batches, and every candidate
+  sends a round-scoped measurement or heartbeat. The GA and integer
+  refinement remain documented reconstructions because neither the paper nor
+  the public repository publishes enough solver detail to reproduce them
+  exactly;
 - personalized SplitFed uses the same synchronization cadence and aggregation
   strategy for both partitions; a correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;
@@ -587,8 +591,9 @@ work, in delivery order, is:
    simulator and the remaining named research profiles.
 2. Unify queue, quorum, barrier and shutdown deadlines under one typed
    cancellation protocol and persist explicit failed run status.
-3. Implement `ClientLoadController` telemetry, leases, fairness debt,
-   quarantine and replayable cohort policies.
+3. Extract the embedded MergeSFL planner into a full `ClientLoadController`
+   with telemetry windows, leases, fairness debt, quarantine and additional
+   replayable cohort policies.
 4. Bound dataset memory use, freeze input manifests and decide a typed
    class-balance sampling policy.
 5. Extend checkpoints with optimizer/RNG/round/config/manifest state and prove

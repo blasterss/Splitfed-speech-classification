@@ -8,26 +8,37 @@ static feature-merging and gradient-dispatch baseline from the public MergeSFL
 code. The Algorithm 1 GA and integer refinement are explicitly versioned
 reconstructions because their implementation details are absent upstream.
 
-The policy belongs to `ClientLoadController`, not to `SplitServer` or
-`FedServer`. The controller produces a replayable `RoundPlan`; model workers
-only execute a validated plan.
+The policy is currently embedded in `TrainingController`; the target
+architecture moves it into a standalone `ClientLoadController`, never into
+`SplitServer` or `FedServer`. The planner produces a replayable `RoundPlan`;
+model workers only execute a validated plan.
+
+The normative reference is
+[MergeSFL arXiv v2](https://arxiv.org/abs/2311.13348v2). The public
+[training utility](https://github.com/ymliao98/MergeSFL/blob/main/training_utils.py)
+is used to verify feature concatenation and the
+`sum(batch_sizes) / client_batch_size` gradient dispatch rule. Its published
+`control()` function uses random workers and a static batch size, so it is not
+an executable reference for Algorithm 1.
 
 ## Typed inputs
 
 For every round `h`, the policy consumes:
 
-- `WorkerProfile(client_id, label_distribution, participation_count)`;
-- `WorkerTelemetry(client_id, compute_seconds_per_sample,
-  transfer_seconds_per_sample, observed_at, sample_count)`;
+- `WorkerProfile(client_id, label_distribution, participation_count,
+  train_samples)`;
+- `WorkerTelemetry(client_id, optional worker state, observed_at, round)`;
 - `MergeSFLPolicyConfig(max_batch_size, local_steps, ema_alpha,
   ingress_budget, feature_bytes_per_sample, kl_threshold, min_clients,
   max_clients, ga_seed, population_size, generations)`;
 - the previous estimates `mu[i]` and `beta[i]`.
 
 Label distributions contain non-negative finite probabilities, sum to one and
-use the global class order. Telemetry has a bounded age. Missing, stale or
-non-positive measurements make a worker ineligible; values are never silently
-imputed from another worker.
+use the global class order. Every candidate sends one round-scoped telemetry
+item: selected workers provide a positive timing measurement, while skipped
+workers provide a heartbeat without a new state. A heartbeat preserves the
+previous EMA without changing it. Missing, stale, duplicate, wrong-round or
+unknown-client telemetry is rejected rather than silently imputed.
 
 ## Policy pipeline
 
@@ -54,8 +65,8 @@ batch[i] = max(1, floor(D * cost[l] / cost[i]))
 duration[i] = local_steps * batch[i] * cost[i]
 ```
 
-Ties are resolved by ascending client ID. A configured per-client memory limit
-may only reduce the result and must be recorded as a constraint.
+Ties are resolved by ascending client ID. The train split size caps each
+client's batch so mandatory `drop_last=True` cannot create an empty loader.
 
 ### 3. Bandwidth feasibility (Equation 10)
 
@@ -102,7 +113,8 @@ implementation therefore exposes a versioned `binary_ga_v1` policy:
 5. use seeded tournament selection, single-point crossover and bit mutation;
 6. retain the best candidate (elitism) for a fixed number of generations.
 
-Every random operation uses `SeedSequence(experiment_seed, round, ga_seed)`.
+Every random operation uses a private `random.Random` stream seeded from the
+stable tuple `(experiment_seed, round, ga_seed, policy_version)`.
 The artifact records the initial population, best score per generation and
 final candidate. This is a documented reconstruction, not code copied from the
 public repository.
@@ -116,9 +128,9 @@ solver. Implement a separate versioned `integer_refinement_v1`:
 - search integer increments/decrements within `[1, D]`;
 - preserve bandwidth feasibility;
 - require `KL(phi_S || phi_0) <= kl_threshold` when feasible;
-- minimize mean added duration, then KL, then unused bandwidth;
-- proportionally scale the final vector to consume remaining bandwidth and
-  repair deterministically.
+- minimize feasibility violation, mean added duration and then KL;
+- scale the final integer vector as evenly as constraints allow to consume
+  remaining bandwidth, preserving the KL threshold and per-client limits.
 
 The result must report whether the KL constraint was feasible. An infeasible
 round fails planning or follows an explicitly configured fallback; it must not
@@ -147,6 +159,10 @@ RoundPlan(
 ```
 
 Clients rebuild their training DataLoader from the plan with `drop_last=True`.
+Both model partitions use SGD. The common configured client learning rate is
+the reference rate for the largest selected batch and is multiplied by
+`batch[i] / max(batch[j] for j in cohort)`, preserving the paper's
+batch-proportional learning-rate rule.
 Only cohort members contribute train steps and model updates. Non-participants
 send typed round-completion and model-sync requests so synchronized evaluation
 uses the same global client-side model. The split server merges exactly the
@@ -158,8 +174,10 @@ a partial server update.
 ## Implemented contracts and remaining experimental acceptance
 
 1. Implemented: policy math, deterministic GA/refinement, strict KL failure,
-   typed plans, dynamic loaders, server-side plan enforcement, Equation 17,
-   telemetry/decision artifacts and a multi-process selected/skipped smoke.
+   proportional bandwidth utilization, dataset-bounded dynamic loaders,
+   batch-proportional SGD, candidate heartbeat, server-side plan enforcement,
+   Equation 17, telemetry/decision artifacts and a multi-process
+   selected/skipped smoke.
 2. Remaining experimental validation: calibrated bootstrap timings, explicit
    slow/dropout fault injection, repeated-sample and waiting-time accounting,
    and a matched multi-seed benchmark with confidence intervals.
@@ -176,3 +194,7 @@ a partial server update.
 - Debug and synthetic profiles keep validation, deadlines and cancellation.
 - The repo-faithful static baseline remains separate from the reconstructed
   Algorithm 1 policy so experimental results cannot conflate them.
+- Algorithm 1 lines 1--7, the SGD rule and Equation 17 follow the paper. The
+  precise GA operators and Lagrange-dual solver are not published and remain
+  explicitly versioned deterministic reconstructions, not claims of exact
+  author-code reproduction.

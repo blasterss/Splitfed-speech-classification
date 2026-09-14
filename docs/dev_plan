@@ -96,9 +96,11 @@ evaluation cadence и artifact scoping из плана удалены.
 2. Нет контейнерной runtime-модели: клиентские процессы не имеют отдельных
    resource limits, health checks, network policies, image/version pinning или
    изолированных volume/secrets.
-3. Нет отдельного `ClientLoadController`: отсутствуют admission, heartbeat,
-   telemetry windows, leases, quarantine, fairness debt и воспроизводимый
-   выбор cohorts.
+3. Нет отдельного сервиса `ClientLoadController`. Встроенный в
+   `TrainingController` MergeSFL planner уже реализует round-scoped telemetry,
+   heartbeat и воспроизводимый выбор cohorts, но отсутствуют admission,
+   telemetry windows, leases, quarantine, fairness debt и registry других
+   scheduler policies.
 4. Cancellation ограничена shared event, barrier abort и polling channel waits.
    Bounded structured first-failure report уже сохраняется, но нет typed
    cancellation delivery/envelope и restart/recovery protocol.

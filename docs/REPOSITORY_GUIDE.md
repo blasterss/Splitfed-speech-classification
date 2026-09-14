@@ -353,9 +353,11 @@ are still missing.
 - `mergesfl_algorithm1_v1` is the separate Algorithm 1 reconstruction. The
   controller owns dataset profiles, timing EMA, deterministic cohort search,
   integer batch refinement, deadlines and replay artifacts. Clients rebuild
-  their loaders from the plan; the shared split server rejects unplanned
-  clients, steps and batch shapes; the federated server applies Equation 17
-  weights and synchronizes non-participants before evaluation. Because the
+  their loaders from dataset-bounded plans and scale SGD learning rates
+  proportionally to planned batch size. Every candidate reports a round-scoped
+  measurement or heartbeat; the shared split server rejects unplanned clients,
+  steps and batch shapes; the federated server applies Equation 17 weights and
+  synchronizes non-participants before evaluation. Because the
   upstream code omits GA/refinement details, this mode must be identified as
   `binary_ga_v1` plus `integer_refinement_v1`, not as copied upstream code.
 - `split_server.model.batch_timeout_sec` bounds incomplete split batches;
@@ -444,8 +446,9 @@ after kill and raise if a child still remains alive.
   supported training path.
 
 Most planned research infrastructure in `docs/dev_plan` is not implemented
-yet: there are no per-client Docker runtimes, ClientLoadController, scheduler
-policy registry or heterogeneous-client simulator in the current runtime. A
+yet: there are no per-client Docker runtimes, standalone ClientLoadController,
+scheduler policy registry or heterogeneous-client simulator in the current
+runtime. The embedded MergeSFL planner supplies only its Algorithm 1 policy. A
 typed profile registry exposes versioned `smoke` and `unit` default profiles;
 the remaining named profiles are still planned. The mode matrix is executable
 through `python -m src.experiments.mode_matrix`: centralized uses one complete
