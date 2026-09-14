@@ -45,12 +45,15 @@ class WorkerTelemetry:
     """One timestamped per-sample timing observation from a client."""
 
     client_id: ClientId
-    state: WorkerState
+    state: WorkerState | None
     observed_at: float
+    round: int | None = None
 
     def __post_init__(self) -> None:
         if not _is_positive_finite(self.observed_at):
             raise ValueError("observed_at must be positive and finite")
+        if self.round is not None and self.round < 0:
+            raise ValueError("telemetry round must be non-negative")
 
 
 @dataclass(frozen=True)

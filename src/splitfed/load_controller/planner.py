@@ -52,6 +52,15 @@ class MergeSFLPlanner:
         from .mergesfl import RoundPlan
 
         current_time = time.time() if now is None else now
+        profile_ids = [item.client_id for item in profiles]
+        telemetry_ids = [item.client_id for item in telemetry]
+        if len(profile_ids) != len(set(profile_ids)):
+            raise ValueError("MergeSFL worker profile IDs must be unique")
+        if len(telemetry_ids) != len(set(telemetry_ids)):
+            raise ValueError("MergeSFL telemetry client IDs must be unique")
+        unknown_telemetry = set(telemetry_ids) - set(profile_ids)
+        if unknown_telemetry:
+            raise ValueError("MergeSFL telemetry contains unknown clients")
         telemetry_by_id = {item.client_id: item for item in telemetry}
         eligible_profiles = []
         next_estimates = {}
@@ -65,11 +74,18 @@ class MergeSFLPlanner:
             if age < 0 or age > self.config.telemetry_max_age_sec:
                 rejected[str(profile.client_id)] = "stale_telemetry"
                 continue
-            estimate = estimate_worker_state(
-                observation.state,
-                self.estimates.get(profile.client_id),
-                alpha=self.config.ema_alpha,
-            )
+            previous = self.estimates.get(profile.client_id)
+            if observation.state is None:
+                if previous is None:
+                    rejected[str(profile.client_id)] = "missing_measurement"
+                    continue
+                estimate = previous
+            else:
+                estimate = estimate_worker_state(
+                    observation.state,
+                    previous,
+                    alpha=self.config.ema_alpha,
+                )
             eligible_profiles.append(profile)
             next_estimates[profile.client_id] = estimate
         if len(eligible_profiles) < self.config.min_clients:
@@ -132,8 +148,18 @@ class MergeSFLPlanner:
                 "rejected": rejected,
                 "telemetry_inputs": {
                     str(client_id): {
-                        "state": asdict(observation.state),
+                        "state": (
+                            asdict(observation.state)
+                            if observation.state is not None
+                            else None
+                        ),
                         "observed_at": observation.observed_at,
+                        "round": observation.round,
+                        "kind": (
+                            "measurement"
+                            if observation.state is not None
+                            else "heartbeat"
+                        ),
                     }
                     for client_id, observation in telemetry_by_id.items()
                 },

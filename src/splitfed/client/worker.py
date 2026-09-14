@@ -200,13 +200,21 @@ def _client_worker(
                     )
             elif should_aggregate and plan is not None:
                 client.synchronize_global_model(round_idx)
-            if plan is not None and telemetry_queue is not None and selected:
-                samples = (
-                    plan.batch_size_by_client[cfg.client_id]
-                    * plan.local_steps
-                )
+            if plan is not None and telemetry_queue is not None:
+                samples = 0
+                if selected:
+                    samples = (
+                        plan.batch_size_by_client[cfg.client_id]
+                        * plan.local_steps
+                    )
                 telemetry_queue.put(
-                    _round_telemetry(client, plan, samples), timeout=5
+                    _round_telemetry(
+                        client,
+                        plan,
+                        samples=samples,
+                        selected=selected,
+                    ),
+                    timeout=5,
                 )
             if should_evaluate:
                 if tracker is not None:
@@ -277,21 +285,26 @@ def _receive_round_plan(plan_queue, *, round_idx: int, timeout: float):
     return plan
 
 
-def _round_telemetry(client, plan: RoundPlan, samples: int) -> WorkerTelemetry:
-    if samples <= 0:
-        raise ValueError("telemetry requires a positive sample count")
-    state = WorkerState(
-        compute_seconds_per_sample=max(
-            client.last_compute_seconds / samples, 1e-12
-        ),
-        transfer_seconds_per_sample=max(
-            client.last_transfer_seconds / samples, 1e-12
-        ),
-    )
+def _round_telemetry(
+    client, plan: RoundPlan, *, samples: int, selected: bool
+) -> WorkerTelemetry:
+    if selected and samples <= 0:
+        raise ValueError("measured telemetry requires a positive sample count")
+    state = None
+    if selected:
+        state = WorkerState(
+            compute_seconds_per_sample=max(
+                client.last_compute_seconds / samples, 1e-12
+            ),
+            transfer_seconds_per_sample=max(
+                client.last_transfer_seconds / samples, 1e-12
+            ),
+        )
     return WorkerTelemetry(
         client_id=client.client_id,
         state=state,
         observed_at=time.time(),
+        round=plan.round,
     )
 
 

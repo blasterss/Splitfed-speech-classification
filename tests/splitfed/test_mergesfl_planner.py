@@ -174,3 +174,32 @@ def test_planner_rejects_round_without_fresh_quorum():
         assert "not enough eligible" in str(exc)
     else:
         raise AssertionError("stale telemetry unexpectedly formed a quorum")
+
+
+def test_heartbeat_keeps_unselected_client_eligible_without_ema_change():
+    profiles, states = _inputs()
+    planner = MergeSFLPlanner(_config(), experiment_seed=42)
+    planner.plan(
+        profiles,
+        [
+            WorkerTelemetry(client_id, state, 90.0)
+            for client_id, state in states.items()
+        ],
+        round_idx=1,
+        model_version="model-0",
+        now=100.0,
+    )
+
+    plan = planner.plan(
+        profiles,
+        [
+            WorkerTelemetry(client_id, None, 999.0, round=1)
+            for client_id in states
+        ],
+        round_idx=2,
+        model_version="model-1",
+        now=1000.0,
+    )
+
+    assert plan.decision_trace["rejected"] == {}
+    assert planner.estimates == states

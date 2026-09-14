@@ -54,6 +54,7 @@ def bootstrap_telemetry(
                 transfer_seconds_per_sample=timing.transfer_seconds_per_sample,
             ),
             observed_at=timestamp,
+            round=0,
         )
         for client_id, timing in config.initial_worker_states.items()
     }
@@ -62,27 +63,30 @@ def bootstrap_telemetry(
 def collect_selected_telemetry(
     telemetry_queue,
     *,
-    selected_client_ids: set[int],
+    expected_client_ids: set[int],
+    expected_round: int,
     round_deadline_at: float,
 ) -> dict[int, WorkerTelemetry]:
-    """Collect exactly one fresh observation from each selected client."""
+    """Collect one round-scoped observation from every candidate client."""
     observations = {}
-    while set(observations) != selected_client_ids:
+    while set(observations) != expected_client_ids:
         remaining = round_deadline_at - time.time()
         if remaining <= 0:
-            missing = sorted(selected_client_ids - set(observations))
+            missing = sorted(expected_client_ids - set(observations))
             raise TimeoutError(f"missing MergeSFL telemetry from {missing}")
         try:
             observation = telemetry_queue.get(timeout=remaining)
         except queue.Empty as exc:
-            missing = sorted(selected_client_ids - set(observations))
+            missing = sorted(expected_client_ids - set(observations))
             raise TimeoutError(
                 f"missing MergeSFL telemetry from {missing}"
             ) from exc
         if not isinstance(observation, WorkerTelemetry):
             raise ValueError("invalid MergeSFL telemetry payload")
-        if observation.client_id not in selected_client_ids:
-            raise ValueError("telemetry sender is outside planned cohort")
+        if observation.client_id not in expected_client_ids:
+            raise ValueError("telemetry sender is not a candidate client")
+        if observation.round != expected_round:
+            raise ValueError("telemetry round differs from expected round")
         if observation.client_id in observations:
             raise ValueError("duplicate MergeSFL telemetry")
         observations[observation.client_id] = observation

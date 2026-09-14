@@ -51,23 +51,27 @@ def test_runtime_builds_profiles_and_bootstrap_observations():
 
 def test_runtime_collects_exact_planned_telemetry():
     telemetry_queue = queue.Queue()
-    observation = WorkerTelemetry(0, WorkerState(0.02, 0.01), 100.0)
+    observation = WorkerTelemetry(0, WorkerState(0.02, 0.01), 100.0, round=1)
     telemetry_queue.put(observation)
 
     assert collect_selected_telemetry(
         telemetry_queue,
-        selected_client_ids={0},
+        expected_client_ids={0},
+        expected_round=1,
         round_deadline_at=10**12,
     ) == {0: observation}
 
 
 def test_runtime_rejects_telemetry_outside_cohort():
     telemetry_queue = queue.Queue()
-    telemetry_queue.put(WorkerTelemetry(1, WorkerState(0.02, 0.01), 100.0))
+    telemetry_queue.put(
+        WorkerTelemetry(1, WorkerState(0.02, 0.01), 100.0, round=1)
+    )
 
-    with pytest.raises(ValueError, match="outside planned cohort"):
+    with pytest.raises(ValueError, match="not a candidate"):
         collect_selected_telemetry(
             telemetry_queue,
-            selected_client_ids={0},
+            expected_client_ids={0},
+            expected_round=1,
             round_deadline_at=10**12,
         )

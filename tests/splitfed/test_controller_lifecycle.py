@@ -519,9 +519,7 @@ def test_controller_dispatches_replayable_mergesfl_round_plan():
     controller = TrainingController.__new__(TrainingController)
     controller.cfg = SimpleNamespace(
         load_controller=policy,
-        training=SimpleNamespace(
-            seed=42, num_rounds=1, barrier_timeout_sec=1
-        ),
+        training=SimpleNamespace(seed=42, num_rounds=1, barrier_timeout_sec=1),
         models_save_path=None,
     )
     controller.client_cfgs = [
@@ -530,9 +528,7 @@ def test_controller_dispatches_replayable_mergesfl_round_plan():
     ]
     controller.dataset_manifests = {
         client_id: {
-            "coverage": {
-                "train": {"class_0": 3, "class_1": 1, "samples": 4}
-            }
+            "coverage": {"train": {"class_0": 3, "class_1": 1, "samples": 4}}
         }
         for client_id in (0, 1)
     }
@@ -544,6 +540,7 @@ def test_controller_dispatches_replayable_mergesfl_round_plan():
                 client_id,
                 WorkerState(0.02, 0.002),
                 time.time(),
+                round=1,
             )
         )
     controller._split_round_plan_queue = queue.Queue()

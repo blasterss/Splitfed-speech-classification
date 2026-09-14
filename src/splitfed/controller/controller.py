@@ -288,9 +288,9 @@ class TrainingController:
                             if split_server_config is not None
                             else None
                         ),
-                        getattr(
-                            self, "_client_round_plan_queues", {}
-                        ).get(cid),
+                        getattr(self, "_client_round_plan_queues", {}).get(
+                            cid
+                        ),
                         getattr(self, "_telemetry_queue", None),
                     ),
                     daemon=False,
@@ -389,7 +389,8 @@ class TrainingController:
                 )
             observations = collect_selected_telemetry(
                 self._telemetry_queue,
-                selected_client_ids=set(plan.cohort),
+                expected_client_ids=expected_clients,
+                expected_round=round_idx,
                 round_deadline_at=plan.deadline_at,
             )
             latest_telemetry.update(observations)
