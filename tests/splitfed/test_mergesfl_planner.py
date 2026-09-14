@@ -131,6 +131,30 @@ def test_planner_caps_batches_to_each_clients_train_samples():
     assert plan.batch_size_by_client[0] <= 2
 
 
+def test_planner_scales_batches_to_fill_feasible_bandwidth():
+    config = _config().model_copy(
+        update={"ingress_budget_bytes": 150, "max_clients": 2}
+    )
+    profiles = [
+        WorkerProfile(0, (0.5, 0.5)),
+        WorkerProfile(1, (0.5, 0.5)),
+    ]
+    telemetry = [
+        WorkerTelemetry(0, WorkerState(0.5, 0.5), 90.0),
+        WorkerTelemetry(1, WorkerState(1.0, 1.0), 90.0),
+    ]
+
+    plan = MergeSFLPlanner(config, 42).plan(
+        profiles,
+        telemetry,
+        round_idx=1,
+        model_version="model-0",
+        now=100.0,
+    )
+
+    assert plan.bandwidth_used == 150
+
+
 def test_planner_fails_when_kl_constraint_is_infeasible():
     config = _config().model_copy(
         update={"min_clients": 1, "max_clients": 1, "kl_threshold": 0.01}

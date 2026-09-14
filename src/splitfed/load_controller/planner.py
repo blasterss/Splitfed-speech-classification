@@ -114,7 +114,13 @@ class MergeSFLPlanner:
             for profile in eligible_profiles
             if profile.client_id in selection.cohort
         ]
-        merged = merged_label_distribution(selected_profiles, refined)
+        scaled = scale_batches_to_bandwidth(
+            selected_profiles,
+            refined,
+            selection.reference_distribution,
+            self.config,
+        )
+        merged = merged_label_distribution(selected_profiles, scaled)
         divergence = kl_divergence(merged, selection.reference_distribution)
         if divergence > self.config.kl_threshold:
             raise ValueError(
@@ -122,7 +128,7 @@ class MergeSFLPlanner:
             )
         used = bandwidth_usage(
             selection.cohort,
-            refined,
+            scaled,
             self.config.feature_bytes_per_sample,
         )
         self.estimates.update(next_estimates)
@@ -130,7 +136,7 @@ class MergeSFLPlanner:
             round=round_idx,
             seed=self.experiment_seed,
             cohort=selection.cohort,
-            batch_size_by_client=refined,
+            batch_size_by_client=scaled,
             local_steps=self.config.local_steps,
             required_quorum=len(selection.cohort),
             deadline_at=current_time + self.config.round_timeout_sec,
@@ -172,6 +178,7 @@ class MergeSFLPlanner:
                 },
                 "initial_batch_sizes": selection.batch_sizes,
                 "refined_batch_sizes": refined,
+                "scaled_batch_sizes": scaled,
                 "kl_threshold_satisfied": True,
             },
         )
@@ -236,6 +243,54 @@ def refine_batch_sizes(
             break
         batches = best
     return batches
+
+
+def scale_batches_to_bandwidth(
+    profiles,
+    refined_batches,
+    reference,
+    config,
+) -> dict[ClientId, int]:
+    """Apply Algorithm 1 line 7 using deterministic integer increments."""
+    batches = dict(refined_batches)
+    batch_limits = {
+        profile.client_id: min(
+            config.max_batch_size,
+            profile.train_samples or config.max_batch_size,
+        )
+        for profile in profiles
+    }
+    base_batches = dict(batches)
+    while True:
+        candidates = []
+        for client_id in sorted(batches, key=str):
+            if batches[client_id] >= batch_limits[client_id]:
+                continue
+            candidate = {**batches, client_id: batches[client_id] + 1}
+            if (
+                bandwidth_usage(
+                    tuple(candidate),
+                    candidate,
+                    config.feature_bytes_per_sample,
+                )
+                > config.ingress_budget_bytes
+            ):
+                continue
+            divergence = kl_divergence(
+                merged_label_distribution(profiles, candidate), reference
+            )
+            if divergence <= config.kl_threshold:
+                candidates.append((candidate, client_id, divergence))
+        if not candidates:
+            return batches
+        batches, _, _ = min(
+            candidates,
+            key=lambda item: (
+                batches[item[1]] / base_batches[item[1]],
+                item[2],
+                str(item[1]),
+            ),
+        )
 
 
 def select_cohort_binary_ga(
