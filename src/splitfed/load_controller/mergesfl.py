@@ -12,11 +12,14 @@ class WorkerProfile:
     client_id: ClientId
     label_distribution: tuple[float, ...]
     participation_count: int = 0
+    train_samples: int | None = None
 
     def __post_init__(self) -> None:
         _validate_distribution(self.label_distribution)
         if self.participation_count < 0:
             raise ValueError("participation_count must be non-negative")
+        if self.train_samples is not None and self.train_samples <= 0:
+            raise ValueError("train_samples must be positive when provided")
 
 
 @dataclass(frozen=True)
@@ -33,8 +36,7 @@ class WorkerState:
     @property
     def cost(self) -> float:
         return (
-            self.compute_seconds_per_sample
-            + self.transfer_seconds_per_sample
+            self.compute_seconds_per_sample + self.transfer_seconds_per_sample
         )
 
 
@@ -138,18 +140,30 @@ def estimate_worker_state(
 
 
 def initial_batch_sizes(
-    states: Mapping[ClientId, WorkerState], max_batch_size: int
+    states: Mapping[ClientId, WorkerState],
+    max_batch_size: int,
+    client_batch_limits: Mapping[ClientId, int] | None = None,
 ) -> dict[ClientId, int]:
     """Calculate the initial regulated batch sizes from Equation 9."""
     if not states:
         raise ValueError("at least one worker state is required")
     if max_batch_size <= 0:
         raise ValueError("max_batch_size must be positive")
+    if client_batch_limits is not None:
+        if set(client_batch_limits) != set(states):
+            raise ValueError("client batch limits must match worker states")
+        if any(limit <= 0 for limit in client_batch_limits.values()):
+            raise ValueError("client batch limits must be positive")
     fastest_id = min(states, key=lambda key: (states[key].cost, str(key)))
     fastest_cost = states[fastest_id].cost
     return {
-        client_id: max(
-            1, math.floor(max_batch_size * fastest_cost / state.cost)
+        client_id: min(
+            (
+                client_batch_limits[client_id]
+                if client_batch_limits is not None
+                else max_batch_size
+            ),
+            max(1, math.floor(max_batch_size * fastest_cost / state.cost)),
         )
         for client_id, state in states.items()
     }
@@ -243,9 +257,7 @@ def kl_divergence(
         raise ValueError("epsilon must be positive")
     return sum(
         value * math.log(value / max(reference_value, epsilon))
-        for value, reference_value in zip(
-            distribution, reference, strict=True
-        )
+        for value, reference_value in zip(distribution, reference, strict=True)
         if value > 0
     )
 

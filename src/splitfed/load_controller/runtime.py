@@ -35,6 +35,7 @@ def profiles_from_manifests(
                 client_id=client_id,
                 label_distribution=(class_0 / total, class_1 / total),
                 participation_count=participation_counts[client_id],
+                train_samples=total,
             )
         )
     return profiles

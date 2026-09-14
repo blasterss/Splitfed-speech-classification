@@ -110,6 +110,27 @@ def test_planner_builds_replayable_round_plan_and_updates_ema():
     assert set(first.decision_trace["telemetry_inputs"]) == {"0", "1", "2"}
 
 
+def test_planner_caps_batches_to_each_clients_train_samples():
+    profiles = [
+        WorkerProfile(0, (0.5, 0.5), train_samples=2),
+        WorkerProfile(1, (0.5, 0.5), train_samples=20),
+    ]
+    telemetry = [
+        WorkerTelemetry(0, WorkerState(0.5, 0.5), 90.0),
+        WorkerTelemetry(1, WorkerState(1.0, 1.0), 90.0),
+    ]
+
+    plan = MergeSFLPlanner(_config(), 42).plan(
+        profiles,
+        telemetry,
+        round_idx=1,
+        model_version="model-0",
+        now=100.0,
+    )
+
+    assert plan.batch_size_by_client[0] <= 2
+
+
 def test_planner_fails_when_kl_constraint_is_infeasible():
     config = _config().model_copy(
         update={"min_clients": 1, "max_clients": 1, "kl_threshold": 0.01}

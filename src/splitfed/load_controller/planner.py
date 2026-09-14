@@ -139,9 +139,7 @@ class MergeSFLPlanner:
                 },
                 "worker_profiles": {
                     str(profile.client_id): {
-                        "label_distribution": list(
-                            profile.label_distribution
-                        ),
+                        "label_distribution": list(profile.label_distribution),
                         "participation_count": profile.participation_count,
                     }
                     for profile in eligible_profiles
@@ -162,6 +160,13 @@ def refine_batch_sizes(
 ) -> dict[ClientId, int]:
     """Deterministically refine integer batches under KL and bandwidth."""
     batches = dict(initial_batches)
+    batch_limits = {
+        profile.client_id: min(
+            config.max_batch_size,
+            profile.train_samples or config.max_batch_size,
+        )
+        for profile in profiles
+    }
 
     def score(candidate):
         merged = merged_label_distribution(profiles, candidate)
@@ -183,14 +188,17 @@ def refine_batch_sizes(
         for client_id in sorted(batches, key=str):
             for delta in (-1, 1):
                 value = batches[client_id] + delta
-                if not 1 <= value <= config.max_batch_size:
+                if not 1 <= value <= batch_limits[client_id]:
                     continue
                 candidate = {**batches, client_id: value}
-                if bandwidth_usage(
-                    tuple(candidate),
-                    candidate,
-                    config.feature_bytes_per_sample,
-                ) <= config.ingress_budget_bytes:
+                if (
+                    bandwidth_usage(
+                        tuple(candidate),
+                        candidate,
+                        config.feature_bytes_per_sample,
+                    )
+                    <= config.ingress_budget_bytes
+                ):
                     candidates.append(candidate)
         if not candidates:
             break
@@ -221,7 +229,18 @@ def select_cohort_binary_ga(
 
     client_ids = tuple(sorted(profile_by_id, key=str))
     maximum_clients = min(config.max_clients, len(client_ids))
-    batches = initial_batch_sizes(states, config.max_batch_size)
+    batch_limits = {
+        profile.client_id: min(
+            config.max_batch_size,
+            profile.train_samples or config.max_batch_size,
+        )
+        for profile in profiles
+    }
+    batches = initial_batch_sizes(
+        states,
+        config.max_batch_size,
+        client_batch_limits=batch_limits,
+    )
     reference = reference_label_distribution(profiles)
     priorities = selection_priorities(profiles)
     rng = random.Random(
@@ -244,9 +263,10 @@ def select_cohort_binary_ga(
             for client_id, included in zip(client_ids, candidate, strict=True)
             if included
         }
-        while len(selected) > maximum_clients or _usage(
-            selected, batches, config
-        ) > config.ingress_budget_bytes:
+        while (
+            len(selected) > maximum_clients
+            or _usage(selected, batches, config) > config.ingress_budget_bytes
+        ):
             if len(selected) <= config.min_clients:
                 return None
             selected.remove(
@@ -313,9 +333,7 @@ def select_cohort_binary_ga(
             second = _tournament(rng, population, fitness)
             child = _crossover(rng, first, second)
             child = tuple(
-                not bit
-                if rng.random() < config.mutation_probability
-                else bit
+                not bit if rng.random() < config.mutation_probability else bit
                 for bit in child
             )
             repaired = repair(child)

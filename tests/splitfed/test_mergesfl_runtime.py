@@ -44,6 +44,7 @@ def test_runtime_builds_profiles_and_bootstrap_observations():
 
     assert profiles[0].label_distribution == (0.75, 0.25)
     assert profiles[0].participation_count == 2
+    assert profiles[0].train_samples == 4
     assert telemetry[0].state == WorkerState(0.02, 0.01)
     assert telemetry[0].observed_at == 100.0
 
