@@ -218,6 +218,10 @@ class ConfigSchema(StrictConfigModel):
             for client in self.clients
         ):
             raise ValueError("MergeSFL Algorithm 1 requires SGD optimizers")
+        if len({client.model.learning_rate for client in self.clients}) != 1:
+            raise ValueError(
+                "MergeSFL Algorithm 1 requires one client base learning rate"
+            )
         client_ids = {client.client_id for client in self.clients}
         if set(self.load_controller.initial_worker_states) != client_ids:
             raise ValueError(

@@ -214,6 +214,7 @@ def _mergesfl_algorithm1_config():
     for client in raw["clients"]:
         client["runtime"]["drop_last"] = True
         client["model"]["optimizer"] = "sgd"
+        client["model"]["lr"] = 0.1
     raw["load_controller"] = {
         "max_batch_size": 16,
         "local_steps": 42,
