@@ -148,6 +148,10 @@ def _client_worker(
                     round_idx=round_idx,
                     batch_size=plan.batch_size_by_client[cfg.client_id],
                     local_steps=plan.local_steps,
+                    learning_rate_scale=(
+                        plan.batch_size_by_client[cfg.client_id]
+                        / max(plan.batch_size_by_client.values())
+                    ),
                 )
             tracker = None
             if resource_metrics_queue is not None:

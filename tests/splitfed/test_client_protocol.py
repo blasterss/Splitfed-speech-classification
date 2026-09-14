@@ -30,6 +30,30 @@ def _response(**overrides):
     return Message(**values)
 
 
+def test_planned_batch_scales_client_learning_rate():
+    client = Client.__new__(Client)
+    client.client_id = 0
+    client.device = torch.device("cpu")
+    client.cfg = SimpleNamespace(
+        runtime=SimpleNamespace(seed=42, drop_last=True)
+    )
+    client.dataset = SimpleNamespace(
+        train_dataset=[(torch.ones(1), torch.tensor(0.0))] * 4
+    )
+    parameter = torch.nn.Parameter(torch.ones(1))
+    client.optimizer = torch.optim.SGD([parameter], lr=0.2)
+    client._base_learning_rates = (0.2,)
+
+    client.configure_round(
+        round_idx=1,
+        batch_size=2,
+        local_steps=1,
+        learning_rate_scale=0.5,
+    )
+
+    assert client.optimizer.param_groups[0]["lr"] == 0.1
+
+
 def test_extract_payload_accepts_correlated_split_response():
     response = _response(request_id="split-request")
     tensor = _extract_payload(

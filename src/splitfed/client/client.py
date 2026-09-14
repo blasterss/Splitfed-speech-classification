@@ -123,6 +123,9 @@ class Client:
             ).to(self.device)
 
         self.optimizer = self._build_optimizer()
+        self._base_learning_rates = tuple(
+            group["lr"] for group in self.optimizer.param_groups
+        )
         self.last_compute_seconds = 0.0
         self.last_transfer_seconds = 0.0
 
@@ -137,12 +140,23 @@ class Client:
         return build_optimizer(self.model.parameters(), self.cfg.model)
 
     def configure_round(
-        self, *, round_idx: int, batch_size: int, local_steps: int
+        self,
+        *,
+        round_idx: int,
+        batch_size: int,
+        local_steps: int,
+        learning_rate_scale: float = 1.0,
     ) -> None:
         """Apply a controller-issued workload to the next local round."""
-        if round_idx <= 0 or batch_size <= 0 or local_steps <= 0:
+        if (
+            round_idx <= 0
+            or batch_size <= 0
+            or local_steps <= 0
+            or not 0 < learning_rate_scale <= 1
+        ):
             raise ValueError(
-                "planned round, batch size and steps must be positive"
+                "planned round, batch size, steps and learning-rate scale "
+                "must be valid"
             )
         generator = torch.Generator()
         generator.manual_seed(self.cfg.runtime.seed + round_idx)
@@ -159,6 +173,12 @@ class Client:
                 f"Client {self.client_id}: planned batch size {batch_size} "
                 "produces an empty train loader"
             )
+        for group, base_learning_rate in zip(
+            self.optimizer.param_groups,
+            self._base_learning_rates,
+            strict=True,
+        ):
+            group["lr"] = base_learning_rate * learning_rate_scale
         self._planned_local_steps = local_steps
 
     def skip_round(self, round_idx: int) -> None:

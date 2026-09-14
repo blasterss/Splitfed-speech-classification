@@ -293,12 +293,15 @@ def test_final_federated_aggregation_can_be_disabled(monkeypatch):
     ]
 
 
-def _round_plan(*, cohort=(0,), batch_size=4):
+def _round_plan(*, cohort=(0,), batch_size=4, batch_sizes=None):
+    planned_batches = batch_sizes or {
+        client_id: batch_size for client_id in cohort
+    }
     return RoundPlan(
         round=1,
         seed=17,
         cohort=cohort,
-        batch_size_by_client={client_id: batch_size for client_id in cohort},
+        batch_size_by_client=planned_batches,
         local_steps=3,
         required_quorum=len(cohort),
         deadline_at=time.time() + 10,
@@ -306,7 +309,7 @@ def _round_plan(*, cohort=(0,), batch_size=4):
         estimates={
             client_id: WorkerState(0.01, 0.001) for client_id in cohort
         },
-        bandwidth_used=batch_size * len(cohort),
+        bandwidth_used=sum(planned_batches.values()),
         reference_distribution=(0.5, 0.5),
         merged_distribution=(0.5, 0.5),
         kl_divergence=0.0,
@@ -327,7 +330,7 @@ def test_client_executes_controller_round_plan(monkeypatch):
     PlannedClient.configured = []
     monkeypatch.setattr("src.splitfed.client.Client", PlannedClient)
     plan_queue = queue.Queue()
-    plan_queue.put(_round_plan())
+    plan_queue.put(_round_plan(cohort=(0, 1), batch_sizes={0: 2, 1: 4}))
     cfg = SimpleNamespace(client_id=0, runtime=SimpleNamespace(seed=42))
     training_cfg = SimpleNamespace(
         num_rounds=1,
@@ -352,11 +355,16 @@ def test_client_executes_controller_round_plan(monkeypatch):
     )
 
     assert PlannedClient.configured == [
-        {"round_idx": 1, "batch_size": 4, "local_steps": 3}
+        {
+            "round_idx": 1,
+            "batch_size": 2,
+            "local_steps": 3,
+            "learning_rate_scale": 0.5,
+        }
     ]
     assert PlannedClient.events[:2] == [
         ("train", 1),
-        ("aggregate", 1, 12),
+        ("aggregate", 1, 6),
     ]
 
 
