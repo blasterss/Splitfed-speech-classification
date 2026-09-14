@@ -8,6 +8,7 @@ from .channels import GRPCChannelConfig, QueueChannelConfig
 from .clients import ClientConfig
 from .enums import (
     AggregationStrategy,
+    OptimizerType,
     ServerModelScope,
     SplitServerStrategy,
     TrainingMode,
@@ -159,8 +160,7 @@ class ConfigSchema(StrictConfigModel):
         ):
             return
         if any(
-            client.runtime.workload_policy
-            is not WorkloadPolicy.fixed_steps_v1
+            client.runtime.workload_policy is not WorkloadPolicy.fixed_steps_v1
             for client in self.clients
         ):
             raise ValueError(
@@ -213,6 +213,11 @@ class ConfigSchema(StrictConfigModel):
             raise ValueError("MergeSFL Algorithm 1 requires aggregate_final")
         if any(not client.runtime.drop_last for client in self.clients):
             raise ValueError("MergeSFL Algorithm 1 requires drop_last=true")
+        if self.split_server.model.optimizer is not OptimizerType.sgd or any(
+            client.model.optimizer is not OptimizerType.sgd
+            for client in self.clients
+        ):
+            raise ValueError("MergeSFL Algorithm 1 requires SGD optimizers")
         client_ids = {client.client_id for client in self.clients}
         if set(self.load_controller.initial_worker_states) != client_ids:
             raise ValueError(

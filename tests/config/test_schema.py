@@ -210,8 +210,10 @@ def _mergesfl_algorithm1_config():
     raw["split_server"]["training_strategy"] = "mergesfl_algorithm1_v1"
     raw["fed_server"]["strategy"] = "mergesfl_batch_weighted_v1"
     raw["fed_server"]["aggregation_freq"] = 1
+    raw["split_server"]["model"]["optimizer"] = "sgd"
     for client in raw["clients"]:
         client["runtime"]["drop_last"] = True
+        client["model"]["optimizer"] = "sgd"
     raw["load_controller"] = {
         "max_batch_size": 16,
         "local_steps": 42,
@@ -261,10 +263,12 @@ def test_algorithm1_experiment_config_is_schema_valid(monkeypatch):
             "batch-weighted",
         ),
         (
-            lambda raw: raw["load_controller"][
-                "initial_worker_states"
-            ].pop(2),
+            lambda raw: raw["load_controller"]["initial_worker_states"].pop(2),
             "initial_worker_states",
+        ),
+        (
+            lambda raw: raw["clients"][0]["model"].update(optimizer="adam"),
+            "SGD optimizers",
         ),
     ],
 )
