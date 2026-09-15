@@ -375,6 +375,12 @@ uv run secureasr --config-file configs/experiments/config.e3_sflv1.yaml
 uv run secureasr --config-file configs/experiments/config.e3_mergesfl.yaml
 ```
 
+E3 is a protocol-faithful end-to-end comparison. Algorithm-specific cohort
+selection, workload, optimizer, aggregation cadence, and server ownership are
+preserved and reported as experimental factors rather than normalized away.
+Results compare the complete implemented protocols; they must not attribute a
+difference to one mechanism without a separate controlled ablation.
+
 The first uses one shared server model with synchronized concatenated
 activations. The second is the repository's personalized SplitFed variant: it
 keeps one server model and optimizer per client between synchronizations and

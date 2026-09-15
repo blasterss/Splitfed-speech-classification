@@ -243,8 +243,11 @@ uses dataset-size weighting, and aggregates before final evaluation.
 
 The E3 protocol comparison uses `config.e3_our.yaml`,
 `config.e3_sflv1.yaml`, and `config.e3_mergesfl.yaml`. These configurations
-share datasets and seed but do not yet claim a matched effective-sample or
-aggregation budget. E4 isolates the SFLour workload policy through
+form a protocol-faithful end-to-end comparison: each method retains its own
+cohort selection, workload, optimizer, aggregation cadence, and server-model
+ownership. Record those differences as experimental factors; do not normalize
+them away or attribute the result to one mechanism without a separate
+controlled ablation. E4 isolates the SFLour workload policy through
 `config.e4_our_balanced.yaml` and `config.e4_our_fixed_steps.yaml`.
 
 Runs with an artifact root write `metrics/resource_metrics.csv` and

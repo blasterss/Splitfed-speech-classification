@@ -233,9 +233,14 @@ uv run secureasr --config-file configs/experiments/config.e2_fl.yaml
 ресурсам и динамике сходимости?
 
 **Методы:** реконструкция MergeSFL Algorithm 1, personalized SplitFed как
-рабочий SFLv1 reference и shared-server `concat_v1` как SFLour. Текущие
-конфиги фиксируют protocol comparison, но ещё не являются matched-budget
-benchmark: у них различаются cohort, workload и aggregation cadence.
+рабочий SFLv1 reference и shared-server `concat_v1` как SFLour.
+
+E3 является protocol-faithful end-to-end сравнением. Специфичные для каждого
+метода cohort selection, workload, optimizer, aggregation cadence и server
+ownership сохраняются и записываются как экспериментальные факторы, а не
+нормализуются искусственно. Итоговые результаты относятся к целым протоколам;
+причинный эффект отдельного механизма требует дополнительной controlled
+ablation с выровненным бюджетом.
 
 ```bash
 uv run secureasr --config-file configs/experiments/config.e3_mergesfl.yaml
@@ -293,7 +298,8 @@ per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
    actor folds/seeds и сохранить итоговую сводку.
 2. Завершить E1 Local cross-corpus и собрать multi-seed интервалы.
 3. Выполнить E2 Centralized/FedAvg с общим evaluator и matched seeds.
-4. Для E3 добавить matched-budget harness и сравнить MergeSFL, SFLv1 и SFLour.
+4. Выполнить protocol-faithful E3 для MergeSFL, SFLv1 и SFLour; matched-budget
+   harness использовать только для дополнительных controlled ablations.
 5. Выполнить E4 для balanced max-steps и cycling fixed-steps workloads.
 6. Реализовать held-out evaluator, затем выполнить E6.
 7. Выполнять E7 только при необходимости для заявленной области статьи.
