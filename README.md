@@ -342,24 +342,24 @@ installs the correlated client-side FedAvg result before synchronized
 evaluation. Personalized SplitFed also completes server-side aggregation and
 its correlated ACK before clients enter the evaluation barrier.
 
-Run the E1 local-only cross-corpus baseline with:
+Run the E1 local-corpus evaluation with:
 
 ```bash
 uv run secureasr \
-  --config-file configs/experiments/config.e1.1.yaml
+  --config-file configs/experiments/config.e1_local.yaml
 ```
 
 It trains one independent complete model per corpus and evaluates every model
 on the actor-disjoint test view of every corpus. Evaluation always reuses the
 training corpus normalization statistics. The harness writes a tidy CSV,
 metric matrices in YAML, and one checkpoint per training corpus under
-`artifacts/e1_local_cross_corpus/local_cross_corpus/`.
+`artifacts/e1_local_corpus_evaluation/local_cross_corpus/`.
 
-Run the complete-model E1 baselines with:
+Run the E2 centralized and federated complete-model baselines with:
 
 ```bash
-uv run secureasr --config-file configs/experiments/config.e1.2_centr.yaml
-uv run secureasr --config-file configs/experiments/config.e1.2_fl.yaml
+uv run secureasr --config-file configs/experiments/config.e2_centr.yaml
+uv run secureasr --config-file configs/experiments/config.e2_fl.yaml
 ```
 
 Both configs evaluate the validated final checkpoint separately on each
@@ -367,13 +367,12 @@ actor-disjoint test corpus and write rate metrics plus macro/worst-corpus
 summaries under `<experiment>/metrics/cross_corpus/`. The federated config uses
 `full_epoch_v1`, sample-weighted aggregation and a final global aggregation.
 
-Run the current E1.3 SplitFed experiment variants with:
+Run the E3 split-learning protocol comparison with:
 
 ```bash
-uv run secureasr --config-file configs/experiments/config.e1.3_our.yaml
-uv run secureasr --config-file configs/experiments/config.e1.3_sflv1.yaml
-uv run secureasr --config-file \
-  configs/experiments/config.e1.3_mergesfl_algorithm1.yaml
+uv run secureasr --config-file configs/experiments/config.e3_our.yaml
+uv run secureasr --config-file configs/experiments/config.e3_sflv1.yaml
+uv run secureasr --config-file configs/experiments/config.e3_mergesfl.yaml
 ```
 
 The first uses one shared server model with synchronized concatenated
@@ -385,10 +384,22 @@ canonical SFLv1 reproduction without the matched protocol checks described in
 
 The third config runs the Algorithm 1 reconstruction with SGD, dynamic
 two-client cohorts and per-client batch regulation. Its initial timing values
-are bootstrap estimates, not benchmark measurements; replace them with a
-calibrated run before reporting results. Every decision is written to
+combine calibrated compute measurements with bootstrap transfer estimates;
+calibrate transfer on the benchmark transport before reporting results.
+Every decision is written to
 `<experiment>/metadata/mergesfl_round_plans.yaml` with telemetry inputs, EMA
 estimates, GA trace, batch refinement and constraint results.
+
+Run the E4 SFLour workload-policy comparison with:
+
+```bash
+uv run secureasr --config-file configs/experiments/config.e4_our_balanced.yaml
+uv run secureasr --config-file configs/experiments/config.e4_our_fixed_steps.yaml
+```
+
+The balanced run caps one loader pass at 64/64/45 batches for
+CREMA-D/RAVDESS/SAVEE. The fixed-steps run completes 143 batches for every
+client and may therefore reuse samples from smaller corpora within a round.
 
 Expected generated artifacts include:
 

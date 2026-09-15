@@ -182,18 +182,13 @@ permutation MMD и actor-grouped domain-classification ROC-AUC.
 метрик размера эффекта и идентификации домена. E0 не доказывает пользу
 совместного обучения.
 
-### E1 — проверка пользы совместного обучения
+### E1 — local corpus evaluation
 
-**Вопрос:** улучшает ли обмен знаниями результат относительно изолированного
-обучения?
+**Вопрос:** насколько модель, обученная на одном корпусе, переносится на другие
+корпуса без совместного обучения?
 
-**Методы:** Local, Centralized, FedAvg.
-
-- Воспроизведение: отдельный запуск на каждом корпусе.
-- Cross-corpus: три локальные модели, затем Centralized и FedAvg по трём
-  клиентам.
-- Каждая локальная модель оценивается на всех трёх test corpora. Centralized и
-  FedAvg оцениваются по такой же трёхколоночной матрице.
+**Метод:** три независимые Local-модели. Каждая модель оценивается без
+дообучения на actor-disjoint test views всех трёх корпусов.
 
 **Метрики:** Anger F1, PR-AUC, recall, precision, macro и worst-corpus значения.
 Accuracy используется как вспомогательная метрика.
@@ -202,7 +197,7 @@ Local-only матрица запускается без каналов и сер
 
 ```bash
 uv run secureasr \
-  --config-file configs/experiments/config.e1.1.yaml
+  --config-file configs/experiments/config.e1_local.yaml
 ```
 
 Конфиг явно выбирает `training.mode: local`; основной CLI направляет такой
@@ -213,13 +208,18 @@ uv run secureasr \
 PR-AUC, confusion counts и размеры классов. Если eval fold содержит один
 класс, `pr_auc` записывается как `null`, а не как вводящее в заблуждение число.
 Артефакты находятся в
-`artifacts/e1_local_cross_corpus/local_cross_corpus/`.
+`artifacts/e1_local_corpus_evaluation/local_cross_corpus/`.
+
+### E2 — FL vs Centralized
+
+**Вопрос:** как sample-weighted FedAvg соотносится с centralized training при
+одинаковых actor folds, модели, seed и числе раундов?
 
 Centralized и FedAvg запускаются тем же entry point:
 
 ```bash
-uv run secureasr --config-file configs/experiments/config.e1.2_centr.yaml
-uv run secureasr --config-file configs/experiments/config.e1.2_fl.yaml
+uv run secureasr --config-file configs/experiments/config.e2_centr.yaml
+uv run secureasr --config-file configs/experiments/config.e2_fl.yaml
 ```
 
 Оба запуска автоматически оценивают финальный validated checkpoint на трёх
@@ -227,66 +227,39 @@ uv run secureasr --config-file configs/experiments/config.e1.2_fl.yaml
 метриками. FedAvg использует общую инициализацию, `full_epoch_v1`, веса по
 размеру train dataset и агрегацию после последнего локального раунда.
 
-### E2 — сравнение full-model FL и split training
+### E3 — MergeSFL vs SFLv1 vs SFLour
 
-**Вопрос:** оправдано ли разделение модели при сопоставимом качестве и объёме
-обработанных данных?
+**Вопрос:** как различаются реализованные split-learning протоколы по качеству,
+ресурсам и динамике сходимости?
 
-**Методы:** FedAvg, канонический SFLv2, OUR. SFLv1 — опциональный архитектурный
-reference; MergeSFL относится к E3.
+**Методы:** реконструкция MergeSFL Algorithm 1, personalized SplitFed как
+рабочий SFLv1 reference и shared-server `concat_v1` как SFLour. Текущие
+конфиги фиксируют protocol comparison, но ещё не являются matched-budget
+benchmark: у них различаются cohort, workload и aggregation cadence.
 
-**Контроль:** одинаковые actor folds, initialization seeds, effective samples,
-семейство optimizer, частота evaluation и stopping budget.
-
-**Метрики:** метрики качества E1, число клиентских параметров, transmitted
-bytes, round time, total training time и peak process RSS/device memory, если
-доступно.
-
-### E3 — выделение эффекта server-side optimization
-
-**Вопрос:** что даёт синхронизированное/объединённое обновление сервера по
-сравнению с последовательным SFLv2?
-
-**Методы:** канонический SFLv2, простая синхронизированная конкатенация
-(`OUR-core`), полная реализация MergeSFL и полный OUR при включённой workload
-policy.
-
-**Ablation:** sequential/concatenated server batch; fixed/random client order;
-простая конкатенация/MergeSFL mixing; batch regulation off/on.
+```bash
+uv run secureasr --config-file configs/experiments/config.e3_mergesfl.yaml
+uv run secureasr --config-file configs/experiments/config.e3_sflv1.yaml
+uv run secureasr --config-file configs/experiments/config.e3_our.yaml
+```
 
 **Метрики:** convergence по effective samples и wall time, Anger F1, PR-AUC,
 per/worst-corpus качество и дисперсия по порядкам клиентов и seeds.
 
-### E4 — устойчивость к системной неоднородности
-
-**Вопрос:** остаётся ли синхронизированная оркестрация корректной при задержках
-и отказах?
-
-**Методы:** SFLv2, MergeSFL, OUR.
-
-| Сценарий | Контролируемое условие |
-| --- | --- |
-| A: контроль | Одинаковые клиенты, искусственная задержка `0` |
-| B: медленный клиент | Для одного клиента добавляется `0.25T0`, `0.5T0`, `T0` или `2T0` |
-| C: jitter | Seeded задержка из `[0, 2T0]` для заданной доли шагов |
-| D: временный отказ | Activation пропускается с `p` из `{0.05, 0.10, 0.25}` |
-| E: длительный straggler | Один клиент пропускает несколько шагов до превышения deadline |
-
-`T0` измеряется во время фиксированного warm-up на том же оборудовании.
-Необходимо записывать F1/PR-AUC, server waiting time, round/total time,
-completed/attempted steps, stale/created batches, aborted steps и effective
-samples. E4 заблокирован до появления транзакционной семантики abort/skip.
-
-### E5 — сравнение политик неравной нагрузки
+### E4 — сравнение data workload policies SFLour
 
 **Вопрос:** уменьшает ли выравнивание нагрузки переобучение малого корпуса и
 доминирование большого корпуса?
 
 | Policy | Определение |
 | --- | --- |
-| Full local epoch | Каждый клиент обрабатывает полную локальную эпоху |
-| Fixed maximum steps | Все выполняют число шагов крупнейшего клиента; исчерпанные loaders запускаются циклически |
-| Equal samples | Все клиенты вносят одинаковый заданный sample budget за round |
+| Balanced max steps | Лимиты 64/64/45 сохраняют один проход без повторов |
+| Fixed steps | Все выполняют 143 шага; исчерпанные loaders запускаются циклически |
+
+```bash
+uv run secureasr --config-file configs/experiments/config.e4_our_balanced.yaml
+uv run secureasr --config-file configs/experiments/config.e4_our_fixed_steps.yaml
+```
 
 Необходимо записывать unique/repeated samples, optimizer steps, aggregation
 weight и effective contribution. Отчёт включает train-validation F1 gap,
@@ -318,14 +291,10 @@ per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
 
 1. Завершить E0: экспортировать таблицы notebook, выполнить согласованные
    actor folds/seeds и сохранить итоговую сводку.
-2. Завершить блок A и E1: привести Centralized и FedAvg к Local cross-corpus
-   контракту оценки.
-3. Закрыть reference-тесты `sequential_v1` и `concat_v1`, добавить
-   matched-budget harness и минимальную ресурсную телеметрию, затем выполнить
-   E2.
-4. Выполнить E3 как прямую ablation SFLv2 против `concat_v1`; добавлять
-   MergeSFL только как отдельный полностью реализованный baseline.
-5. Реализовать блок C, затем выполнить E4 и E5.
+2. Завершить E1 Local cross-corpus и собрать multi-seed интервалы.
+3. Выполнить E2 Centralized/FedAvg с общим evaluator и matched seeds.
+4. Для E3 добавить matched-budget harness и сравнить MergeSFL, SFLv1 и SFLour.
+5. Выполнить E4 для balanced max-steps и cycling fixed-steps workloads.
 6. Реализовать held-out evaluator, затем выполнить E6.
 7. Выполнять E7 только при необходимости для заявленной области статьи.
 

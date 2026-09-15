@@ -219,11 +219,11 @@ Repeat `--mode` to select any subset of `centralized`, `federated`,
 `split-shared`, `split-personalized` and `splitfed`. The summary records wall
 time and outcome; it does not yet sample per-process CPU/RSS/GPU utilization.
 
-Run the channel-free E1 local-only cross-corpus matrix with:
+Run the channel-free E1 local-corpus matrix with:
 
 ```bash
 uv run secureasr \
-  --config-file configs/experiments/config.e1.1.yaml
+  --config-file configs/experiments/config.e1_local.yaml
 ```
 
 The explicit `training.mode: local` dispatches to the local cross-corpus
@@ -234,12 +234,18 @@ training corpus normalization statistics. It does not invoke
 `TrainingController` and creates no multiprocessing workers, channels, split
 servers, or federated servers.
 
-The E1 complete-model baselines are
-`configs/experiments/config.e1.2_centr.yaml` and
-`configs/experiments/config.e1.2_fl.yaml`. Both enable automatic per-corpus
+The E2 complete-model baselines are
+`configs/experiments/config.e2_centr.yaml` and
+`configs/experiments/config.e2_fl.yaml`. Both enable automatic per-corpus
 evaluation of the final validated checkpoint. The federated baseline starts
 aggregatable client models from `training.seed`, consumes a full local epoch,
 uses dataset-size weighting, and aggregates before final evaluation.
+
+The E3 protocol comparison uses `config.e3_our.yaml`,
+`config.e3_sflv1.yaml`, and `config.e3_mergesfl.yaml`. These configurations
+share datasets and seed but do not yet claim a matched effective-sample or
+aggregation budget. E4 isolates the SFLour workload policy through
+`config.e4_our_balanced.yaml` and `config.e4_our_fixed_steps.yaml`.
 
 Runs with an artifact root write `metrics/resource_metrics.csv` and
 `metrics/resource_summary.yaml`. Local cross-corpus runs place the same files
