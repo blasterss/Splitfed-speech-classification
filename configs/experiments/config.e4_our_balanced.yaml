@@ -2,14 +2,11 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_mergesfl_algorithm1_v1_lr001
+  name: e4_sfl_our_balanced
   description: >-
-    MergeSFL Algorithm 1 run matched to the completed E1 fixed-step baseline:
-    50 rounds, 143 local steps, batch size 8 and seed 42. Initial compute
-    timings come from the completed e1_our_concat_splitfed_fixed_steps
-    artifact; transfer timings remain bootstrap estimates until runtime
-    telemetry replaces them. The common SGD base learning rate is 0.001;
-    the paper's batch-proportional rule scales it per selected client.
+    E4 balanced-workload SFLour run. The max-steps policy caps CREMA-D and
+    RAVDESS at 64 batches and SAVEE at its 45-batch local epoch, avoiding
+    within-round sample reuse while retaining synchronized server updates.
   transport: queue
   seed: &seed 42
 
@@ -18,7 +15,7 @@ training:
   num_rounds: 50
   seed: *seed
   eval_every: 10
-  fed_every: 1
+  fed_every: 10
   aggregate_final: true
   barrier_timeout_sec: 900
 
@@ -35,14 +32,11 @@ clients:
       split_seed: *seed
     model: &client_model
       lr: 0.001
-      optimizer: sgd
-      momentum: 0.0
-      weight_decay: 0.0
+      optimizer: adam
     runtime: &client_runtime
-      local_steps: 143
-      workload_policy: fixed_steps_v1
+      local_steps: 64
+      workload_policy: max_steps_v1
       batch_size: 8
-      drop_last: true
       seed: *seed
       device: cuda
     noise: &client_noise
@@ -64,45 +58,18 @@ clients:
       name: SAVEE
       root: ../datasets/SAVEE/raw
     model: *client_model
-    runtime: *client_runtime
+    runtime:
+      <<: *client_runtime
+      local_steps: 45
     noise: *client_noise
-
-load_controller:
-  name: mergesfl_algorithm1_v1
-  max_batch_size: 8
-  local_steps: 143
-  ema_alpha: 0.8
-  ingress_budget_bytes: 524288
-  feature_bytes_per_sample: 32768
-  kl_threshold: 0.001
-  min_clients: 2
-  max_clients: 2
-  ga_seed: 42
-  population_size: 20
-  generations: 20
-  mutation_probability: 0.05
-  telemetry_max_age_sec: 1800
-  round_timeout_sec: 900
-  initial_worker_states:
-    0:
-      compute_seconds_per_sample: 0.004155
-      transfer_seconds_per_sample: 0.001
-    1:
-      compute_seconds_per_sample: 0.004163
-      transfer_seconds_per_sample: 0.001
-    2:
-      compute_seconds_per_sample: 0.004183
-      transfer_seconds_per_sample: 0.001
 
 split_server:
   model_scope: shared
-  training_strategy: mergesfl_algorithm1_v1
+  training_strategy: concat_v1
   model:
     pos_weight: 6.0
-    optimizer: sgd
-    lr: 0.001
-    momentum: 0.0
-    weight_decay: 0.0
+    optimizer: adam
+    lr: 0.0005
     device: cuda
     gradient_accumulation_steps: 1
     batch_timeout_sec: 300
@@ -111,12 +78,12 @@ split_server:
   split_downlink_channel: split_downlink
 
 fed_server:
-  strategy: mergesfl_batch_weighted_v1
+  strategy: fedavg
   seed: *seed
   device: cuda
-  aggregation_freq: 1
-  min_clients: 2
-  quorum_timeout_sec: 300
+  aggregation_freq: 10
+  min_clients: 3
+  quorum_timeout_sec: 120
   federated_uplink_channel: federated_uplink
   federated_downlink_channel: federated_downlink
 

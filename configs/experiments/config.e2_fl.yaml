@@ -2,20 +2,23 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_local_cross_corpus
+  name: e2_fedavg
+  cross_corpus_evaluation: true
   description: >-
-    Train one isolated complete model per corpus and evaluate each unchanged
-    model on the actor-disjoint test views of all three corpora.
+    E2 sample-weighted FedAvg baseline for the centralized comparison. In each
+    of 50 rounds every client exhausts its actor-disjoint training loader;
+    aggregate every round and evaluate the final global model on every corpus.
   transport: queue
   seed: &seed 42
 
 training:
-  mode: local
-  num_rounds: 30
+  mode: federated
+  num_rounds: 50
   seed: *seed
-  eval_every: 30
+  eval_every: 10
   fed_every: 1
-  barrier_timeout_sec: 900
+  aggregate_final: true
+  barrier_timeout_sec: 7200
 
 clients:
   - client_id: 0
@@ -33,6 +36,7 @@ clients:
       optimizer: adam
     runtime: &local_runtime
       local_steps: 1
+      workload_policy: full_epoch_v1
       batch_size: 8
       seed: *seed
       device: cuda
@@ -58,4 +62,25 @@ clients:
     runtime: *local_runtime
     noise: *local_noise
 
-channels: {}
+fed_server:
+  strategy: weighted_fedavg
+  seed: *seed
+  device: cuda
+  aggregation_freq: 1
+  min_clients: 3
+  quorum_timeout_sec: 7200
+  federated_uplink_channel: federated_uplink
+  federated_downlink_channel: federated_downlink
+
+channels:
+  federated_uplink:
+    transport: queue
+    name: federated_uplink
+    maxsize: 8
+    timeout: 7200
+
+  federated_downlink:
+    transport: queue
+    name: federated_downlink
+    maxsize: 8
+    timeout: 7200

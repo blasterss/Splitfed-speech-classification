@@ -2,22 +2,22 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e0_research_data
-  analysis_only: true
+  name: e2_centralized
+  cross_corpus_evaluation: true
   description: >-
-    E0 research-data analysis of natural heterogeneity across CREMA-D,
-    RAVDESS, and SAVEE. This dataset-only configuration records comparable
-    corpus statistics and performs no target-model training or evaluation.
+    E2 centralized baseline for the FL comparison. Combine the actor-disjoint
+    training views of CREMA-D, RAVDESS, and SAVEE into one loader, train one
+    complete model for 50 epochs, and evaluate it separately on every corpus.
   transport: queue
   seed: &seed 42
 
 training:
   mode: centralized
-  num_rounds: 30
+  num_rounds: 50
   seed: *seed
   eval_every: 10
-  fed_every: 10
-  barrier_timeout_sec: 900
+  fed_every: 1
+  barrier_timeout_sec: 7200
 
 clients:
   - client_id: 0
@@ -30,15 +30,15 @@ clients:
       reduced_size: 480
       test_size: 0.2
       split_seed: *seed
-    model: &client_model
+    model: &local_model
       lr: 0.001
       optimizer: adam
-    runtime: &client_runtime
-      local_steps: 64
+    runtime: &local_runtime
+      local_steps: 1
       batch_size: 8
       seed: *seed
-      device: cpu
-    noise: &client_noise
+      device: cuda
+    noise: &local_noise
       type: gauss
       std: 1.0e-10
 
@@ -47,17 +47,17 @@ clients:
       <<: *base_dataset
       name: RAVDESS
       root: ../datasets/RAVDESS/raw
-    model: *client_model
-    runtime: *client_runtime
-    noise: *client_noise
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
 
   - client_id: 2
     dataset:
       <<: *base_dataset
       name: SAVEE
       root: ../datasets/SAVEE/raw
-    model: *client_model
-    runtime: *client_runtime
-    noise: *client_noise
+    model: *local_model
+    runtime: *local_runtime
+    noise: *local_noise
 
 channels: {}

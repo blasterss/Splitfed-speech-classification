@@ -2,11 +2,11 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_sflv1_personalized_split
+  name: e3_sfl_our
   description: >-
-    Personalized SplitFed variant with one isolated server-side model and
-    optimizer per client. Client-side and server-side models are aggregated
-    with FedAvg while server optimizer states remain personalized.
+    E3 SFLour protocol run. Each client consumes one full local epoch per
+    round; the shared split server concatenates matching activations into one
+    update, and client-side models are aggregated every 10 rounds.
   transport: queue
   seed: &seed 42
 
@@ -30,16 +30,16 @@ clients:
       reduced_size: 480
       test_size: 0.2
       split_seed: *seed
-    model: &local_model
+    model: &client_model
       lr: 0.001
       optimizer: adam
-    runtime: &local_runtime
+    runtime: &client_runtime
       local_steps: 64
       workload_policy: full_epoch_v1
       batch_size: 8
       seed: *seed
       device: cuda
-    noise: &local_noise
+    noise: &client_noise
       type: gauss
       std: 1.0e-10
 
@@ -48,21 +48,21 @@ clients:
       <<: *base_dataset
       name: RAVDESS
       root: ../datasets/RAVDESS/raw
-    model: *local_model
-    runtime: *local_runtime
-    noise: *local_noise
+    model: *client_model
+    runtime: *client_runtime
+    noise: *client_noise
 
   - client_id: 2
     dataset:
       <<: *base_dataset
       name: SAVEE
       root: ../datasets/SAVEE/raw
-    model: *local_model
-    runtime: *local_runtime
-    noise: *local_noise
+    model: *client_model
+    runtime: *client_runtime
+    noise: *client_noise
 
 split_server:
-  model_scope: personalized
+  model_scope: shared
   training_strategy: concat_v1
   model:
     pos_weight: 6.0

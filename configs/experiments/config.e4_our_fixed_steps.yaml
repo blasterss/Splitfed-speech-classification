@@ -2,11 +2,11 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_our_concat_splitfed
+  name: e4_sfl_our_fixed_steps
   description: >-
-    Shared-server SplitFed run using the synchronized concatenated activation
-    strategy. Clients train local models and the shared split server processes
-    matching client batches as one concatenated batch.
+    E4 fixed-steps SFLour run. Every client completes exactly 143 batches per
+    round, matching one RAVDESS train epoch at batch size 8; exhausted loaders
+    cycle, so smaller corpora can reuse samples within the same round.
   transport: queue
   seed: &seed 42
 
@@ -34,8 +34,8 @@ clients:
       lr: 0.001
       optimizer: adam
     runtime: &client_runtime
-      local_steps: 64
-      workload_policy: full_epoch_v1
+      local_steps: 143
+      workload_policy: fixed_steps_v1
       batch_size: 8
       seed: *seed
       device: cuda

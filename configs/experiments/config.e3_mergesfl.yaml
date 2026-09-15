@@ -2,11 +2,12 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_our_concat_splitfed_fixed_steps
+  name: e3_mergesfl_algorithm1
   description: >-
-    Shared-server SplitFed run using synchronized concatenated activations and
-    a fixed workload of 143 batches per client and round. The workload matches
-    one RAVDESS train epoch at batch size 8 (1140 samples, ceil division).
+    E3 MergeSFL Algorithm 1 protocol run. For 50 rounds the controller selects
+    two-client cohorts and regulates batches under bandwidth and distribution
+    constraints; SGD rates and aggregation weights follow planned batch sizes.
+    Compute timings are calibrated, while transfer timings are bootstrap values.
   transport: queue
   seed: &seed 42
 
@@ -15,7 +16,7 @@ training:
   num_rounds: 50
   seed: *seed
   eval_every: 10
-  fed_every: 10
+  fed_every: 1
   aggregate_final: true
   barrier_timeout_sec: 900
 
@@ -32,11 +33,14 @@ clients:
       split_seed: *seed
     model: &client_model
       lr: 0.001
-      optimizer: adam
+      optimizer: sgd
+      momentum: 0.0
+      weight_decay: 0.0
     runtime: &client_runtime
       local_steps: 143
       workload_policy: fixed_steps_v1
       batch_size: 8
+      drop_last: true
       seed: *seed
       device: cuda
     noise: &client_noise
@@ -61,13 +65,42 @@ clients:
     runtime: *client_runtime
     noise: *client_noise
 
+load_controller:
+  name: mergesfl_algorithm1_v1
+  max_batch_size: 8
+  local_steps: 143
+  ema_alpha: 0.8
+  ingress_budget_bytes: 524288
+  feature_bytes_per_sample: 32768
+  kl_threshold: 0.001
+  min_clients: 2
+  max_clients: 2
+  ga_seed: 42
+  population_size: 20
+  generations: 20
+  mutation_probability: 0.05
+  telemetry_max_age_sec: 1800
+  round_timeout_sec: 900
+  initial_worker_states:
+    0:
+      compute_seconds_per_sample: 0.004155
+      transfer_seconds_per_sample: 0.001
+    1:
+      compute_seconds_per_sample: 0.004163
+      transfer_seconds_per_sample: 0.001
+    2:
+      compute_seconds_per_sample: 0.004183
+      transfer_seconds_per_sample: 0.001
+
 split_server:
   model_scope: shared
-  training_strategy: concat_v1
+  training_strategy: mergesfl_algorithm1_v1
   model:
     pos_weight: 6.0
-    optimizer: adam
-    lr: 0.0005
+    optimizer: sgd
+    lr: 0.001
+    momentum: 0.0
+    weight_decay: 0.0
     device: cuda
     gradient_accumulation_steps: 1
     batch_timeout_sec: 300
@@ -76,12 +109,12 @@ split_server:
   split_downlink_channel: split_downlink
 
 fed_server:
-  strategy: fedavg
+  strategy: mergesfl_batch_weighted_v1
   seed: *seed
   device: cuda
-  aggregation_freq: 10
-  min_clients: 3
-  quorum_timeout_sec: 120
+  aggregation_freq: 1
+  min_clients: 2
+  quorum_timeout_sec: 300
   federated_uplink_channel: federated_uplink
   federated_downlink_channel: federated_downlink
 

@@ -245,7 +245,7 @@ def test_algorithm1_experiment_config_is_schema_valid(monkeypatch):
     )
     raw = yaml.safe_load(
         Path(
-            "configs/experiments/config.e1.3_mergesfl_algorithm1.yaml"
+            "configs/experiments/config.e3_mergesfl.yaml"
         ).read_text()
     )
 

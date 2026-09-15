@@ -2,22 +2,21 @@ data_path: ../datasets
 models_save_path: artifacts
 
 experiment:
-  name: e1_full_centralized
-  cross_corpus_evaluation: true
+  name: e1_local_corpus_evaluation
   description: >-
-    Centralized full-data baseline. Combine the actor-disjoint training views
-    of CREMA-D, RAVDESS, and SAVEE into one loader and train one complete model
-    for fifty epochs.
+    E1 local-corpus evaluation. Train one isolated complete model per corpus
+    for 30 epochs, then evaluate each unchanged model on the actor-disjoint
+    test views of CREMA-D, RAVDESS, and SAVEE.
   transport: queue
   seed: &seed 42
 
 training:
-  mode: centralized
-  num_rounds: 50
+  mode: local
+  num_rounds: 30
   seed: *seed
-  eval_every: 10
+  eval_every: 30
   fed_every: 1
-  barrier_timeout_sec: 7200
+  barrier_timeout_sec: 900
 
 clients:
   - client_id: 0
