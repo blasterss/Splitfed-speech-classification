@@ -1,0 +1,21 @@
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{E3 protocol comparison at round 50 of the seed-42 rerun. Corpus
+    columns report anger F1; the final four quality columns are macro-averaged
+    across corpora. The protocols retain their native workload and server-model
+    ownership semantics.}
+    \label{tab:e3_protocol_comparison}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrrr}
+        \toprule
+        Method & CREMA-D F1 & RAVDESS F1 & SAVEE F1 & Anger F1 & Macro F1 & UAR & PR-AUC \\
+        \midrule
+        MergeSFL & 0.6547 & 0.4314 & 0.8571 & 0.6477 & 0.7978 & 0.7845 & 0.7749 \\
+        SFLv1    & 0.6755 & 0.6230 & 0.7500 & 0.6828 & 0.8147 & 0.8145 & 0.7686 \\
+        SFLour   & 0.6541 & 0.5517 & 0.8387 & 0.6815 & 0.8139 & 0.8148 & 0.7884 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}

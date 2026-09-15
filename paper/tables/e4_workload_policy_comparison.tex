@@ -2,10 +2,9 @@
     \centering
     \small
     \setlength{\tabcolsep}{4pt}
-    \caption{SplitFed workload-policy quality at round 50 (seed 42). Metrics in the
-    last four columns are macro-averaged across corpora. Results are from one run
-    per policy; no uncertainty estimate is available.}
-    \label{tab:e1_workload_policy_quality}
+    \caption{E4 SFLour workload-policy quality at round 50 of the seed-42
+    rerun. The final four columns are macro-averaged across corpora.}
+    \label{tab:e4_workload_policy_quality}
     \resizebox{\textwidth}{!}{%
     \begin{tabular}{lrrrrrrrr}
         \toprule
@@ -13,7 +12,7 @@
         \midrule
         \texttt{Full Local Epoch}  & 0.6541 & 0.5517 & 0.8387 & 0.6815 & 0.8139 & 0.8148 & 0.7884 \\
         \texttt{Fixed Maximum Steps} & 0.6513 & 0.6774 & 0.7317 & 0.6868 & 0.8163 & 0.8313 & 0.7809 \\
-        \texttt{Balanced Workload}   & 0.6113 & 0.6087 & 0.7000 & 0.6400 & 0.7848 & 0.8201 & 0.7202 \\
+        \texttt{Balanced Workload}   & 0.6246 & 0.6269 & 0.6500 & 0.6338 & 0.7814 & 0.8114 & 0.7431 \\
         \bottomrule
     \end{tabular}%
     }
@@ -23,18 +22,19 @@
     \centering
     \small
     \setlength{\tabcolsep}{4pt}
-    \caption{SplitFed workload-policy cost at round 50. Batches/round are listed
+    \caption{E4 SFLour workload-policy cost at round 50 of the seed-42 rerun.
+    Batches/round are listed
     as CREMA-D/RAVDESS/SAVEE. The fixed budget of 143 is the RAVDESS (middle
     client) epoch length at batch size 8. GB and MB use decimal units.}
-    \label{tab:e1_workload_policy_resources}
+    \label{tab:e4_workload_policy_resources}
     \resizebox{\textwidth}{!}{%
     \begin{tabular}{lrrrrrrr}
         \toprule
         Policy & Batches/round & Wall time (s) & CPU user (s) & CPU sys (s) & Transport (GB) & Messages & Peak RSS (GB) \\
         \midrule
-        \texttt{Full Local Epoch}  & 737/143/45 & 787.29 & 1657.40 & 303.29 & 24.555 & 95150 & 1.930 \\
-        \texttt{Fixed Maximum Steps} & 143/143/143 & 307.28 & 842.08  & 129.82 & 11.566 & 45550 & 1.918 \\
-        \texttt{Balanced Workload}   & 64/64/45   & 184.84 & 358.55  & 60.87  & 4.865  & 19950 & 1.913 \\
+        \texttt{Full Local Epoch}    & 737/143/45  & 801.30 & 1629.39 & 311.44 & 24.555 & 95150 & 1.937 \\
+        \texttt{Fixed Maximum Steps} & 143/143/143 & 295.22 & 825.63  & 129.71 & 11.566 & 45550 & 1.915 \\
+        \texttt{Balanced Workload}   & 64/64/45    & 179.91 & 343.26  & 59.61  & 4.865  & 19950 & 1.952 \\
         \bottomrule
     \end{tabular}%
     }

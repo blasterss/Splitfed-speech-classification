@@ -1,0 +1,24 @@
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \caption{Resource usage for the E2--E4 seed-42 rerun. Transport volume
+    uses decimal GB, peak resident memory uses decimal GB, and peak CUDA
+    allocation uses decimal MB. Process CPU times are summed across roles.}
+    \label{tab:e2_e4_resource_summary}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrr}
+        \toprule
+        Method & Wall time (s) & CPU user (s) & CPU sys (s) & Transport (GB) & Messages & Peak RSS (GB) & Peak CUDA (MB) \\
+        \midrule
+        E2 Centralized      & 494.21 & 358.08  & 84.79  & 0.000  & 0     & 2.165 & 156.6 \\
+        E2 FedAvg           & 553.38 & 2760.32 & 153.73 & 2.103  & 300   & 2.151 & 156.6 \\
+        E3 MergeSFL        & 251.53 & 417.13  & 90.71  & 7.860  & 31520 & 1.911 & 185.8 \\
+        E3 SFLv1           & 807.99 & 1681.41 & 318.75 & 24.555 & 95300 & 1.938 & 205.2 \\
+        E3 SFLour          & 801.30 & 1629.39 & 311.44 & 24.555 & 95150 & 1.937 & 250.7 \\
+        E4 Balanced        & 179.91 & 343.26  & 59.61  & 4.865  & 19950 & 1.952 & 250.7 \\
+        E4 Fixed steps     & 295.22 & 825.63  & 129.71 & 11.566 & 45550 & 1.915 & 250.7 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}

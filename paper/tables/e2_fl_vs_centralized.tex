@@ -2,17 +2,16 @@
     \centering
     \small
     \setlength{\tabcolsep}{5pt}
-    \caption{Main quality comparison across methods.}
-    \label{tab:e1_quality_summary}
+    \caption{E2 centralized versus FedAvg quality at seed 42. Metrics are
+    sample-weighted across the three corpus-specific test sets.}
+    \label{tab:e2_fl_vs_centralized}
     \resizebox{\textwidth}{!}{%
     \begin{tabular}{lrrrrrrr}
         \toprule
         Method & Accuracy & Anger F1 & Macro F1 & Precision & Recall & PR-AUC \\
         \midrule
         Centralized & 0.8920 & 0.6864 & 0.8102 & 0.6655 & 0.7409 & 0.7772 \\
-        FedAvg & 0.8966 & 0.6598 & 0.7990 & 0.7101 & 0.6645 & 0.7757 \\
-        SFLv1 & 0.8824 & 0.6594 & 0.7938 & 0.6601 & 0.6952 & 0.7442 \\
-        SFLour & 0.8727 & 0.6498 & 0.7854 & 0.6259 & 0.7313 & 0.7691 \\
+        FedAvg      & 0.8966 & 0.6598 & 0.7990 & 0.7101 & 0.6645 & 0.7757 \\
         \bottomrule
     \end{tabular}%
     }

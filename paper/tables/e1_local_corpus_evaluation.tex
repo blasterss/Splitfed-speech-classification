@@ -1,0 +1,19 @@
+\begin{table}[ht]
+    \centering
+    \small
+    \caption{E1 local-corpus evaluation at seed 42: anger F1 on each
+    cross-corpus test set. Every model is trained only on the corpus named in
+    its row, using the actor-disjoint split from the rerun.}
+    \label{tab:e1_local_corpus_evaluation}
+    \resizebox{0.8\textwidth}{!}{%
+    \begin{tabular}{lccc}
+        \toprule
+        Train model & CREMA-D test & RAVDESS test & SAVEE test \\
+        \midrule
+        CREMA-D & 0.6922 & 0.1395 & 0.6111 \\
+        RAVDESS & 0.2778 & 0.6207 & 0.4103 \\
+        SAVEE & 0.3846 & 0.2621 & 0.7027 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
