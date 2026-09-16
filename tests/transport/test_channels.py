@@ -126,6 +126,34 @@ def _receive_in_spawned_process(channel, result_queue):
         channel.close()
 
 
+def _send_in_spawned_process(channel):
+    channel.send(Message(type="ack", sender="worker", round=1, step=1))
+
+
+def test_queue_message_type_counters_are_shared_across_spawn():
+    context = mp.get_context("spawn")
+    channel = QueueChannel(timeout=5, mp_context=context)
+    sender = context.Process(target=_send_in_spawned_process, args=(channel,))
+    sender.start()
+    received = channel.recv()
+    sender.join(timeout=5)
+
+    try:
+        assert sender.exitcode == 0
+        assert received.type is MessageType.ACK
+        statistics = channel.statistics()
+        assert statistics["messages_sent"] == 1
+        assert statistics["by_message_type"] == {
+            "ack": {
+                "messages": 1,
+                "bytes": statistics["bytes_sent"],
+            }
+        }
+    finally:
+        channel.queue.close()
+        channel.queue.join_thread()
+
+
 def test_grpc_channel_round_trips_through_spawned_receiver():
     context = mp.get_context("spawn")
     channel = GrpcChannel(

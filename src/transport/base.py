@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import grpc
 
 from ..schema import GRPCChannelConfig, QueueChannelConfig
-from .message import Message
+from .message import Message, MessageType
 from .proto import message_pb2, message_pb2_grpc
 
 
@@ -55,6 +55,37 @@ class ChannelCancelled(RuntimeError):
     """Raised when a shared cancellation event interrupts a channel wait."""
 
 
+def _message_type_counters(context) -> dict[str, dict[str, object]]:
+    return {
+        message_type.value: {
+            "messages": context.Value("Q", 0),
+            "bytes": context.Value("Q", 0),
+        }
+        for message_type in MessageType
+    }
+
+
+def _record_message_type(
+    counters, message_type: MessageType, size: int
+) -> None:
+    counter = counters[message_type.value]
+    with counter["messages"].get_lock():
+        counter["messages"].value += 1
+    with counter["bytes"].get_lock():
+        counter["bytes"].value += size
+
+
+def _message_type_statistics(counters) -> dict[str, dict[str, int]]:
+    return {
+        message_type: {
+            "messages": counter["messages"].value,
+            "bytes": counter["bytes"].value,
+        }
+        for message_type, counter in counters.items()
+        if counter["messages"].value or counter["bytes"].value
+    }
+
+
 class Channel(ABC):
     @abstractmethod
     def send(self, msg: Message) -> None:
@@ -95,19 +126,23 @@ class QueueChannel(Channel):
         self.stop_event = stop_event
         self._bytes_sent = context.Value("Q", 0)
         self._messages_sent = context.Value("Q", 0)
+        self._by_message_type = _message_type_counters(context)
 
     def send(self, msg: Message) -> None:
         msg.ensure_deadline(self.timeout)
         self.queue.put(msg, timeout=self.timeout)
+        size = estimate_message_bytes(msg)
         with self._bytes_sent.get_lock():
-            self._bytes_sent.value += estimate_message_bytes(msg)
+            self._bytes_sent.value += size
         with self._messages_sent.get_lock():
             self._messages_sent.value += 1
+        _record_message_type(self._by_message_type, msg.type, size)
 
     def statistics(self) -> dict[str, int]:
         return {
             "messages_sent": self._messages_sent.value,
             "bytes_sent": self._bytes_sent.value,
+            "by_message_type": _message_type_statistics(self._by_message_type),
         }
 
     def recv(self) -> Message:
@@ -176,6 +211,7 @@ class GrpcChannel(Channel):
         self.stop_event = stop_event
         self._bytes_sent = context.Value("Q", 0)
         self._messages_sent = context.Value("Q", 0)
+        self._by_message_type = _message_type_counters(context)
         self._server = None
         self._messages = None
         self._client_channel = None
@@ -216,6 +252,7 @@ class GrpcChannel(Channel):
             self._bytes_sent.value += size
         with self._messages_sent.get_lock():
             self._messages_sent.value += 1
+        _record_message_type(self._by_message_type, msg.type, size)
 
     def recv(self) -> Message:
         self._ensure_server()
@@ -246,6 +283,7 @@ class GrpcChannel(Channel):
         return {
             "messages_sent": self._messages_sent.value,
             "bytes_sent": self._bytes_sent.value,
+            "by_message_type": _message_type_statistics(self._by_message_type),
         }
 
     def close(self) -> None:

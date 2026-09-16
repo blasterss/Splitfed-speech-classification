@@ -21,6 +21,7 @@ def test_queue_channel_counts_logical_tensor_payload_bytes():
     assert channel.statistics() == {
         "messages_sent": 1,
         "bytes_sent": expected,
+        "by_message_type": {"train_step": {"messages": 1, "bytes": expected}},
     }
     channel.queue.close()
     channel.queue.join_thread()
