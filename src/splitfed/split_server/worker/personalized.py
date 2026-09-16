@@ -23,6 +23,7 @@ from ....utils.runtime import (
 )
 from ....utils.runtime.resource_metrics import (
     ResourceTracker,
+    owned_resource_bytes,
     publish_resource_metric,
 )
 from ....utils.training import _RoundStats, set_seed
@@ -207,10 +208,14 @@ def _split_server_worker_personalized(
         stop_event.set()
         raise
     finally:
-        publish_resource_metric(
-            resource_metrics_queue,
-            tracker.snapshot(round_idx=None, phase="lifetime"),
-        )
+        metric = tracker.snapshot(round_idx=None, phase="train")
+        ownership = [
+            owned_resource_bytes(models[client_id], optimizers[client_id])
+            for client_id in client_ids
+        ]
+        for field in ownership[0] if ownership else ():
+            metric[field] = sum(item[field] for item in ownership)
+        publish_resource_metric(resource_metrics_queue, metric)
         state = {
             client_id: {
                 key: value.cpu()

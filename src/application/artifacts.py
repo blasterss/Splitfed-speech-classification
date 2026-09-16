@@ -23,6 +23,10 @@ from ..schema import ConfigSchema
 from ..transport.message import MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_VERSION
 from ..utils.config import save_yaml
 from ..utils.persistence import ArtifactPaths
+from ..utils.runtime.resource_metrics import (
+    RESOURCE_MEASUREMENT_POLICY,
+    RESOURCE_METRICS_SCHEMA_VERSION,
+)
 
 
 def finalize_run_artifacts(
@@ -68,6 +72,14 @@ def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
     """Persist process/round measurements and a compact run summary."""
     if not metrics:
         return
+    versions = {row.get("schema_version") for row in metrics}
+    policies = {row.get("measurement_policy") for row in metrics}
+    if versions != {RESOURCE_METRICS_SCHEMA_VERSION} or policies != {
+        RESOURCE_MEASUREMENT_POLICY
+    }:
+        raise ValueError(
+            "Resource metrics must use one resource_metrics_v2 contract"
+        )
     ordered = sorted(
         metrics,
         key=lambda item: (
@@ -85,20 +97,24 @@ def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
         writer.writeheader()
         writer.writerows(ordered)
 
-    _save_resource_averages(ordered, metrics_path)
-
-    numeric_maxima = {}
-    for field in (
-        "peak_rss_bytes",
-        "peak_cuda_allocated_bytes",
-        "peak_cuda_reserved_bytes",
-    ):
-        values = [row[field] for row in ordered if row.get(field) is not None]
-        numeric_maxima[f"max_{field}"] = max(values) if values else None
+    _save_transport_metrics(ordered, metrics_path)
+    participants = _save_resource_averages(ordered, metrics_path)
+    training_rows = [
+        row
+        for row in ordered
+        if not str(row.get("phase", "")).startswith("evaluation")
+        and row.get("role") != "controller"
+    ]
+    evaluation_rows = [
+        row
+        for row in ordered
+        if str(row.get("phase", "")).startswith("evaluation")
+    ]
     save_yaml(
         metrics_path / "resource_summary.yaml",
         {
-            "schema_version": 1,
+            "schema_version": RESOURCE_METRICS_SCHEMA_VERSION,
+            "measurement_policy": RESOURCE_MEASUREMENT_POLICY,
             "measurement_scope": (
                 "per-process peaks; values must not be summed as concurrent "
                 "host usage"
@@ -113,43 +129,70 @@ def _save_resource_metrics(metrics: list[dict], metrics_path: Path) -> None:
                 ),
                 None,
             ),
-            "summed_process_interval_seconds": sum(
-                row["wall_time_seconds"] for row in ordered
-            ),
-            "total_cpu_user_seconds": sum(
-                row["cpu_user_seconds"] for row in ordered
-            ),
-            "total_cpu_system_seconds": sum(
-                row["cpu_system_seconds"] for row in ordered
-            ),
-            "total_transport_bytes": sum(
-                row.get("bytes_sent", 0) for row in ordered
-            ),
-            "total_transport_messages": sum(
-                row.get("messages_sent", 0) for row in ordered
-            ),
-            **numeric_maxima,
+            "training": _resource_phase_summary(training_rows),
+            "evaluation": _resource_phase_summary(evaluation_rows),
+            "owned_footprint": _owned_footprint_summary(participants),
+            "participants": participants,
             "roles": sorted({row["role"] for row in ordered}),
         },
     )
 
 
-def _save_resource_averages(metrics: list[dict], metrics_path: Path) -> None:
+def _save_transport_metrics(metrics: list[dict], metrics_path: Path) -> None:
+    rows = []
+    for metric in metrics:
+        if metric.get("role") != "transport":
+            continue
+        by_message_type = metric.get("by_message_type") or {}
+        for message_type, counters in sorted(by_message_type.items()):
+            rows.append(
+                {
+                    "client_id": metric.get("client_id"),
+                    "channel": metric.get("phase"),
+                    "message_type": message_type,
+                    "byte_accounting": metric.get("byte_accounting"),
+                    "messages": counters.get("messages", 0),
+                    "bytes": counters.get("bytes", 0),
+                }
+            )
+    fieldnames = [
+        "client_id",
+        "channel",
+        "message_type",
+        "byte_accounting",
+        "messages",
+        "bytes",
+    ]
+    with (metrics_path / "resource_transport.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _save_resource_averages(
+    metrics: list[dict], metrics_path: Path
+) -> list[dict]:
     """Persist average client/role resource intervals without merging peaks."""
     groups = defaultdict(list)
     for row in metrics:
         group = (
             str(row.get("role")),
             row.get("client_id"),
+            row.get("process_id"),
             str(row.get("phase")),
         )
         groups[group].append(row)
 
     rows = []
-    for (role, client_id, phase), group in sorted(groups.items()):
+    for (role, client_id, process_id, phase), group in sorted(
+        groups.items(), key=lambda item: tuple(str(value) for value in item[0])
+    ):
         row = {
             "role": role,
             "client_id": client_id,
+            "process_id": process_id,
             "phase": phase,
             "event_count": len(group),
         }
@@ -167,7 +210,8 @@ def _save_resource_averages(metrics: list[dict], metrics_path: Path) -> None:
             ]
             row[f"avg_{field}"] = sum(values) / len(values) if values else None
         for field in (
-            "peak_rss_bytes",
+            "process_peak_rss_bytes",
+            "phase_sampled_peak_rss_bytes",
             "peak_cuda_allocated_bytes",
             "peak_cuda_reserved_bytes",
         ):
@@ -175,16 +219,85 @@ def _save_resource_averages(metrics: list[dict], metrics_path: Path) -> None:
                 item[field] for item in group if item.get(field) is not None
             ]
             row[f"max_{field}"] = max(values) if values else None
+        for field in (
+            "model_parameter_bytes",
+            "model_buffer_bytes",
+            "model_state_bytes",
+            "optimizer_state_bytes",
+            "owned_dataset_bytes",
+            "owned_static_bytes",
+        ):
+            values = [
+                item[field] for item in group if item.get(field) is not None
+            ]
+            row[field] = max(values) if values else None
         rows.append(row)
 
     fieldnames = list(rows[0]) if rows else []
-    with (metrics_path / "resource_by_client.csv").open(
+    with (metrics_path / "resource_by_participant.csv").open(
         "w", newline="", encoding="utf-8"
     ) as output:
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
             writer.writerows(rows)
+    return rows
+
+
+def _resource_phase_summary(rows: list[dict]) -> dict:
+    def maximum(field):
+        values = [row[field] for row in rows if row.get(field) is not None]
+        return max(values) if values else None
+
+    return {
+        "summed_interval_seconds": sum(
+            row.get("wall_time_seconds", 0) for row in rows
+        ),
+        "cpu_user_seconds": sum(
+            row.get("cpu_user_seconds", 0) for row in rows
+        ),
+        "cpu_system_seconds": sum(
+            row.get("cpu_system_seconds", 0) for row in rows
+        ),
+        "max_process_peak_rss_bytes": maximum("process_peak_rss_bytes"),
+        "max_phase_peak_rss_bytes": maximum("phase_sampled_peak_rss_bytes"),
+        "max_cuda_allocated_bytes": maximum("peak_cuda_allocated_bytes"),
+        "max_cuda_reserved_bytes": maximum("peak_cuda_reserved_bytes"),
+        "total_transport_bytes": sum(row.get("bytes_sent", 0) for row in rows),
+        "total_transport_messages": sum(
+            row.get("messages_sent", 0) for row in rows
+        ),
+    }
+
+
+def _owned_footprint_summary(participants: list[dict]) -> dict:
+    owned = [
+        row
+        for row in participants
+        if row.get("owned_static_bytes") is not None
+        and row.get("phase") in {"train", "aggregation"}
+    ]
+    latest_by_participant = {}
+    for row in owned:
+        key = (row["role"], row.get("client_id"), row.get("process_id"))
+        current = latest_by_participant.get(key)
+        if current is None or row["owned_static_bytes"] > current:
+            latest_by_participant[key] = row["owned_static_bytes"]
+    by_role = defaultdict(list)
+    for (role, _, _), value in latest_by_participant.items():
+        by_role[role].append(value)
+    values = list(latest_by_participant.values())
+    return {
+        "max_participant_bytes": max(values) if values else None,
+        "sum_participant_bytes": sum(values) if values else None,
+        "by_role": {
+            role: {
+                "max_participant_bytes": max(role_values),
+                "sum_participant_bytes": sum(role_values),
+            }
+            for role, role_values in sorted(by_role.items())
+        },
+    }
 
 
 def _save_splitfed_quality(

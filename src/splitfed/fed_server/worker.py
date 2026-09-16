@@ -18,6 +18,7 @@ from ...utils.runtime import (
 from ...utils.runtime.resource_metrics import (
     ResourceTracker,
     publish_resource_metric,
+    tensor_storage_bytes,
 )
 from ...utils.training import set_seed
 from .aggregation import aggregate_states
@@ -127,15 +128,15 @@ def _fed_server_worker(
 
                 state_dict, dataset_size, aggregation_weight = (
                     validate_client_update(
-                    msg,
-                    expected_client_id=client_id,
-                    expected_round=active_round,
-                    expected_schema=expected_schema,
-                    require_aggregation_weight=(
-                        config.strategy
-                        is AggregationStrategy.mergesfl_batch_weighted_v1
-                    ),
-                )
+                        msg,
+                        expected_client_id=client_id,
+                        expected_round=active_round,
+                        expected_schema=expected_schema,
+                        require_aggregation_weight=(
+                            config.strategy
+                            is AggregationStrategy.mergesfl_batch_weighted_v1
+                        ),
+                    )
                 )
                 if expected_schema is None:
                     expected_schema = state_schema(state_dict)
@@ -171,14 +172,19 @@ def _fed_server_worker(
                 )
             if decision == "aggregate":
                 participant_ids = [cid for cid in client_ids if cid in updates]
+                uses_planned_weights = (
+                    config.strategy
+                    is AggregationStrategy.mergesfl_batch_weighted_v1
+                )
                 try:
                     latest_params = aggregate_states(
                         [updates[cid] for cid in participant_ids],
                         [
-                            aggregation_weights[cid]
-                            if config.strategy
-                            is AggregationStrategy.mergesfl_batch_weighted_v1
-                            else sizes[cid]
+                            (
+                                aggregation_weights[cid]
+                                if uses_planned_weights
+                                else sizes[cid]
+                            )
                             for cid in participant_ids
                         ],
                         config.strategy,
@@ -234,10 +240,16 @@ def _fed_server_worker(
         stop_event.set()
         raise
     finally:
-        publish_resource_metric(
-            resource_metrics_queue,
-            tracker.snapshot(round_idx=None, phase="lifetime"),
-        )
+        metric = tracker.snapshot(round_idx=None, phase="aggregation")
+        if latest_params is not None:
+            state_bytes = tensor_storage_bytes(latest_params)
+            metric.update(
+                {
+                    "model_state_bytes": state_bytes,
+                    "owned_static_bytes": state_bytes,
+                }
+            )
+        publish_resource_metric(resource_metrics_queue, metric)
         if latest_params is None:
             try:
                 result_queue.put_nowait(None)

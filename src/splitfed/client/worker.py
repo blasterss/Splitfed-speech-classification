@@ -19,6 +19,7 @@ from ...utils.runtime import (
 )
 from ...utils.runtime.resource_metrics import (
     ResourceTracker,
+    owned_resource_bytes,
     publish_resource_metric,
 )
 from ...utils.training import set_seed
@@ -166,15 +167,18 @@ def _client_worker(
                 batches, samples = _effective_round_workload(
                     client, cfg, plan, selected
                 )
-                publish_resource_metric(
-                    resource_metrics_queue,
-                    tracker.snapshot(
-                        round_idx=round_idx,
-                        phase="train",
-                        samples=samples,
-                        batches=batches,
-                    ),
+                metric = tracker.snapshot(
+                    round_idx=round_idx,
+                    phase="train",
+                    samples=samples,
+                    batches=batches,
                 )
+                metric.update(
+                    owned_resource_bytes(
+                        client.model, client.optimizer, client.dataset
+                    )
+                )
+                publish_resource_metric(resource_metrics_queue, metric)
 
             should_aggregate = (
                 training_cfg.mode

@@ -21,6 +21,7 @@ from ....utils.runtime import (
 )
 from ....utils.runtime.resource_metrics import (
     ResourceTracker,
+    owned_resource_bytes,
     publish_resource_metric,
 )
 from ....utils.training import _RoundStats, build_optimizer, set_seed
@@ -272,10 +273,9 @@ def _split_server_worker_concat(
         raise
 
     finally:
-        publish_resource_metric(
-            resource_metrics_queue,
-            tracker.snapshot(round_idx=None, phase="lifetime"),
-        )
+        metric = tracker.snapshot(round_idx=None, phase="train")
+        metric.update(owned_resource_bytes(model, optimizer))
+        publish_resource_metric(resource_metrics_queue, metric)
         stats.log_and_reset(current_round)
         state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         try:

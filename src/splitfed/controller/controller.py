@@ -7,7 +7,11 @@ from ...logger import get_logger
 from ...schema import ConfigSchema, TrainingMode
 from ...utils.config import save_yaml
 from ...utils.persistence import ArtifactPaths
-from ...utils.runtime.resource_metrics import ResourceTracker
+from ...utils.runtime.resource_metrics import (
+    RESOURCE_MEASUREMENT_POLICY,
+    RESOURCE_METRICS_SCHEMA_VERSION,
+    ResourceTracker,
+)
 from ..centralized import CentralizedTrainer
 from ..client import _client_worker
 from ..common.lifecycle import (
@@ -468,15 +472,22 @@ class TrainingController:
                     continue
                 self.resource_metrics.append(
                     {
-                        "schema_version": 1,
+                        "schema_version": RESOURCE_METRICS_SCHEMA_VERSION,
+                        "measurement_policy": RESOURCE_MEASUREMENT_POLICY,
                         "role": "transport",
                         "client_id": client_id,
+                        "process_id": None,
                         "round": None,
                         "phase": channel_name,
+                        "byte_accounting": (
+                            "serialized_protobuf_v1"
+                            if self.cfg.experiment.transport.value == "grpc"
+                            else "logical_payload_estimate_v1"
+                        ),
                         "wall_time_seconds": 0.0,
                         "cpu_user_seconds": 0.0,
                         "cpu_system_seconds": 0.0,
-                        "peak_rss_bytes": None,
+                        "process_peak_rss_bytes": None,
                         "peak_cuda_allocated_bytes": None,
                         "peak_cuda_reserved_bytes": None,
                         "samples": None,

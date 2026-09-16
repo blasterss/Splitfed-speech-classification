@@ -13,6 +13,7 @@ from ...utils.persistence import serialize_state_dict
 from ...utils.runtime import ignore_parent_interrupts
 from ...utils.runtime.resource_metrics import (
     ResourceTracker,
+    owned_resource_bytes,
     publish_resource_metric,
 )
 from ...utils.training import build_optimizer, set_seed
@@ -105,15 +106,16 @@ def _centralized_training_worker(
             sum(losses) / len(losses) if losses else 0.0,
             len(losses),
         )
-        publish_resource_metric(
-            resource_metrics_queue,
-            tracker.snapshot(
-                round_idx=round_idx,
-                phase="train",
-                samples=sample_count,
-                batches=len(losses),
-            ),
+        metric = tracker.snapshot(
+            round_idx=round_idx,
+            phase="train",
+            samples=sample_count,
+            batches=len(losses),
         )
+        metric.update(
+            owned_resource_bytes(model, optimizer, train_parts + test_parts)
+        )
+        publish_resource_metric(resource_metrics_queue, metric)
         if round_idx % config.training.eval_every == 0 or round_idx == (
             config.training.num_rounds
         ):
