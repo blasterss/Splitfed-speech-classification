@@ -1,3 +1,5 @@
+import multiprocessing as mp
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,6 +12,7 @@ from src.experiments.checkpoint_evaluation import evaluate_model_on_corpora
 from src.experiments.local_cross_corpus import (
     NORMALIZATION_POLICY,
     _cross_corpus_evaluation_dataset,
+    _run_spawn_worker,
     run_local_cross_corpus,
 )
 from src.experiments.metrics import evaluate_binary_model
@@ -118,6 +121,33 @@ class TinyBinaryModel(nn.Module):
 
     def forward(self, features):
         return self.output(self.pool(features).squeeze(-1))
+
+
+def _publish_process_id(report_queue):
+    report_queue.put({"ok": True, "process_id": os.getpid()})
+
+
+def test_local_worker_helper_uses_fresh_spawn_processes():
+    context = mp.get_context("spawn")
+
+    first = _run_spawn_worker(
+        context,
+        _publish_process_id,
+        (),
+        name="LocalPidOne",
+        timeout=10,
+    )
+    second = _run_spawn_worker(
+        context,
+        _publish_process_id,
+        (),
+        name="LocalPidTwo",
+        timeout=10,
+    )
+
+    assert first["process_id"] != os.getpid()
+    assert second["process_id"] != os.getpid()
+    assert first["process_id"] != second["process_id"]
 
 
 def test_cross_corpus_view_uses_source_train_normalization():
