@@ -169,11 +169,14 @@ transport/aggregation policy versions are also explicit. Unavailable checkout
 or lock information is recorded as null rather than preventing checkpoint
 persistence; scheduler policy and container image digest are null for the
 current local runtime.
-Resource artifacts record per-process/round wall time, CPU time, peak RSS,
-PyTorch CUDA peaks, throughput where sample counts are known, and transport
-message sizes. Queue values are logical estimates; gRPC values are serialized
-protobuf sizes. They do not measure energy, host-wide concurrent memory, or
-host network-interface traffic.
+Resource Metrics v2 records per-process/round wall and CPU time, process and
+sampled phase RSS, PyTorch CUDA peaks, throughput, deterministic owned tensor
+bytes and per-channel/per-message-type transport sizes. Training and
+evaluation summaries are separate. Queue values are logical estimates; gRPC
+values are serialized protobuf sizes. They do not measure energy, host-wide
+concurrent memory, or host network-interface traffic. See
+`docs/RESOURCE_METRICS_V2_PLAN.md` for the measurement and aggregation
+contract.
 Captured client, SplitServer, FedServer and controller failures additionally
 produce the bounded versioned artifact `diagnostics/first_failure.yaml`.
 Workers publish original exception context before setting cancellation; if no
@@ -250,12 +253,15 @@ them away or attribute the result to one mechanism without a separate
 controlled ablation. E4 isolates the SFLour workload policy through
 `config.e4_our_balanced.yaml` and `config.e4_our_fixed_steps.yaml`.
 
-Runs with an artifact root write `metrics/resource_metrics.csv` and
+Runs with an artifact root write `metrics/resource_metrics.csv`,
+`metrics/resource_by_participant.csv`, `metrics/resource_transport.csv` and
 `metrics/resource_summary.yaml`. Local cross-corpus runs place the same files
-inside their `local_cross_corpus` directory. RSS and CUDA values are
-per-process peaks and must not be summed as concurrent host usage. Transport
-bytes are logical tensor/envelope sizes for the local queue simulation, not
-measured network traffic.
+inside their `local_cross_corpus` directory and isolate training from
+cross-corpus evaluation in different spawn processes. RSS and CUDA values are
+per-process peaks and must not be summed as concurrent host usage. Only owned
+tensor bytes may be summed as a logical system footprint. Transport bytes are
+logical tensor/envelope sizes for the local queue simulation, not measured
+network traffic.
 
 ## Change workflow
 

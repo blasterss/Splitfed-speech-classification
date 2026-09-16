@@ -43,8 +43,9 @@ The repository currently provides:
   typed CLI overrides;
 - experiment-scoped resolved config, provenance, dataset manifests, metrics and
   atomic ownership-aware model checkpoints;
-- per-process resource metrics for wall/CPU time, throughput, peak RSS and
-  PyTorch CUDA memory, plus transport-message byte counts;
+- versioned per-process resource metrics that separate training/evaluation,
+  sampled phase RSS, PyTorch CUDA peaks, owned model/optimizer/dataset tensor
+  bytes and per-channel transport counts;
 - optional Gaussian or Laplace perturbation of intermediate activations;
 - local evaluation with accuracy, F1, precision and recall.
 
