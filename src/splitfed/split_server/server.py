@@ -16,7 +16,7 @@ from ...transport.base import Channel
 from ...utils.persistence import deserialize_state_dict, save_checkpoint
 from .worker import (
     _split_server_worker_concat,
-    _split_server_worker_personalized,
+    _split_server_worker_personalized_processes,
     _split_server_worker_sequential,
 )
 
@@ -72,7 +72,7 @@ class SplitServer:
         """Spawn the server worker process."""
         self._stop_event.clear()
         if self.config.model_scope is ServerModelScope.personalized:
-            worker = _split_server_worker_personalized
+            worker = _split_server_worker_personalized_processes
         elif (
             self.config.training_strategy is SplitServerStrategy.sequential_v1
         ):
@@ -103,7 +103,9 @@ class SplitServer:
         self._process = self._mp_context.Process(
             target=worker,
             args=worker_args,
-            daemon=True,
+            daemon=(
+                self.config.model_scope is not ServerModelScope.personalized
+            ),
             name="SplitServer",
         )
         self._last_exitcode = None

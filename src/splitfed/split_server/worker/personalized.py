@@ -15,7 +15,7 @@ from ....schema import (
 )
 from ....transport.base import Channel, Message
 from ....transport.replay import ReplayGuard
-from ....utils.persistence import serialize_state_dict
+from ....utils.persistence import deserialize_state_dict, serialize_state_dict
 from ....utils.runtime import (
     FailureRecord,
     ignore_parent_interrupts,
@@ -45,13 +45,19 @@ def _split_server_worker_personalized(
     training_mode: TrainingMode = TrainingMode.split,
     training_config: TrainingConfig | None = None,
     fed_server_config: FedServerConfig | None = None,
+    coordination_queue=None,
+    response_queue=None,
 ) -> None:
     """Serve each client with an isolated model and optimizer."""
     ignore_parent_interrupts()
     set_seed(config.seed)
     device = torch.device(config.model.device)
-    tracker = ResourceTracker("split_server", device)
     client_ids = list(client_channels)
+    tracker = ResourceTracker(
+        "split_server",
+        device,
+        client_id=client_ids[0] if len(client_ids) == 1 else None,
+    )
     models, optimizers = build_personalized_models(client_ids, config, device)
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor(config.model.pos_weight, device=device)
@@ -120,6 +126,62 @@ def _split_server_worker_personalized(
                     )
                 elif message.type == "round_end":
                     stats[client_id].log_and_reset(message.round)
+                    if coordination_queue is not None:
+                        dataset_size = message.payload.get("dataset_size")
+                        if (
+                            not isinstance(dataset_size, int)
+                            or dataset_size <= 0
+                        ):
+                            raise ValueError(
+                                "Invalid personalized split dataset_size"
+                            )
+                        assert training_config is not None
+                        should_aggregate = (
+                            message.round % training_config.fed_every == 0
+                            and (
+                                training_config.aggregate_final
+                                or message.round < training_config.num_rounds
+                            )
+                        )
+                        state = None
+                        if should_aggregate:
+                            state = serialize_state_dict(
+                                {
+                                    key: value.detach().cpu()
+                                    for key, value in models[client_id]
+                                    .state_dict()
+                                    .items()
+                                }
+                            )
+                        coordination_queue.put(
+                            {
+                                "client_id": client_id,
+                                "round": message.round,
+                                "dataset_size": dataset_size,
+                                "state": state,
+                            },
+                            timeout=config.model.batch_timeout_sec,
+                        )
+                        response = response_queue.get(
+                            timeout=config.model.batch_timeout_sec
+                        )
+                        if response["state"] is not None:
+                            models[client_id].load_state_dict(
+                                deserialize_state_dict(response["state"])
+                            )
+                        client_channels[client_id]["downlink"].send(
+                            Message(
+                                type="ack",
+                                sender="split_server",
+                                round=message.round,
+                                step=message.step,
+                                request_id=message.request_id,
+                                payload={
+                                    "server_aggregated": response["aggregated"]
+                                },
+                            )
+                        )
+                        continue
                     if training_mode is TrainingMode.splitfed:
                         dataset_size = message.payload.get("dataset_size")
                         if not isinstance(dataset_size, int) or (
@@ -229,3 +291,129 @@ def _split_server_worker_personalized(
             logger.warning(
                 "Personalized SplitServer result queue was already full"
             )
+
+
+def _split_server_worker_personalized_processes(
+    config: SplitServerConfig,
+    client_channels: dict[str, dict[str, Channel]],
+    stop_event,
+    result_queue: mp.Queue,
+    failure_queue=None,
+    resource_metrics_queue=None,
+    training_mode: TrainingMode = TrainingMode.split,
+    training_config: TrainingConfig | None = None,
+    fed_server_config: FedServerConfig | None = None,
+) -> None:
+    """Coordinate one isolated personalized model process per client."""
+    ignore_parent_interrupts()
+    context = mp.get_context("spawn")
+    client_ids = list(client_channels)
+    coordination_queue = context.Queue()
+    response_queues = {cid: context.Queue(maxsize=1) for cid in client_ids}
+    state_queues = {cid: context.Queue(maxsize=1) for cid in client_ids}
+    processes = []
+    final_states = {}
+    pending = {}
+    try:
+        for client_id in client_ids:
+            coordinates_rounds = training_mode is TrainingMode.splitfed
+            process = context.Process(
+                target=_split_server_worker_personalized,
+                args=(
+                    config,
+                    {client_id: client_channels[client_id]},
+                    stop_event,
+                    state_queues[client_id],
+                    failure_queue,
+                    resource_metrics_queue,
+                    training_mode,
+                    training_config,
+                    fed_server_config,
+                    coordination_queue if coordinates_rounds else None,
+                    response_queues[client_id] if coordinates_rounds else None,
+                ),
+                name=f"SplitServer-{client_id}",
+            )
+            process.start()
+            processes.append(process)
+            logger.info(
+                "Personalized SplitServer client %s process started (pid=%d)",
+                client_id,
+                process.pid,
+            )
+
+        while any(process.is_alive() for process in processes):
+            for client_id, state_queue in state_queues.items():
+                if client_id in final_states:
+                    continue
+                try:
+                    payload = state_queue.get_nowait()
+                except queue.Empty:
+                    continue
+                final_states.update(deserialize_state_dict(payload))
+            try:
+                report = coordination_queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            reports = pending.setdefault(report["round"], {})
+            reports[report["client_id"]] = report
+            if len(reports) != len(client_ids):
+                continue
+            assert training_config is not None
+            assert fed_server_config is not None
+            should_aggregate = report[
+                "round"
+            ] % training_config.fed_every == 0 and (
+                training_config.aggregate_final
+                or report["round"] < training_config.num_rounds
+            )
+            state = None
+            if should_aggregate:
+                aggregated = aggregate_states(
+                    [
+                        deserialize_state_dict(reports[cid]["state"])
+                        for cid in client_ids
+                    ],
+                    [reports[cid]["dataset_size"] for cid in client_ids],
+                    strategy=fed_server_config.strategy,
+                    device=config.model.device,
+                )
+                state = serialize_state_dict(
+                    {key: value.cpu() for key, value in aggregated.items()}
+                )
+            for client_id in client_ids:
+                response_queues[client_id].put(
+                    {"aggregated": should_aggregate, "state": state}
+                )
+            del pending[report["round"]]
+
+        for process in processes:
+            process.join(timeout=5)
+        failed = [p for p in processes if p.exitcode != 0]
+        if failed:
+            raise RuntimeError(
+                "Personalized SplitServer model process failure: "
+                + ", ".join(f"{p.name}={p.exitcode}" for p in failed)
+            )
+        for client_id, state_queue in state_queues.items():
+            if client_id not in final_states:
+                final_states.update(
+                    deserialize_state_dict(state_queue.get(timeout=5))
+                )
+        result_queue.put(serialize_state_dict(final_states), timeout=5)
+    except BaseException as exc:
+        stop_event.set()
+        publish_failure(
+            failure_queue,
+            FailureRecord.from_exception(
+                component="split_server_coordinator", exception=exc
+            ),
+        )
+        raise
+    finally:
+        stop_event.set()
+        for process in processes:
+            process.join(timeout=5)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)

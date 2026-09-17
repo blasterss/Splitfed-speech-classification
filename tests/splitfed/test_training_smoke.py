@@ -14,7 +14,7 @@ from src.splitfed.fed_server import _fed_server_worker
 from src.splitfed.load_controller import RoundPlan, WorkerState
 from src.splitfed.split_server import (
     _split_server_worker_concat,
-    _split_server_worker_personalized,
+    _split_server_worker_personalized_processes,
     _split_server_worker_sequential,
 )
 from src.transport.base import GrpcChannel
@@ -767,6 +767,7 @@ def test_spawned_personalized_split_keeps_per_client_server_states():
     context = mp.get_context("spawn")
     stop_event = context.Event()
     server_result_queue = context.Queue(maxsize=1)
+    resource_metrics_queue = context.Queue()
     client_result_queue = context.Queue(maxsize=2)
     client_ids = ("client-0", "client-1")
     channels = {
@@ -791,8 +792,15 @@ def test_spawned_personalized_split_keeps_per_client_server_states():
         split_downlink_channel="split_downlink",
     )
     server = context.Process(
-        target=_split_server_worker_personalized,
-        args=(config, channels, stop_event, server_result_queue),
+        target=_split_server_worker_personalized_processes,
+        args=(
+            config,
+            channels,
+            stop_event,
+            server_result_queue,
+            None,
+            resource_metrics_queue,
+        ),
         name="PersonalizedSmokeServer",
     )
     clients = [
@@ -835,8 +843,15 @@ def test_spawned_personalized_split_keeps_per_client_server_states():
                 client.join(timeout=5)
 
     states = deserialize_state_dict(payload)
+    resource_metrics = [
+        resource_metrics_queue.get(timeout=2) for _ in client_ids
+    ]
     assert not server.is_alive()
     assert server.exitcode == 0
+    assert {metric["client_id"] for metric in resource_metrics} == set(
+        client_ids
+    )
+    assert len({metric["process_id"] for metric in resource_metrics}) == 2
     assert set(states) == set(client_ids)
     assert states["client-0"].keys() == states["client-1"].keys()
     assert any(

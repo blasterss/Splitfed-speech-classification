@@ -311,7 +311,9 @@ are still missing.
 - `split_server.model_scope` supports `shared` and `personalized`. Personalized
   SplitFed keeps server models and optimizers isolated by client ID while
   training locally and aggregates both model partitions at `fed_every` while
-  retaining personalized optimizer states. This working variant has not yet
+  retaining personalized optimizer states. Each personalized server model,
+  optimizer and RNG runs in its own process; a model-free coordinator performs
+  round aggregation and ACK synchronization. This working variant has not yet
   been proven equivalent to canonical SFLv1. Personalized metrics and server
   checkpoint files remain isolated by client ID.
 - The root field is `models_save_path` (plural), not `model_save_path`; it owns

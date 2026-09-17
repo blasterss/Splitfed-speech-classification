@@ -200,7 +200,9 @@ Important configuration caveats:
   the public repository publishes enough solver detail to reproduce them
   exactly;
 - personalized SplitFed uses the same synchronization cadence and aggregation
-  strategy for both partitions; a correlated server ACK forms a round barrier;
+  strategy for both partitions; a coordinator without a model aggregates
+  server states, while each client-owned server model, optimizer and RNG run
+  in a separate process. A correlated server ACK forms a round barrier;
 - `clients[].runtime.workload_policy` is `max_steps_v1` by default;
   `full_epoch_v1` consumes the complete local loader and makes `local_steps`
   an unused compatibility value for that client; `fixed_steps_v1` cycles a

@@ -15,6 +15,7 @@ from .server import SplitServer
 from .worker import (
     _split_server_worker_concat,
     _split_server_worker_personalized,
+    _split_server_worker_personalized_processes,
     _split_server_worker_sequential,
 )
 
@@ -27,6 +28,7 @@ __all__ = [
     "_forward_mergesfl",
     "_split_server_worker_concat",
     "_split_server_worker_personalized",
+    "_split_server_worker_personalized_processes",
     "_split_server_worker_sequential",
     "_store_pending_batch",
     "_validate_message",
