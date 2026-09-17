@@ -317,6 +317,7 @@ class TrainingController:
                     if server is not None
                 ),
                 self.PROCESS_POLL_TIMEOUT,
+                on_poll=self._drain_resource_metrics,
             )
 
         except KeyboardInterrupt as exc:

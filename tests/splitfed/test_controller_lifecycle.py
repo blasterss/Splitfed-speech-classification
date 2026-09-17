@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+import torch.multiprocessing as mp
 from pydantic import ValidationError
 
 from src.schema import ConfigSchema, MergeSFLPolicyConfig, TrainingMode
@@ -426,6 +427,12 @@ class FailingStartProcess:
         raise RuntimeError("spawn failed")
 
 
+def _publish_resource_reports(report_queue, count):
+    payload = "x" * 65536
+    for index in range(count):
+        report_queue.put({"round": index, "payload": payload})
+
+
 def test_failed_client_process_is_propagated():
     processes = [FakeProcess("Client-0", 0), FakeProcess("Client-1", 1)]
 
@@ -445,6 +452,49 @@ def test_training_process_wait_checks_server_exitcodes():
     _wait_for_training_processes(
         [PollProcess("Client-0")], (FakeServer(0),), poll_timeout=0
     )
+
+
+def test_training_process_wait_drains_reports_while_clients_are_alive():
+    polls = []
+
+    _wait_for_training_processes(
+        [PollProcess("Client-0")],
+        (FakeServer(0),),
+        poll_timeout=0,
+        on_poll=lambda: polls.append("drain"),
+    )
+
+    assert polls == ["drain", "drain"]
+
+
+def test_training_process_wait_drains_full_spawn_queue():
+    context = mp.get_context("spawn")
+    report_queue = context.Queue()
+    report_count = 128
+    reports = []
+    process = context.Process(
+        target=_publish_resource_reports,
+        args=(report_queue, report_count),
+        name="ResourceProducer",
+    )
+    process.start()
+
+    def drain_reports():
+        while True:
+            try:
+                reports.append(report_queue.get_nowait())
+            except queue.Empty:
+                return
+
+    _wait_for_training_processes(
+        [process], (), poll_timeout=0.01, on_poll=drain_reports
+    )
+    drain_reports()
+    report_queue.close()
+    report_queue.join_thread()
+
+    assert process.exitcode == 0
+    assert [report["round"] for report in reports] == list(range(report_count))
 
 
 def test_failed_server_process_is_propagated():

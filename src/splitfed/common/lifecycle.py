@@ -35,9 +35,13 @@ def _wait_for_training_processes(
     processes: list[mp.Process],
     servers: tuple[object, ...],
     poll_timeout: float,
+    *,
+    on_poll=None,
 ) -> None:
     remaining = list(processes)
     while remaining:
+        if on_poll is not None:
+            on_poll()
         _raise_for_failed_servers(servers)
         for process in remaining[:]:
             process.join(timeout=poll_timeout)
@@ -46,6 +50,8 @@ def _wait_for_training_processes(
         _raise_for_failed_processes(
             [process for process in processes if not process.is_alive()]
         )
+    if on_poll is not None:
+        on_poll()
     _raise_for_failed_servers(servers)
 
 
