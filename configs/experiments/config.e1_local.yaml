@@ -5,16 +5,16 @@ experiment:
   name: e1_local_corpus_evaluation
   description: >-
     E1 local-corpus evaluation. Train one isolated complete model per corpus
-    for 30 epochs, then evaluate each unchanged model on the actor-disjoint
+    for 50 epochs, then evaluate each unchanged model on the actor-disjoint
     test views of CREMA-D, RAVDESS, and SAVEE.
   transport: queue
   seed: &seed 42
 
 training:
   mode: local
-  num_rounds: 30
+  num_rounds: 50
   seed: *seed
-  eval_every: 30
+  eval_every: 10
   fed_every: 1
   barrier_timeout_sec: 900
 
