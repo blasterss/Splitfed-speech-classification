@@ -2,22 +2,103 @@
     \centering
     \small
     \setlength{\tabcolsep}{5pt}
-    \caption{Resource usage for the E2--E4 seed-42 rerun. Transport volume
-    uses decimal GB, peak resident memory uses decimal GB, and peak CUDA
-    allocation uses decimal MB. Process CPU times are summed across roles.}
-    \label{tab:e2_e4_resource_summary}
+    \caption{Runtime and communication cost for the E1--E4 seed-42. Wall time is the end-to-end experiment
+    interval; CPU times are summed across training roles. E1 did not record an
+    end-to-end experiment interval, so its wall time is unavailable. Transport
+    uses binary GiB.}
+    \label{tab:e2_e4_resource_runtime}
+    \resizebox{0.9\textwidth}{!}{%
+    \begin{tabular}{lrrrrr}
+        \toprule
+        Method & Wall (s) & CPU user (s) & CPU sys (s) & Transport (GiB) & Messages \\
+        \midrule
+        E1 Local        & --     & 338.87  & 83.61  & 0.000  & 0 \\
+        E2 Centralized  & 521.39 & 351.03  & 85.20  & 0.000  & 0 \\
+        E2 FedAvg       & 561.27 & 2712.32 & 150.79 & 1.959  & 300 \\
+        E3 MergeSFL     & 251.42 & 404.41  & 82.73  & 7.320  & 31520 \\
+        E3 SFLv1        & 849.79 & 4089.91 & 336.52 & 22.869 & 95300 \\
+        E3 SFLour       & 780.25 & 1604.00 & 285.90 & 22.869 & 95150 \\
+        E4 Balanced     & 174.77 & 334.77  & 51.91  & 4.531  & 19950 \\
+        E4 Fixed steps  & 289.91 & 812.77  & 119.00 & 10.772 & 45550 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{Topology-aware owned tensor footprint in binary MiB. Max client
+    is the requirement for one client node; client and SplitServer sums are
+    logical footprints across isolated participants, not process RSS. A dash
+    denotes a role absent from the selected topology.}
+    \label{tab:e2_e4_resource_owned}
     \resizebox{\textwidth}{!}{%
     \begin{tabular}{lrrrrrrr}
         \toprule
-        Method & Wall time (s) & CPU user (s) & CPU sys (s) & Transport (GB) & Messages & Peak RSS (GB) & Peak CUDA (MB) \\
+        Method & Client max & Clients sum & Central trainer & Split max & Split sum & FedServer & Logical total \\
         \midrule
-        E2 Centralized      & 494.21 & 358.08  & 84.79  & 0.000  & 0     & 2.165 & 156.6 \\
-        E2 FedAvg           & 553.38 & 2760.32 & 153.73 & 2.103  & 300   & 2.151 & 156.6 \\
-        E3 MergeSFL        & 251.53 & 417.13  & 90.71  & 7.860  & 31520 & 1.911 & 185.8 \\
-        E3 SFLv1           & 807.99 & 1681.41 & 318.75 & 24.555 & 95300 & 1.938 & 205.2 \\
-        E3 SFLour          & 801.30 & 1629.39 & 311.44 & 24.555 & 95150 & 1.937 & 250.7 \\
-        E4 Balanced        & 179.91 & 343.26  & 59.61  & 4.865  & 19950 & 1.952 & 250.7 \\
-        E4 Fixed steps     & 295.22 & 825.63  & 129.71 & 11.566 & 45550 & 1.915 & 250.7 \\
+        E1 Local        & 125.58 & 196.38 & --     & --    & --    & --   & 196.38 \\
+        E2 Centralized  & --     & --     & 192.89 & --    & --    & --   & 192.89 \\
+        E2 FedAvg       & 153.40 & 232.93 & --     & --    & --    & 6.68 & 239.62 \\
+        E3 MergeSFL     & 133.51 & 173.26 & --     & 6.55  & 6.55  & 0.13 & 179.94 \\
+        E3 SFLv1        & 133.77 & 174.05 & --     & 19.63 & 58.88 & 0.13 & 233.07 \\
+        E3 SFLour       & 133.77 & 174.05 & --     & 19.63 & 19.63 & 0.13 & 193.81 \\
+        E4 Balanced     & 133.77 & 174.05 & --     & 19.63 & 19.63 & 0.13 & 193.81 \\
+        E4 Fixed steps  & 133.77 & 174.05 & --     & 19.63 & 19.63 & 0.13 & 193.81 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \caption{Maximum per-process RSS/CUDA allocated memory by runtime role,
+    in binary MiB. Each cell is RSS/CUDA. Peaks from different processes are
+    not summed; for SFLv1, the SplitServer cell is the maximum of its three
+    isolated personalized model processes.}
+    \label{tab:e2_e4_resource_process_memory}
+    \resizebox{0.9\textwidth}{!}{%
+    \begin{tabular}{lrrrr}
+        \toprule
+        Method & Client & Central trainer & SplitServer & FedServer \\
+        \midrule
+        E1 Local        & 2032.29/149.35 & --             & --             & -- \\
+        E2 Centralized  & --             & 2061.59/149.35 & --             & -- \\
+        E2 FedAvg       & 2066.53/149.35 & --             & --             & 806.36/2.25 \\
+        E3 MergeSFL     & 1873.99/10.73  & --             & 1555.88/177.22 & 766.96/0.14 \\
+        E3 SFLv1        & 1845.88/11.00  & --             & 1656.07/142.42 & 766.21/0.14 \\
+        E3 SFLour       & 1848.27/11.00  & --             & 1627.85/239.07 & 766.70/0.14 \\
+        E4 Balanced     & 1832.95/11.00  & --             & 1627.76/239.07 & 766.65/0.14 \\
+        E4 Fixed steps  & 1862.80/11.00  & --             & 1623.53/239.07 & 767.18/0.14 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{Per-client E1 local-training resources under Resource Metrics v2
+    (seed 42, 50 epochs). Owned memory counts tensor storage attributable to
+    one participant; RSS and CUDA columns are per-process peaks and are not
+    summed. All memory values use binary MiB. Evaluation runs in separate
+    processes and is excluded.}
+    \label{tab:e1_resource_metrics_v2}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrr}
+        \toprule
+        Local corpus & Epoch time sum (s) & Owned & Dataset & Process RSS & Phase RSS & CUDA alloc. & CUDA reserved \\
+        \midrule
+        CREMA-D & 341.52 & 125.58 & 105.56 & 2032.29 & 2033.63 & 147.32 & 216.00 \\
+        RAVDESS &  67.52 &  41.56 &  21.54 & 1906.09 & 1907.88 & 147.58 & 216.00 \\
+        SAVEE   &  21.73 &  29.24 &   9.21 & 1897.51 & 1898.84 & 149.35 & 218.00 \\
+        \midrule
+        Logical sum / physical max & 430.78 & 196.38 & 136.31 & 2032.29 & 2033.63 & 149.35 & 218.00 \\
         \bottomrule
     \end{tabular}%
     }

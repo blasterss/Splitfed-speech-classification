@@ -24,18 +24,20 @@
     \small
     \setlength{\tabcolsep}{4pt}
     \caption{E4 SFLour workload-policy cost at round 50 of the seed-42 rerun.
-    Batches/round are listed
-    as CREMA-D/RAVDESS/SAVEE. The fixed budget of 143 is the RAVDESS (middle
-    client) epoch length at batch size 8. GB and MB use decimal units.}
+    Batches/round are listed as CREMA-D/RAVDESS/SAVEE. The fixed budget of 143
+    is the RAVDESS (middle client) epoch length at batch size 8. CPU covers
+    training roles and transport uses binary GiB. Per-role memory is reported
+    separately in Tables~\ref{tab:e2_e4_resource_owned} and
+    \ref{tab:e2_e4_resource_process_memory}.}
     \label{tab:e4_workload_policy_resources}
     \resizebox{\textwidth}{!}{%
-    \begin{tabular}{lrrrrrrr}
+    \begin{tabular}{lrrrrrr}
         \toprule
-        Policy & Batches/round & Wall time (s) & CPU user (s) & CPU sys (s) & Transport (GB) & Messages & Peak RSS (GB) \\
+        Policy & Batches/round & Wall (s) & CPU user (s) & CPU sys (s) & Transport (GiB) & Messages \\
         \midrule
-        \texttt{Full Local Epoch}    & 737/143/45  & 801.30 & 1629.39 & 311.44 & 24.555 & 95150 & 1.937 \\
-        \texttt{Fixed Maximum Steps} & 143/143/143 & 295.22 & 825.63  & 129.71 & 11.566 & 45550 & 1.915 \\
-        \texttt{Balanced Workload}   & 64/64/45    & 179.91 & 343.26  & 59.61  & 4.865  & 19950 & 1.952 \\
+        \texttt{Full Local Epoch}    & 737/143/45  & 780.25 & 1604.00 & 285.90 & 22.869 & 95150 \\
+        \texttt{Fixed Maximum Steps} & 143/143/143 & 289.91 & 812.77  & 119.00 & 10.772 & 45550 \\
+        \texttt{Balanced Workload}   & 64/64/45    & 174.77 & 334.77  & 51.91  & 4.531  & 19950 \\
         \bottomrule
     \end{tabular}%
     }
