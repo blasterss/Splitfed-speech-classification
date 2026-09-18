@@ -1,0 +1,97 @@
+\begin{table}[ht]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \caption{E1--E4 runtime and communication cost under Resource Metrics v2.
+    E1 has no end-to-end wall interval. CPU times are summed across training
+    roles; transport uses binary GiB.}
+    \label{tab:ms_resource_runtime}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrr}
+        \toprule
+        Method & Wall (s) & CPU user (s) & CPU sys (s) & Transport (GiB) & Messages \\
+        \midrule
+        E1 Local       & --                  & $352.55 \pm 18.57$   & $81.25 \pm 1.42$   & $0.0000 \pm 0.0000$  & $0 \pm 0$ \\
+        E2 Centralized & $486.81 \pm 30.54$  & $362.02 \pm 23.72$   & $82.34 \pm 1.67$   & $0.0000 \pm 0.0000$  & $0 \pm 0$ \\
+        E2 FedAvg      & $562.80 \pm 39.38$  & $2798.90 \pm 118.79$ & $154.48 \pm 7.41$  & $1.9590 \pm 0.0000$  & $300 \pm 0$ \\
+        E3 MergeSFL    & $269.94 \pm 33.63$  & $348.81 \pm 55.06$   & $91.30 \pm 8.05$   & $7.3202 \pm 0.0005$  & $31524 \pm 5$ \\
+        E3 SFLv1       & $896.97 \pm 52.32$  & $4289.21 \pm 212.27$ & $369.07 \pm 22.36$ & $22.8629 \pm 0.0094$ & $95264 \pm 49$ \\
+        E3 SFLour      & $805.77 \pm 43.15$  & $1700.48 \pm 101.81$ & $313.02 \pm 17.12$ & $22.8629 \pm 0.0094$ & $95114 \pm 49$ \\
+        E4 Balanced    & $181.99 \pm 11.84$  & $359.62 \pm 23.16$   & $57.60 \pm 3.53$   & $4.5312 \pm 0.0005$  & $19954 \pm 5$ \\
+        E4 Fixed steps & $300.22 \pm 19.69$  & $859.32 \pm 55.02$   & $127.79 \pm 7.76$  & $10.7720 \pm 0.0005$ & $45554 \pm 5$ \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \caption{Topology-aware owned tensor footprint in binary MiB. Max client
+    is the requirement for one client node; sums are logical footprints over
+    isolated participants, not process RSS.}
+    \label{tab:ms_resource_owned}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrr}
+        \toprule
+        Method & Client max & Clients sum & Central trainer & Split max & Split sum & FedServer & Logical total \\
+        \midrule
+        E1 Local       & $125.55 \pm 0.06$ & $196.34 \pm 0.06$ & -- & -- & -- & -- & $196.34 \pm 0.06$ \\
+        E2 Centralized & -- & -- & $192.89 \pm 0.00$ & -- & -- & -- & $192.89 \pm 0.00$ \\
+        E2 FedAvg      & $153.40 \pm 0.00$ & $232.93 \pm 0.00$ & -- & -- & -- & $6.68 \pm 0.00$ & $239.62 \pm 0.00$ \\
+        E3 MergeSFL    & $133.51 \pm 0.00$ & $173.26 \pm 0.00$ & -- & $6.55 \pm 0.00$ & $6.55 \pm 0.00$ & $0.13 \pm 0.00$ & $179.94 \pm 0.00$ \\
+        E3 SFLv1       & $133.77 \pm 0.00$ & $174.05 \pm 0.00$ & -- & $19.63 \pm 0.00$ & $58.88 \pm 0.00$ & $0.13 \pm 0.00$ & $233.07 \pm 0.00$ \\
+        E3 SFLour      & $133.77 \pm 0.00$ & $174.05 \pm 0.00$ & -- & $19.63 \pm 0.00$ & $19.63 \pm 0.00$ & $0.13 \pm 0.00$ & $193.81 \pm 0.00$ \\
+        E4 Balanced    & $133.77 \pm 0.00$ & $174.05 \pm 0.00$ & -- & $19.63 \pm 0.00$ & $19.63 \pm 0.00$ & $0.13 \pm 0.00$ & $193.81 \pm 0.00$ \\
+        E4 Fixed steps & $133.77 \pm 0.00$ & $174.05 \pm 0.00$ & -- & $19.63 \pm 0.00$ & $19.63 \pm 0.00$ & $0.13 \pm 0.00$ & $193.81 \pm 0.00$ \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \caption{Maximum per-process RSS/CUDA allocated memory by runtime role in
+    binary MiB. Each cell is $(\text{RSS mean}\pm\text{SD})/(\text{CUDA
+    mean}\pm\text{SD})$. Peaks from different processes are not summed.}
+    \label{tab:ms_resource_process_memory}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrr}
+        \toprule
+        Method & Client & Central trainer & SplitServer & FedServer \\
+        \midrule
+        E1 Local       & $(2024.76\pm8.96)/(149.35\pm0.00)$ & -- & -- & -- \\
+        E2 Centralized & -- & $(2076.78\pm11.20)/(149.35\pm0.00)$ & -- & -- \\
+        E2 FedAvg      & $(2052.89\pm9.53)/(149.35\pm0.00)$ & -- & -- & $(805.03\pm0.73)/(2.25\pm0.00)$ \\
+        E3 MergeSFL    & $(1839.30\pm20.67)/(10.73\pm0.00)$ & -- & $(1553.50\pm3.87)/(177.22\pm0.00)$ & $(766.67\pm0.89)/(0.14\pm0.00)$ \\
+        E3 SFLv1       & $(1853.72\pm14.52)/(11.00\pm0.00)$ & -- & $(1624.74\pm50.44)/(142.42\pm0.00)$ & $(736.08\pm41.46)/(0.14\pm0.00)$ \\
+        E3 SFLour      & $(1843.81\pm11.62)/(11.00\pm0.00)$ & -- & $(1629.74\pm3.30)/(239.07\pm0.00)$ & $(766.23\pm0.94)/(0.14\pm0.00)$ \\
+        E4 Balanced    & $(1843.16\pm19.31)/(11.00\pm0.00)$ & -- & $(1623.17\pm2.56)/(239.07\pm0.00)$ & $(766.13\pm1.43)/(0.14\pm0.00)$ \\
+        E4 Fixed steps & $(1837.43\pm14.59)/(11.00\pm0.00)$ & -- & $(1623.54\pm3.70)/(239.07\pm0.00)$ & $(765.32\pm1.32)/(0.14\pm0.00)$ \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \caption{Per-client E1 local-training resources. Memory uses binary MiB;
+    evaluation runs in separate processes and is excluded.}
+    \label{tab:ms_e1_resource_clients}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrr}
+        \toprule
+        Corpus & Epoch time sum (s) & Owned & Dataset & Process RSS & Phase RSS & CUDA alloc. & CUDA reserved \\
+        \midrule
+        CREMA-D & $331.32\pm12.54$ & $125.55\pm0.06$ & $105.52\pm0.06$ & $2024.76\pm8.96$ & $2025.97\pm8.89$ & $147.32\pm0.00$ & $216.00\pm0.00$ \\
+        RAVDESS & $65.81\pm2.63$   & $41.56\pm0.00$  & $21.54\pm0.00$  & $1904.65\pm4.69$ & $1905.92\pm4.59$ & $147.58\pm0.00$ & $216.00\pm0.00$ \\
+        SAVEE   & $21.44\pm0.79$   & $29.24\pm0.00$  & $9.21\pm0.00$   & $1895.31\pm3.11$ & $1896.41\pm3.02$ & $149.35\pm0.00$ & $218.00\pm0.00$ \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}

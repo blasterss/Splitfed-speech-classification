@@ -4,11 +4,10 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{tabularx}
 \usepackage{array}
 \usepackage{adjustbox}
 
-\title{SplitFed Speech Emotion Classification\\Comparative Experiment Tables}
+\title{SplitFed Speech Emotion Classification\\Multiseed Experiment Tables}
 \author{}
 \date{}
 
@@ -16,18 +15,16 @@
 
 \maketitle
 
-\section*{Summary tables}
+\section*{Seeds 42--46}
 
-\input{tables/e0_heterogeneity}
+All values are the arithmetic mean $\pm$ sample standard deviation over five
+independent runs. Each seed controls model initialization, actor-disjoint data
+splits, client and server runtimes, and MergeSFL cohort search.
 
 \input{tables/e1_local_corpus_evaluation}
-
 \input{tables/e2_fl_vs_centralized}
-
 \input{tables/e3_protocol_comparison}
-
 \input{tables/e4_workload_policy_comparison}
-
-\input{tables/e2_e4_resource_summary}
+\input{tables/e1_e4_resource_summary}
 
 \end{document}

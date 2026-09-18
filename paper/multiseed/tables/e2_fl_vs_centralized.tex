@@ -1,0 +1,18 @@
+\begin{table}[ht]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{E2 centralized versus FedAvg quality. Within each run, metrics
+    are sample-weighted across the three corpus-specific test sets.}
+    \label{tab:ms_e2_fl_vs_centralized}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrr}
+        \toprule
+        Method & Accuracy & Anger F1 & Macro F1 & Precision & Recall & PR-AUC \\
+        \midrule
+        Centralized & $0.8917 \pm 0.0128$ & $0.6625 \pm 0.0284$ & $0.7983 \pm 0.0170$ & $0.7110 \pm 0.0517$ & $0.6594 \pm 0.0760$ & $0.7805 \pm 0.0177$ \\
+        FedAvg      & $0.8939 \pm 0.0214$ & $0.6475 \pm 0.0401$ & $0.7907 \pm 0.0288$ & $0.7453 \pm 0.0250$ & $0.6308 \pm 0.0339$ & $0.7525 \pm 0.0221$ \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
