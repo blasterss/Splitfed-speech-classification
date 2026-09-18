@@ -11,9 +11,9 @@ logs
 media
 
 # LaTeX build artifacts (sources under paper/ remain tracked).
-paper/*.aux
-paper/*.fdb_latexmk
-paper/*.fls
-paper/*.log
-paper/*.out
-paper/*.synctex.gz
+paper/**/*.aux
+paper/**/*.fdb_latexmk
+paper/**/*.fls
+paper/**/*.log
+paper/**/*.out
+paper/**/*.synctex.gz
