@@ -2,7 +2,7 @@
     \centering
     \small
     \setlength{\tabcolsep}{5pt}
-    \caption{Train/test split statistics for the E0 cross-corpus setup.}
+    \caption{Actor-disjoint training/test reference statistics. E0 distribution analysis uses all records, without this split.}
     \label{tab:e0_split_summary}
     \resizebox{\textwidth}{!}{%
     \begin{tabular}{lrrrrrr}
@@ -42,35 +42,31 @@
 \begin{table}[ht]
     \centering
     \small
-    \caption{Pairwise Maximum Mean Discrepancy (MMD) across datasets without normalization.}
-    \label{tab:e0_mmd_raw}
-    \resizebox{0.72\textwidth}{!}{%
-    \begin{tabular}{lccc}
+    \caption{Pairwise cross-corpus MMD$^2$.}
+    \label{tab:e0_mmd}
+    \begin{tabular}{lrr}
         \toprule
-        Dataset & CREMA-D & RAVDESS & SAVEE \\
+        Corpus pair & Raw MMD$^2$ & Local normalized MMD$^2$ \\
         \midrule
-        CREMA-D & - & 0.381637 & 0.389779 \\
-        RAVDESS & 0.381637 & - & 0.332834 \\
-        SAVEE & 0.389779 & 0.332834 & - \\
+        CREMA-D -- RAVDESS & 0.93415 & 0.01170 \\
+        CREMA-D -- SAVEE & 0.16878 & 0.00792 \\
+        RAVDESS -- SAVEE & 0.57764 & 0.01189 \\
         \bottomrule
-    \end{tabular}%
-    }
+    \end{tabular}
 \end{table}
 
 \begin{table}[ht]
     \centering
     \small
-    \caption{Pairwise Maximum Mean Discrepancy (MMD) across datasets after normalization.}
-    \label{tab:e0_mmd_normalized}
-    \resizebox{0.72\textwidth}{!}{%
-    \begin{tabular}{lccc}
+    \caption{Cross-corpus and within-corpus Wasserstein distances.}
+    \label{tab:e0_wasserstein}
+    \begin{tabular}{lrrr}
         \toprule
-        Dataset & CREMA-D & RAVDESS & SAVEE \\
+        Corpus pair & Between $W_1$ & Within $W_1$ reference & Ratio \\
         \midrule
-        CREMA-D & - & 0.009802 & 0.018052 \\
-        RAVDESS & 0.009802 & - & 0.017652 \\
-        SAVEE & 0.018052 & 0.017652 & - \\
+        CREMA-D -- RAVDESS & 3.19474 & 2.30566 & 1.38596 \\
+        CREMA-D -- SAVEE & 3.21555 & 2.37709 & 1.35292 \\
+        RAVDESS -- SAVEE & 3.29242 & 2.11775 & 1.55480 \\
         \bottomrule
-    \end{tabular}%
-    }
+    \end{tabular}
 \end{table}
