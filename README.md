@@ -345,6 +345,48 @@ installs the correlated client-side FedAvg result before synchronized
 evaluation. Personalized SplitFed also completes server-side aggregation and
 its correlated ACK before clients enter the evaluation barrier.
 
+Run E0 domain shift without training or a train/test split:
+
+```bash
+uv run python -c "from src.experiments.domain_shift.analysis import main; main()" \
+  --config-file configs/experiments/config.e0.yaml \
+  --artifact-root artifacts/e0_domain_shift/final_seed_42
+```
+
+The E0 configuration contains only dataset roots and feature settings; model,
+optimizer, noise, channels and training/split options are not used.
+The runner uses all successfully extracted records without a train/test split.
+Each record is represented by valid-frame temporal means (13 MFCC, RMS, ZCR).
+Client-local normalization uses population statistics of all record vectors
+in each corpus independently, separate from train-only training normalization.
+
+MMD squared uses 480 records per corpus, 50 repetitions, raw and client-local
+normalized spaces, and 500 permutations. Both spaces use the same indices.
+RBF bandwidth is the square root of the pooled median positive squared distance
+per pair/repeat/space. Do not subtract raw and normalized values or report a
+percentage reduction. With 500 permutations the p-value floor is 1/501.
+
+Exact multivariate Euclidean W1 uses only client-local normalized features,
+240 records per empirical distribution and 50 repetitions per pair. Each
+corpus supplies two disjoint random halves A and B without replacement.
+Between compares the first halves of the two corpora; within compares A and B
+inside each corpus. R = between / ((within_left + within_right) / 2), computed
+per repetition. A zero denominator leaves R undefined (NaN). R is a relative
+finite-sample estimate, not a population effect size. At least
+max(MMD sample size, twice W1 sample size) valid records are required.
+
+Outputs are MMD `pairwise_repeats.csv` and `pairwise_summary.csv`,
+`wasserstein_repeats.csv` and `wasserstein_summary.csv`, descriptive Table 1
+`corpus_summary.csv` and Table 2 `feature_summary.csv`, and
+`resolved_analysis.yaml` with extraction loss, actor/class counts, normalization
+statistics and replayable sample indices. Sinkhorn is excluded.
+Repeat quantiles describe subsampling variation, not confidence intervals.
+Record sampling and permutations ignore actor dependence; within halves are
+record-disjoint, not actor-disjoint. P-values are descriptive under this
+limitation. SAVEE at MMD n=480 uses all records every repetition; W1 randomly
+partitions its records into two halves. The notebook delegates computations to
+the runner and creates no model or checkpoint.
+
 Run the E1 local-corpus evaluation with:
 
 ```bash

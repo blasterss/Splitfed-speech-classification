@@ -57,7 +57,7 @@ feature sequence, регулирует batch size неоднородных worke
 
 | Цель | Требуемый результат | Что есть сейчас | Чего нет / следующий проверяемый шаг |
 | --- | --- | --- | --- |
-| Измерить исходную неоднородность корпусов | Воспроизводимые оценки label/acoustic shift без обучения целевой модели | E0 notebook, валидный dataset-only config, actor IDs, extraction-loss counts, duration, JS/Wasserstein/energy/KS, MMD, domain AUC и PCA | Автоматический export tidy-таблиц и manifest из notebook; повторные seeds/folds и итоговая сводка с неопределённостью |
+| Измерить исходную неоднородность корпусов | Воспроизводимые оценки label/acoustic shift без обучения целевой модели | E0 runner/notebook, dataset-only config, actor/class counts, extraction loss, repeated MMD and relative between/within W1 | Actor-level sensitivity analysis and dataset-backed execution of the repeated protocol |
 | Получить Local cross-corpus reference | Полная матрица train-corpus × eval-corpus с train-corpus normalization | `src.experiments.local_cross_corpus`, checkpoints, CSV/YAML, accuracy, Anger F1, macro-F1, precision, recall, UAR, PR-AUC и confusion counts | Multi-seed aggregation, доверительные интервалы и единый evaluator для checkpoint других методов |
 | Получить Centralized reference | Одна полная модель на объединённых train actors и отдельные результаты на каждом test corpus | Рабочий topology, checkpoint и автоматическая per-corpus оценка по общему binary-metrics contract | Multi-seed aggregation, доверительные интервалы и matched-budget сравнение |
 | Получить FedAvg reference | Полные клиентские модели, валидированный FedAvg и per-corpus evaluation | Общая инициализация, `full_epoch_v1`, sample-weighted финальная агрегация, checkpoint и автоматическая per-corpus оценка | Multi-seed aggregation, доверительные интервалы и effective-sample accounting |
@@ -76,7 +76,7 @@ feature sequence, регулирует batch size неоднородных worke
 - Инженерный runtime уже поддерживает пять режимов (`local`, `centralized`,
   `federated`, `split`, `splitfed`) и две явные стратегии общей split-server
   модели: `concat_v1`, `sequential_v1` и ограниченный `mergesfl_v1` baseline.
-- E0 остаётся notebook-анализом и помечен `analysis_only`. Local создаёт полную
+- E0 uses a dataset-only runner and notebook, with a standalone `datasets` configuration. Local создаёт полную
   матрицу, а Centralized/FedAvg автоматически оценивают финальный complete-model
   checkpoint по каждому корпусу. SFLv2/OUR ещё не сведены к этому контракту.
 - Ближайший научно полезный срез — не новый transport или scheduler, а общий
@@ -171,16 +171,47 @@ checkpoint на train-corpus. Centralized и FedAvg используют общ�
 **Вопрос:** являются ли CREMA-D, RAVDESS и SAVEE статистически различимыми
 доменами?
 
-**Артефакт:** [`notebooks/E0_cross_corpus_heterogeneity.ipynb`](../notebooks/E0_cross_corpus_heterogeneity.ipynb).
+Run E0 domain shift without training or a train/test split:
 
-**Метрики:** число samples/actors/classes, потери extraction, длительность,
-RMS, ZCR, MFCC, распределения до и после train-only стандартизации,
-Jensen–Shannon, Wasserstein/energy distance, скорректированные KS tests,
-permutation MMD и actor-grouped domain-classification ROC-AUC.
+```bash
+uv run python -c "from src.experiments.domain_shift.analysis import main; main()" \
+  --config-file configs/experiments/config.e0.yaml \
+  --artifact-root artifacts/e0_domain_shift/final_seed_42
+```
 
-**Решение:** использовать cross-corpus выводы только при согласии нескольких
-метрик размера эффекта и идентификации домена. E0 не доказывает пользу
-совместного обучения.
+The E0 configuration contains only dataset roots and feature settings; model,
+optimizer, noise, channels and training/split options are not used.
+The runner uses all successfully extracted records without a train/test split.
+Each record is represented by valid-frame temporal means (13 MFCC, RMS, ZCR).
+Client-local normalization uses population statistics of all record vectors
+in each corpus independently, separate from train-only training normalization.
+
+MMD squared uses 480 records per corpus, 50 repetitions, raw and client-local
+normalized spaces, and 500 permutations. Both spaces use the same indices.
+RBF bandwidth is the square root of the pooled median positive squared distance
+per pair/repeat/space. Do not subtract raw and normalized values or report a
+percentage reduction. With 500 permutations the p-value floor is 1/501.
+
+Exact multivariate Euclidean W1 uses only client-local normalized features,
+240 records per empirical distribution and 50 repetitions per pair. Each
+corpus supplies two disjoint random halves A and B without replacement.
+Between compares the first halves of the two corpora; within compares A and B
+inside each corpus. R = between / ((within_left + within_right) / 2), computed
+per repetition. A zero denominator leaves R undefined (NaN). R is a relative
+finite-sample estimate, not a population effect size. At least
+max(MMD sample size, twice W1 sample size) valid records are required.
+
+Outputs are MMD `pairwise_repeats.csv` and `pairwise_summary.csv`,
+`wasserstein_repeats.csv` and `wasserstein_summary.csv`, descriptive Table 1
+`corpus_summary.csv` and Table 2 `feature_summary.csv`, and
+`resolved_analysis.yaml` with extraction loss, actor/class counts, normalization
+statistics and replayable sample indices. Sinkhorn is excluded.
+Repeat quantiles describe subsampling variation, not confidence intervals.
+Record sampling and permutations ignore actor dependence; within halves are
+record-disjoint, not actor-disjoint. P-values are descriptive under this
+limitation. SAVEE at MMD n=480 uses all records every repetition; W1 randomly
+partitions its records into two halves. The notebook delegates computations to
+the runner and creates no model or checkpoint.
 
 ### E1 — local corpus evaluation
 
@@ -294,8 +325,10 @@ per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
 
 ## 5. Порядок выполнения
 
-1. Завершить E0: экспортировать таблицы notebook, выполнить согласованные
-   actor folds/seeds и сохранить итоговую сводку.
+1. Run E0 with 50 repeats: MMD on 480 records in raw/local normalized
+   spaces, and normalized W1 on disjoint 240-record halves with between/within
+   ratio R. Preserve descriptive corpus and feature tables. Actor-level
+   resampling remains an optional future sensitivity check.
 2. Завершить E1 Local cross-corpus и собрать multi-seed интервалы.
 3. Выполнить E2 Centralized/FedAvg с общим evaluator и matched seeds.
 4. Выполнить protocol-faithful E3 для MergeSFL, SFLv1 и SFLour; matched-budget
