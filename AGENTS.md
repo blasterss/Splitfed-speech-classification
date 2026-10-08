@@ -15,7 +15,8 @@ been implemented.
 
 Read [README.md](README.md) and
 [docs/REPOSITORY_GUIDE.md](docs/REPOSITORY_GUIDE.md)
-for repository context. Use [docs/dev_plan](docs/dev_plan) for the intended
+for repository context. Use the
+[development roadmap](docs/development/ROADMAP.md) for the intended
 implementation sequence and target architecture.
 
 ## Working Rules
@@ -46,7 +47,7 @@ implementation sequence and target architecture.
 - Package entry points are `uv run secureasr` and `uv run python -m src.main`.
 - The default queue transport simulates participants on one host. It provides
   no network isolation, authentication, TLS, secure aggregation, or formal DP.
-- `src/main.py` owns CLI/config startup; `src/schema.py` owns configuration;
+- `src/main.py` owns CLI/config startup; `src/schema/` owns configuration;
   `src/dataset/` owns discovery, parsing, features, and actor splits;
   `src/model/` owns neural models; `src/splitfed/` owns clients and processes;
   `src/transport/` owns message/channel contracts.
@@ -189,8 +190,8 @@ features as implemented.
 
 When documentation changes, cross-check all four project contracts:
 `README.md` for user-facing current behavior, `docs/REPOSITORY_GUIDE.md` for
-maintainer workflow, `docs/dev_plan` for future architecture, and this file for
-agent behavior. Keep planned Docker, scheduler, simulation, and policy work
+maintainer workflow, `docs/development/ROADMAP.md` for future architecture,
+and this file for agent behavior. Keep planned Docker, scheduler, simulation, and policy work
 clearly separated from the current runtime in the first two documents.
 
 The final handoff should briefly state:

@@ -1,6 +1,29 @@
-# Экспериментальный план
+# Experiments
 
-## 1. Область исследования и терминология
+Commands below select repository configurations, not proven replicas of
+published algorithms. Run from the repository root and inspect hardware/device
+settings before launching full training. General setup is in the
+[README](../README.md); resource reporting follows
+[Resource Metrics v2](runtime/RESOURCE_METRICS.md).
+
+## Execution status
+
+| Experiment | Implementation | Remaining research validation |
+| --- | --- | --- |
+| E0 | All-record MMD and relative normalized W1 runner | Actor-level sensitivity; subsampling quantiles are not confidence intervals |
+| E1 | Isolated local training and cross-corpus matrix | Matched multi-seed/fold summaries |
+| E2 | Centralized/FedAvg with complete-model checkpoint evaluation | Matched budget and multi-seed comparisons |
+| E3 | Shared/personalized SplitFed and MergeSFL reconstruction | Canonical protocol checks, calibrated telemetry, controlled ablations |
+| E4 | Max-steps versus cycling fixed-steps profiles | Unique/repeated sample accounting and actor-held-out validation |
+
+The numbering retains experiment identifiers used by configurations and artifacts.
+Quality summaries for split methods exist,
+but a common composed-checkpoint cross-corpus evaluator remains future work.
+Local training/evaluation use separate spawn processes. Resource Metrics v2
+already records phase timing, owned footprint, per-process peaks and transport;
+a concurrent host sampler is separate future work.
+
+## Область исследования и терминология
 
 SplitFed Speech Emotion Classification оценивается как pre-alpha фреймворк для
 бинарной классификации эмоциональной речи. `ANG` является положительным
@@ -46,172 +69,28 @@ SplitFed`, но не как канонический SFLv2.
 feature sequence, регулирует batch size неоднородных workers и совместно
 оптимизирует эти механизмы.
 
-## 2. Аудит текущего среза: цель, результат и разрыв
+## Data and comparison rules
 
-Аудит выполнен по текущим entry points, конфигурационной схеме, владельцам
-моделей, экспериментальным harness и тестам. Наличие класса или режима само по
-себе не считается готовым научным baseline: нужен воспроизводимый запуск,
-однозначная семантика обновлений и сопоставимый контракт результатов.
+Training/model evaluation use actor-disjoint splits and train-only normalization.
+Test actors must not participate in hyperparameter selection. E0 instead uses
+all records and corpus-local analysis statistics. SAVEE's four actors limit
+both split coverage and independent inference. Always report corpus/class/actor
+coverage, extraction losses, feature ordering, seeds and resolved configuration.
 
-### 2.1. Сопоставление по целям
+Protocol-faithful comparisons preserve optimizer, workload, cohort and aggregation
+semantics as experimental factors. A causal claim about one mechanism requires
+a separate matched-budget ablation. Proposed validation-actor experiments need
+an explicit validation split; the current train/test split alone does not provide it.
 
-| Цель | Требуемый результат | Что есть сейчас | Чего нет / следующий проверяемый шаг |
-| --- | --- | --- | --- |
-| Измерить исходную неоднородность корпусов | Воспроизводимые оценки label/acoustic shift без обучения целевой модели | E0 runner/notebook, dataset-only config, actor/class counts, extraction loss, repeated MMD and relative between/within W1 | Actor-level sensitivity analysis and dataset-backed execution of the repeated protocol |
-| Получить Local cross-corpus reference | Полная матрица train-corpus × eval-corpus с train-corpus normalization | `src.experiments.local_cross_corpus`, checkpoints, CSV/YAML, accuracy, Anger F1, macro-F1, precision, recall, UAR, PR-AUC и confusion counts | Multi-seed aggregation, доверительные интервалы и единый evaluator для checkpoint других методов |
-| Получить Centralized reference | Одна полная модель на объединённых train actors и отдельные результаты на каждом test corpus | Рабочий topology, checkpoint и автоматическая per-corpus оценка по общему binary-metrics contract | Multi-seed aggregation, доверительные интервалы и matched-budget сравнение |
-| Получить FedAvg reference | Полные клиентские модели, валидированный FedAvg и per-corpus evaluation | Общая инициализация, `full_epoch_v1`, sample-weighted финальная агрегация, checkpoint и автоматическая per-corpus оценка | Multi-seed aggregation, доверительные интервалы и effective-sample accounting |
-| Зафиксировать классический SFLv2 | Общий сервер обслуживает клиентов в фиксированном порядке до `round_end`, обновляясь после каждого client batch; клиентские части проходят FedAvg | `sequential_v1`, выбор strategy в schema/server, фиксированный порядок `client_channels`, один server `optimizer.step()` на client batch и `spawn` smoke с неравными local steps | Детерминированный численный reference порядка и параметров, запись порядка в artifacts и полноценный benchmark harness |
-| Зафиксировать OUR | Согласованные `(round, step)` batches объединяются перед одним server update; клиентские части проходят FedAvg | `concat_v1`, конкатенация activation, разделение activation gradients, один server update без batch-gradient averaging, stale-batch timeout и `spawn` smoke | Научный harness с тем же data/evaluation budget, телеметрия ожидания/bytes и multi-seed сравнение с SFLv2 |
-| Получить SFLv1 | Изолированные server/client pairs локально обучаются, затем обе части агрегируются по явно заданной политике | Personalized SplitFed хранит отдельные server models/optimizers, агрегирует обе model partitions по `fed_every`, синхронизирует round ACK и сохраняет per-client server checkpoints | Нет детерминированного reference одного global round и доказательства полного соответствия каноническому SFLv1 |
-| Получить MergeSFL | Реализованы feature merging, batch-size regulation и соответствующая оптимизация | `mergesfl_v1` сохраняет статический upstream baseline; `mergesfl_algorithm1_v1` добавляет EMA telemetry, deterministic cohort search, batch refinement, plan enforcement, Equation 17, replay artifacts и spawn smoke | Calibrated timings, fault-injection и matched-budget multi-seed benchmark; GA/refinement остаются явно обозначенной реконструкцией из-за отсутствующих upstream деталей |
-| Сопоставить качество всех методов | Одинаковые actor folds, normalization policy, seeds, stopping/data budget и единая tidy-схема | Local, Centralized и FedAvg используют общий metrics contract; complete-model checkpoint evaluator сохраняет per-corpus, macro и worst-corpus результаты | Распространить контракт на SFLv2/OUR; добавить validation actors, multi-seed CI и matched-budget accounting |
-| Сопоставить вычислительную стоимость | Per-process параметры/память, transmitted bytes, server wait, round и total time | Ограниченные lifecycle logs, deadlines, quorum и stale counters на уровне протокола | Версионированная телеметрия, единицы измерения, warm-up policy и экспорт в общую таблицу |
-| Проверить задержки и отказы | Seeded delay/drop/straggler без deadlock и без частично применённого шага | Тайм-ауты, cancellation, barrier abort, failure propagation и завершение процессов тестируются | Детерминированный fault simulator и транзакция `completed/aborted`, гарантирующая отсутствие server/client update при сорванном шаге |
-| Проверить неравную нагрузку | Явные `full_epoch`, `fixed_steps`, `equal_samples` с учётом повторов | Типизированы `max_steps_v1`, `full_epoch_v1` и cycling `fixed_steps_v1`; разные длины loaders и `round_end` поддерживаются, effective resource samples учитывают повторы | Реализовать отдельный repeated-sample counter, equal-samples, fairness и matched-budget experiments |
-| Проверить перенос на неизвестный корпус | Held-out corpus исключён из обучения, нормализации и model selection | Local matrix измеряет перенос A → B/C, но обучающая постановка остаётся однокорпусной | Leave-one-corpus-out topology для методов совместного обучения и отдельный held-out evaluator |
+## E0: domain shift
 
-### 2.2. Итог аудита текущего среза
+The complete protocol, command, outputs and limitations live in
+[E0 domain shift](experiments/E0_DOMAIN_SHIFT.md). It uses 50 repetitions:
+MMD raw/local normalized at n=480 and normalized W1 between/within at n=240
+with per-repeat ratio R. Table 1/2 describe corpus composition and raw features.
+There is no model training, train/test split or Sinkhorn metric in current E0.
 
-- Инженерный runtime уже поддерживает пять режимов (`local`, `centralized`,
-  `federated`, `split`, `splitfed`) и две явные стратегии общей split-server
-  модели: `concat_v1`, `sequential_v1` и ограниченный `mergesfl_v1` baseline.
-- E0 uses a dataset-only runner and notebook, with a standalone `datasets` configuration. Local создаёт полную
-  матрицу, а Centralized/FedAvg автоматически оценивают финальный complete-model
-  checkpoint по каждому корпусу. SFLv2/OUR ещё не сведены к этому контракту.
-- Ближайший научно полезный срез — не новый transport или scheduler, а общий
-  evaluator и matched-budget harness для уже реализованных методов.
-- Каноническая верификация SFLv1, экспериментальная верификация MergeSFL
-  Algorithm 1, fault simulator, расширенные
-  workload policies и leave-one-corpus-out остаются отдельными последующими
-  срезами. Personalized SplitFed является рабочим экспериментальным вариантом,
-  но ещё не доказан как точное воспроизведение SFLv1.
-
-### 2.3. Ограничения данных
-
-- Корпуса являются естественными доменами, а не IID-частями одной выборки.
-  Различия дикторов, условий записи, объёмов, длительностей и баланса классов
-  должны быть измерены, а не предположены.
-- Actor-disjoint разбиение обязательно. Test actors не могут участвовать в
-  обучении, нормализации, early stopping или подборе гиперпараметров.
-- В SAVEE только четыре диктора. Одно actor-disjoint разбиение имеет высокую
-  дисперсию и может дать нестабильное покрытие классов. Следует использовать
-  leave-one-actor-out или все допустимые actor-held-out folds. Нельзя заменять
-  их случайным разбиением отдельных записей.
-- В cross-corpus постановке идентификатор клиента совпадает с идентификатором
-  корпуса. Всегда нужны per-corpus и worst-corpus результаты.
-
-## 3. План необходимых доработок
-
-### Блок A — единый контракт оценки
-
-Local-only часть реализована в `src.experiments.local_cross_corpus`: она
-строит полную матрицу train-corpus × eval-corpus, использует статистики
-нормализации только train-корпуса и сохраняет tidy CSV, YAML-матрицы и один
-checkpoint на train-corpus. Centralized и FedAvg используют общий evaluator
-финального complete-model checkpoint. Распространение контракта на SFLv2 и OUR
-остаётся следующим шагом блока.
-
-1. Распространить общий binary-metrics/checkpoint contract с complete-model
-   методов на составные checkpoints SFLv2 и OUR.
-2. Добавить согласованные multi-seed запуски и агрегированные доверительные
-   интервалы.
-
-**Готово, когда:** Local, Centralized, FedAvg, SFLv2 и OUR создают одну схему
-результатов на одинаковых actor folds и matched data budget.
-
-### Блок B — точные алгоритмические baseline
-
-1. Добавить детерминированный численный reference для уже реализованных
-   `sequential_v1` и `concat_v1`: проверить порядок client updates,
-   число server optimizer steps и итоговые параметры на малой задаче.
-2. Записывать выбранную server strategy и фактический порядок клиентов в
-   resolved artifacts каждого запуска.
-3. Зафиксировать реализованный personalized SplitFed как версионированную
-   policy `sflv1_v1` только после проверки ownership, aggregation weights,
-   optimizer-state semantics и checkpoint contract.
-4. Проверить эталонное поведение SFLv1 на synthetic задаче, затем
-   отдельно на каждом речевом корпусе.
-5. Реализовывать MergeSFL только после фиксации feature ordering, batch
-   regulation, loss weighting и уравнений server update в детерминированных
-   тестах.
-
-**Готово, когда:** каждая policy имеет стабильное имя/версию, тест владения
-моделью и детерминированный reference test градиентов и обновлений.
-
-### Блок C — семантика нагрузки и отказов
-
-1. Определить транзакцию шага: `created -> completed` или `aborted`. Отменённый
-   шаг не изменяет параметры ни клиента, ни сервера.
-2. Добавить seeded delay, jitter, message drop и длительный straggler.
-3. Расширить реализованные `full_epoch_v1` и cycling `fixed_steps_v1` политикой
-   `equal_samples_v1` и отдельным учётом повторно использованных данных.
-4. Записывать attempted/completed/aborted/stale steps, effective/repeated
-   samples, server wait time, round time и bytes.
-
-**Готово, когда:** сценарии отказов и нагрузки завершаются без deadlock, а их
-учётные соотношения проверяются тестами.
-
-### Блок D — экспериментальный harness
-
-1. Разделить профили `replication` и `cross_corpus`.
-2. Зафиксировать manifests, actor folds, порядок features, инициализацию,
-   optimizers, stopping rule и согласованный набор seeds.
-3. Сохранять одну tidy-таблицу каждого запуска и одну агрегированную таблицу
-   каждого эксперимента.
-4. Не смешивать smoke tests и benchmark timing.
-
-**Готово, когда:** результат воспроизводится из resolved config и manifest без
-ручного изменения notebook.
-
-## 4. Обновлённая последовательность экспериментов
-
-### E0 — проверка естественной cross-corpus неоднородности
-
-**Вопрос:** являются ли CREMA-D, RAVDESS и SAVEE статистически различимыми
-доменами?
-
-Run E0 domain shift without training or a train/test split:
-
-```bash
-uv run python -c "from src.experiments.domain_shift.analysis import main; main()" \
-  --config-file configs/experiments/config.e0.yaml \
-  --artifact-root artifacts/e0_domain_shift/final_seed_42
-```
-
-The E0 configuration contains only dataset roots and feature settings; model,
-optimizer, noise, channels and training/split options are not used.
-The runner uses all successfully extracted records without a train/test split.
-Each record is represented by valid-frame temporal means (13 MFCC, RMS, ZCR).
-Client-local normalization uses population statistics of all record vectors
-in each corpus independently, separate from train-only training normalization.
-
-MMD squared uses 480 records per corpus, 50 repetitions, raw and client-local
-normalized spaces, and 500 permutations. Both spaces use the same indices.
-RBF bandwidth is the square root of the pooled median positive squared distance
-per pair/repeat/space. Do not subtract raw and normalized values or report a
-percentage reduction. With 500 permutations the p-value floor is 1/501.
-
-Exact multivariate Euclidean W1 uses only client-local normalized features,
-240 records per empirical distribution and 50 repetitions per pair. Each
-corpus supplies two disjoint random halves A and B without replacement.
-Between compares the first halves of the two corpora; within compares A and B
-inside each corpus. R = between / ((within_left + within_right) / 2), computed
-per repetition. A zero denominator leaves R undefined (NaN). R is a relative
-finite-sample estimate, not a population effect size. At least
-max(MMD sample size, twice W1 sample size) valid records are required.
-
-Outputs are MMD `pairwise_repeats.csv` and `pairwise_summary.csv`,
-`wasserstein_repeats.csv` and `wasserstein_summary.csv`, descriptive Table 1
-`corpus_summary.csv` and Table 2 `feature_summary.csv`, and
-`resolved_analysis.yaml` with extraction loss, actor/class counts, normalization
-statistics and replayable sample indices. Sinkhorn is excluded.
-Repeat quantiles describe subsampling variation, not confidence intervals.
-Record sampling and permutations ignore actor dependence; within halves are
-record-disjoint, not actor-disjoint. P-values are descriptive under this
-limitation. SAVEE at MMD n=480 uses all records every repetition; W1 randomly
-partitions its records into two halves. The notebook delegates computations to
-the runner and creates no model or checkpoint.
+## Training experiments
 
 ### E1 — local corpus evaluation
 
@@ -303,41 +182,16 @@ per-corpus F1/PR-AUC, inter-client F1 range, macro/worst-corpus F1 и timing.
 Для оценки переобучения используются validation actors, а не финальные test
 actors.
 
-### E6 — обобщение на неизвестный корпус
+## Next acceptance steps
 
-**Вопрос:** обучается ли распределённый метод независимым от корпуса признакам
-гнева?
+1. Repeat current profiles across matched seeds and actor folds with saved provenance.
+2. Verify numerical update semantics and canonical baseline claims independently.
+3. Extend composed-checkpoint evaluation, repeated-sample and waiting-time accounting.
 
-**Методы:** Centralized, FedAvg, SFLv2, MergeSFL, OUR.
+Implementation work is tracked in the [roadmap](development/ROADMAP.md), rather
+than repeated as an implementation backlog in this experiment protocol.
 
-В каждом fold один корпус полностью исключается из обучения, нормализации,
-подбора параметров и выбора модели. Модель обучается на двух других корпусах и
-однократно оценивается на held-out корпусе. Для согласованных seeds записываются
-per-fold и macro Anger F1, PR-AUC, recall, precision и UAR.
-
-### E7 — опциональная проверка multi-class постановки
-
-Эксперимент выполняется только после аудита общего пересечения emotion labels и
-обновления schema, loss, output head, metrics и tests. Достаточно одного
-компактного сравнения с macro-F1, UAR, per-class recall и confusion matrix. Если
-в названии статьи anger detection явно указан как case study, E7 остаётся
-опциональным.
-
-## 5. Порядок выполнения
-
-1. Run E0 with 50 repeats: MMD on 480 records in raw/local normalized
-   spaces, and normalized W1 on disjoint 240-record halves with between/within
-   ratio R. Preserve descriptive corpus and feature tables. Actor-level
-   resampling remains an optional future sensitivity check.
-2. Завершить E1 Local cross-corpus и собрать multi-seed интервалы.
-3. Выполнить E2 Centralized/FedAvg с общим evaluator и matched seeds.
-4. Выполнить protocol-faithful E3 для MergeSFL, SFLv1 и SFLour; matched-budget
-   harness использовать только для дополнительных controlled ablations.
-5. Выполнить E4 для balanced max-steps и cycling fixed-steps workloads.
-6. Реализовать held-out evaluator, затем выполнить E6.
-7. Выполнять E7 только при необходимости для заявленной области статьи.
-
-## 6. Связанные работы и сохранённые ссылки
+## Связанные работы и сохранённые ссылки
 
 - Thapa, C.; Mahawaga Arachchige, P. C.; Camtepe, S.; Sun, L.
   **SplitFed: When Federated Learning Meets Split Learning.** AAAI 2022,

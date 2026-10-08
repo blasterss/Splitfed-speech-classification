@@ -1,4 +1,7 @@
-# MergeSFL Algorithm 1: implementation design
+# MergeSFL Algorithm 1: runtime and reconstruction
+
+See [runtime contracts](CONTRACTS.md), [configuration](CONFIGURATION.md),
+and the [experiment plan](../EXPERIMENT_PLAN.md) for execution context.
 
 ## Status and scope
 
@@ -168,8 +171,9 @@ send typed round-completion and model-sync requests so synchronized evaluation
 uses the same global client-side model. The split server merges exactly the
 planned clients for every step.
 The federated server weights bottom-model states by planned batch size as in
-Equation 17. A dropout aborts the synchronous merged step; it must not produce
-a partial server update.
+Equation 17. An incomplete merged batch must fail before its server optimizer update.
+This does not establish whole-round rollback: earlier completed steps may
+already have changed parameters. General fault recovery remains future work.
 
 ## Implemented contracts and remaining experimental acceptance
 
@@ -181,10 +185,12 @@ a partial server update.
 2. Remaining experimental validation: calibrated bootstrap timings, explicit
    slow/dropout fault injection, repeated-sample and waiting-time accounting,
    and a matched multi-seed benchmark with confidence intervals.
-3. Matched experiment requires identical seed, actor folds, model, loss,
-   evaluation
-   cadence and total effective-sample budget for `sequential_v1`, `concat_v1`,
+3. A controlled matched-budget ablation requires identical seed, actor folds,
+   model, loss, evaluation cadence and total effective-sample budget for `sequential_v1`, `concat_v1`,
    repo-faithful `mergesfl_v1` and `mergesfl_algorithm1_v1`.
+
+The E3 protocol-faithful comparison preserves algorithm-specific budgets and
+optimizers; it must not be confused with that controlled ablation.
 
 ## Safety boundaries
 

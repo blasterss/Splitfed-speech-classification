@@ -1,8 +1,7 @@
-# SplitFed Speech Emotion Classification Repository Guide
+# Repository guide
 
-This document is the working instruction for changing and validating the
-repository. It describes the current implementation, not an idealized future
-architecture.
+Maintainer workflow for the current pre-alpha implementation. Start with the
+[documentation index](README.md) and [project README](../README.md).
 
 ## Project identity
 
@@ -37,8 +36,10 @@ directory can make valid repository-relative paths fail.
 
 ## Repository map
 
-- `src/main.py`: CLI, YAML loading, schema validation, controller lifecycle.
-- `src/schema.py`: Pydantic configuration models and enums.
+- `src/main.py`: CLI parsing and dispatch through `src/application/`.
+- `src/application/`: configuration resolution, experiment dispatch, lifecycle
+  and artifact persistence.
+- `src/schema/`: Pydantic configuration models and enums.
 - `src/dataset/`: WAV discovery, audio loading, feature extraction, dataset
   wrappers, and dataset-specific filename parsers.
 - `src/dataset/audio/`: native-rate/optional-resampling WAV loading and the
@@ -73,14 +74,16 @@ directory can make valid repository-relative paths fail.
   deterministic seed setup and per-round loss statistics; `config/` owns YAML
   configuration serialization.
 - `configs/config.example.yaml`: portable CPU example configuration.
-- `configs/config.real.yaml`: repository-local real-data research configuration
-  for 480 files per corpus, 30 SplitFed rounds, aggregation every 10 rounds,
-  CPU clients and CUDA split/federated servers.
+- `configs/config.real.yaml`: hardware-specific real-data research configuration;
+  inspect its devices and budgets before use.
 - `configs/logger.yaml`: logging configuration.
 - `tests/`: tests grouped by owning component (`config/`, `dataset/`,
   `experiments/`, `model/`, `persistence/`, `runtime/`, `splitfed/`, and
   `transport/`); pytest discovers all groups from the repository-level path.
-- `notebooks/`: exploratory work; Ruff excludes notebooks.
+- `src/experiments/`: domain shift, local cross-corpus, checkpoint evaluation
+  and topology smoke runners.
+- `notebooks/`: exploratory work and the E0 analysis front end; Ruff excludes
+  notebooks.
 - `uv.lock`: resolved dependency set; update it with `uv lock` when project
   dependencies change.
 
@@ -114,196 +117,15 @@ Dataset-specific parsing is filename-based:
 Before changing a parser, test it against representative real filenames from
 its corpus and preserve actor IDs because the split is actor-disjoint.
 
-## Environment and commands
+## Where to find detailed contracts
 
-Create or refresh the environment:
-
-```bash
-uv venv --python 3.12
-uv sync --extra train
-```
-
-Install development tools:
-
-```bash
-uv sync --extra train --extra dev
-```
-
-Inspect the runtime:
-
-```bash
-uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.get_arch_list())'
-```
-
-The locked `train` extra uses the explicit official PyTorch CUDA 12.8 index on
-Linux/Windows and the normal PyPI source on macOS. CUDA 12.8 is required by the
-supported wheel to execute on Blackwell `sm_120`; the host still owns the
-NVIDIA driver. Reuse the default shared `uv` cache rather than installing an
-untracked wheel into each environment.
-
-Run the application:
-
-```bash
-uv run secureasr --config-file configs/config.yaml
-# equivalent:
-uv run python -m src.main --config-file configs/config.yaml
-```
-
-Use repeatable `--set PATH=VALUE` arguments for typed YAML-value overrides of
-existing fields (including numeric list indices such as
-`clients.0.runtime.batch_size`). Unknown paths are rejected before process
-creation, and applied overrides are recorded in `run_metadata.yaml`.
-
-The typed built-in profile registry currently exposes `--profile smoke` and
-`--profile unit`. Both provide versioned, bounded training defaults; neither
-invents dataset roots, clients or topology. Duplicate registered names are
-rejected.
-Resolution precedence is `profile < YAML < --set`; it intentionally does not
-invent dataset roots or force a topology. Configure reduced datasets, CPU
-devices and the desired clients in the YAML used for a smoke run.
-
-Run artifacts include a canonical SHA-256 of the validated resolved config,
-profile/override sources, the current Git revision and dirty state, and a
-SHA-256 of `uv.lock` in `run_metadata.yaml`. Runtime identity and implemented
-transport/aggregation policy versions are also explicit. Unavailable checkout
-or lock information is recorded as null rather than preventing checkpoint
-persistence; scheduler policy and container image digest are null for the
-current local runtime.
-Resource Metrics v2 records per-process/round wall and CPU time, process and
-sampled phase RSS, PyTorch CUDA peaks, throughput, deterministic owned tensor
-bytes and per-channel/per-message-type transport sizes. Training and
-evaluation summaries are separate. Queue values are logical estimates; gRPC
-values are serialized protobuf sizes. They do not measure energy, host-wide
-concurrent memory, or host network-interface traffic. See
-`docs/RESOURCE_METRICS_V2_PLAN.md` for the measurement and aggregation
-contract.
-Captured client, SplitServer, FedServer and controller failures additionally
-produce the bounded versioned artifact `diagnostics/first_failure.yaml`.
-Workers publish original exception context before setting cancellation; if no
-worker record is available, the controller writes its own fallback context.
-
-Every queue or gRPC `Message` validates `secureasr.transport` protocol version
-5 and a bounded non-empty request ID, which are also represented in run
-metadata.
-Split responses and federated responses to accepted updates echo request IDs.
-Channel send stamps a hop deadline using the positive channel timeout; send,
-receive and payload validators reject expired envelopes. It is not yet one
-end-to-end deadline spanning split batching or federated quorum waiting. With
-partial federated quorum, accepted clients receive the aggregate immediately;
-a validated client arriving later in that same completed round receives a
-correlated catch-up response. Older-round catch-up is not implemented.
-
-Each split and federated worker has a FIFO replay guard covering the most recent
-10,000 accepted request IDs. Replays in that window fail the worker before
-payload processing and propagate into controller cancellation. The cache is
-in-process and resets on restart; durable cross-restart replay protection is
-not implemented.
-
-Create local configuration and output directories:
-
-```bash
-cp configs/config.example.yaml configs/config.yaml
-mkdir -p logs artifacts
-```
-
-Use a reduced dataset, few rounds, and CPU for the first smoke test. Do not
-start a full training run until every client has loaded successfully and a
-one-round run completes.
-
-Run the validated ownership matrix from one base configuration with:
-
-```bash
-uv run python -m src.experiments.mode_matrix \
-  --config-file configs/config.real.yaml --rounds 1 \
-  --artifact-root artifacts/mode_matrix
-```
-
-Repeat `--mode` to select any subset of `centralized`, `federated`,
-`split-shared`, `split-personalized` and `splitfed`. The summary records wall
-time and outcome; it does not yet sample per-process CPU/RSS/GPU utilization.
-
-Run E0 domain shift without training or a train/test split:
-
-```bash
-uv run python -c "from src.experiments.domain_shift.analysis import main; main()" \
-  --config-file configs/experiments/config.e0.yaml \
-  --artifact-root artifacts/e0_domain_shift/final_seed_42
-```
-
-The E0 configuration contains only dataset roots and feature settings; model,
-optimizer, noise, channels and training/split options are not used.
-The runner uses all successfully extracted records without a train/test split.
-Each record is represented by valid-frame temporal means (13 MFCC, RMS, ZCR).
-Client-local normalization uses population statistics of all record vectors
-in each corpus independently, separate from train-only training normalization.
-
-MMD squared uses 480 records per corpus, 50 repetitions, raw and client-local
-normalized spaces, and 500 permutations. Both spaces use the same indices.
-RBF bandwidth is the square root of the pooled median positive squared distance
-per pair/repeat/space. Do not subtract raw and normalized values or report a
-percentage reduction. With 500 permutations the p-value floor is 1/501.
-
-Exact multivariate Euclidean W1 uses only client-local normalized features,
-240 records per empirical distribution and 50 repetitions per pair. Each
-corpus supplies two disjoint random halves A and B without replacement.
-Between compares the first halves of the two corpora; within compares A and B
-inside each corpus. R = between / ((within_left + within_right) / 2), computed
-per repetition. A zero denominator leaves R undefined (NaN). R is a relative
-finite-sample estimate, not a population effect size. At least
-max(MMD sample size, twice W1 sample size) valid records are required.
-
-Outputs are MMD `pairwise_repeats.csv` and `pairwise_summary.csv`,
-`wasserstein_repeats.csv` and `wasserstein_summary.csv`, descriptive Table 1
-`corpus_summary.csv` and Table 2 `feature_summary.csv`, and
-`resolved_analysis.yaml` with extraction loss, actor/class counts, normalization
-statistics and replayable sample indices. Sinkhorn is excluded.
-Repeat quantiles describe subsampling variation, not confidence intervals.
-Record sampling and permutations ignore actor dependence; within halves are
-record-disjoint, not actor-disjoint. P-values are descriptive under this
-limitation. SAVEE at MMD n=480 uses all records every repetition; W1 randomly
-partitions its records into two halves. The notebook delegates computations to
-the runner and creates no model or checkpoint.
-
-Run the channel-free E1 local-corpus matrix with:
-
-```bash
-uv run secureasr \
-  --config-file configs/experiments/config.e1_local.yaml
-```
-
-The explicit `training.mode: local` dispatches to the local cross-corpus
-runner. The runner treats each configured client as one corpus view, resets
-the same model seed before each isolated training run, and evaluates the
-resulting model against every configured test corpus using only the source
-training corpus normalization statistics. It does not invoke
-`TrainingController` and creates no multiprocessing workers, channels, split
-servers, or federated servers.
-
-The E2 complete-model baselines are
-`configs/experiments/config.e2_centr.yaml` and
-`configs/experiments/config.e2_fl.yaml`. Both enable automatic per-corpus
-evaluation of the final validated checkpoint. The federated baseline starts
-aggregatable client models from `training.seed`, consumes a full local epoch,
-uses dataset-size weighting, and aggregates before final evaluation.
-
-The E3 protocol comparison uses `config.e3_our.yaml`,
-`config.e3_sflv1.yaml`, and `config.e3_mergesfl.yaml`. These configurations
-form a protocol-faithful end-to-end comparison: each method retains its own
-cohort selection, workload, optimizer, aggregation cadence, and server-model
-ownership. Record those differences as experimental factors; do not normalize
-them away or attribute the result to one mechanism without a separate
-controlled ablation. E4 isolates the SFLour workload policy through
-`config.e4_our_balanced.yaml` and `config.e4_our_fixed_steps.yaml`.
-
-Runs with an artifact root write `metrics/resource_metrics.csv`,
-`metrics/resource_by_participant.csv`, `metrics/resource_transport.csv` and
-`metrics/resource_summary.yaml`. Local cross-corpus runs place the same files
-inside their `local_cross_corpus` directory and isolate training from
-cross-corpus evaluation in different spawn processes. RSS and CUDA values are
-per-process peaks and must not be summed as concurrent host usage. Only owned
-tensor bytes may be summed as a logical system footprint. Transport bytes are
-logical tensor/envelope sizes for the local queue simulation, not measured
-network traffic.
+- [Configuration](runtime/CONFIGURATION.md): schema, overrides and topology validation.
+- [Runtime](runtime/CONTRACTS.md): process ownership, lifecycle and artifacts.
+- [Experiments](EXPERIMENT_PLAN.md): implemented E0-E4 profiles.
+- [E0](experiments/E0_DOMAIN_SHIFT.md): analysis without training splits.
+- [Resources](runtime/RESOURCE_METRICS.md): measurement and aggregation rules.
+- [MergeSFL](runtime/MERGESFL_ALGORITHM1.md): implemented planner reconstruction.
+- [Roadmap](development/ROADMAP.md): future architecture and acceptance criteria.
 
 ## Change workflow
 
@@ -339,189 +161,8 @@ The repository has focused tests for schemas/configuration, dataset parsers,
 padding, models/FedAvg, queue and gRPC transports, and controller lifecycle. It
 also has synthetic CPU `spawn` cycles covering unequal client steps, split
 training, FedAvg, evaluation, clean process exit and state handoff. Run them
-with `uv run pytest`. Reduced real-data and RTX 5060/CUDA 12.8 mode runs have
-been completed manually; an automated real-data/CUDA matrix and CI workflow
-are still missing.
-
-## Configuration invariants
-
-- Unknown fields are rejected in root and nested configuration models.
-- `training.mode` selects mode-specific server and channel requirements.
-  Controller setup creates only those roles. Execution is available for
-  `local`, `centralized`, `federated`, `split/shared`, `split/personalized` and
-  `splitfed`.
-- `split_server.model_scope` supports `shared` and `personalized`. Personalized
-  SplitFed keeps server models and optimizers isolated by client ID while
-  training locally and aggregates both model partitions at `fed_every` while
-  retaining personalized optimizer states. Each personalized server model,
-  optimizer and RNG runs in its own process; a model-free coordinator performs
-  round aggregation and ACK synchronization. This working variant has not yet
-  been proven equivalent to canonical SFLv1. Personalized metrics and server
-  checkpoint files remain isolated by client ID.
-- The root field is `models_save_path` (plural), not `model_save_path`; it owns
-  `<root>/<experiment.name>/{metadata,checkpoints,metrics}`.
-- Runs with `models_save_path` persist the validated JSON-compatible
-  `resolved_config.yaml` in the experiment `metadata/` directory.
-- The adjacent `run_metadata.yaml` records Python/PyTorch/platform/CUDA and Git
-  details, local runtime identity, config-layer provenance, implemented policy
-  versions, and experiment, training, dataset, client and server seeds.
-- `dataset_manifest.yaml` records each reporting client's dataset name,
-  extraction loss/reasons, split seed, feature ordering, train/test actor IDs
-  and sample/actor/class coverage. Missing client reports are listed and set
-  `complete: false`; raw WAV paths and tensors are not persisted.
-- Model checkpoint schema v1 is written atomically and records mode, server
-  scope and personalized client identity. Loading validates ownership, keys,
-  shapes and dtypes; optimizer/RNG resume is not implemented yet.
-- Client IDs must be unique. Server channel references and `min_clients` versus
-  configured client count are validated before controller setup.
-- `dataset.split_seed` controls the actor-disjoint split and defaults to `42`.
-- Channel definitions use four canonical logical names: `split_uplink`,
-  `split_downlink`, `federated_uplink`, and `federated_downlink`. A selected
-  mode must define its owned pair(s), and the controller does not instantiate
-  unused pairs.
-- Dataset roots must exist before `ConfigSchema` validation.
-- Client, split-server, and federated-server device choices must match the
-  installed runtime; syntax, CUDA availability and indexed device bounds are
-  validated before controller setup.
-- `training.fed_every` controls aggregation cadence. `training.eval_every`
-  schedules synchronized snapshots and the final round is always evaluated.
-- `clients[].runtime.workload_policy` is a typed stopping rule.
-  `max_steps_v1` caps a single loader pass, `full_epoch_v1` exhausts one loader
-  pass and ignores `local_steps`, and `fixed_steps_v1` cycles a non-empty
-  loader until exactly `local_steps` batches have completed. Resource sample
-  counts include repeated sample occurrences for the cycling policy.
-- Federated and SplitFed workers use the common `training.seed` for the model
-  partition that FedAvg combines. Client-specific data-loader randomness still
-  uses `clients[].runtime.seed`.
-- `experiment.analysis_only` prevents a notebook/data-analysis config from
-  entering the training dispatcher. `experiment.cross_corpus_evaluation`
-  enables post-training evaluation only for artifact-backed centralized or
-  federated complete models; federated runs must aggregate on the final round.
-- `training.barrier_timeout_sec` bounds client ready/evaluation barrier waits.
-- `split_server.training_strategy: concat_v1` is the current OUR path: matched
-  client activations are concatenated into one server batch and cause one
-  optimizer update. `sequential_v1` instead serves clients in configured
-  order through `round_end`, updating the shared server after every client
-  batch. `split_server.model.gradient_accumulation_steps` is fixed at `1`;
-  server gradients are never averaged across batches.
-- `mergesfl_v1` implements the executable feature-merging and gradient-dispatch
-  rule from the public MergeSFL repository. It requires equal
-  `fixed_steps_v1` workloads, permits unequal configured client batch sizes,
-  and applies the published `sum(batch_sizes) / client_batch_size` gradient
-  factor. It remains the static, repository-faithful baseline.
-- `mergesfl_algorithm1_v1` is the separate Algorithm 1 reconstruction. The
-  controller owns dataset profiles, timing EMA, deterministic cohort search,
-  integer batch refinement, deadlines and replay artifacts. Clients rebuild
-  their loaders from dataset-bounded plans and scale SGD learning rates
-  proportionally to planned batch size. Every candidate reports a round-scoped
-  measurement or heartbeat; the shared split server rejects unplanned clients,
-  steps and batch shapes; the federated server applies Equation 17 weights and
-  synchronizes non-participants before evaluation. Because the
-  upstream code omits GA/refinement details, this mode must be identified as
-  `binary_ga_v1` plus `integer_refinement_v1`, not as copied upstream code.
-- `split_server.model.batch_timeout_sec` bounds incomplete split batches;
-  waiting contributors receive a correlated error and fail into cancellation.
-- `fed_server.min_clients` and `quorum_timeout_sec` define a bounded partial
-  aggregation window. The completed global state is sent to accepted
-  participants. A validated late update for that same completed round receives
-  a correlated catch-up response without changing the completed aggregate;
-  older rounds remain unsupported and are discarded.
-- Partial quorum is arrival-window based and does not yet provide fairness or
-  leases. `fedavg` uses uniform accepted-client weights; `weighted_fedavg` uses
-  dataset-size weights for floating tensors. Buffer policy
-  `weighted_floating_state_largest_nonfloating_v1` also averages floating
-  BatchNorm running statistics and takes non-floating counters from the largest
-  accepted dataset. `aggregation_freq` must match
-  `training.fed_every`, the single client/server synchronization cadence.
-- Server channel references are validated against the controller's four
-  canonical logical roles before setup.
-- Personalized SplitFed applies the configured `fed_every`, `aggregate_final`
-  and FedAvg strategy to both model partitions. Each client waits for a
-  correlated SplitServer round ACK before it can start the next round, so
-  server aggregation cannot mix adjacent rounds.
-- Queue and insecure gRPC transports are operational for local processes.
-  Every gRPC logical channel requires a unique receiver address per integer
-  client ID. Compression, TLS and unknown optimizer/noise names fail schema
-  validation.
-
-## Architecture and process boundaries
-
-`src.main` creates `ConfigSchema`, seeds the process, constructs
-`TrainingController`, calls `setup()`, and starts training.
-
-`TrainingController.setup()` creates a multiprocessing manager and only the
-channels and server roles owned by the selected mode. Centralized mode creates
-one complete-model trainer without transport; federated creates only
-`FedServer`; split creates only `SplitServer`; SplitFed creates both.
-
-`TrainingController.start_training()` starts the selected roles, creates ready
-and evaluation barriers for distributed modes, then starts one client process
-per client configuration. Split clients send intermediate activations and
-labels to the split server, which returns activation gradients. Federated
-clients send validated model state and sample counts to the federated server,
-which returns the configured aggregate.
-Clients also send a typed `round_end` control message after their last local
-batch so that peers with longer loaders are not blocked on an inactive client.
-The split server validates channel sender identity, round/step correlation,
-activation/label batch compatibility and duplicate steps before model use.
-
-The process lifecycle has basic supervision but remains incomplete at this
-stage. Client construction, training, evaluation and bounded barrier waits
-share one worker failure boundary; failures set the shared stop event and abort
-peer barriers. Remaining limitations include:
-
-- first failures are structured, but typed cancellation delivery and recovery
-  remain incomplete;
-- joins use a polling loop and bounded terminate/kill fallback, but there is no
-  recovery protocol;
-- channel receive waits participate in the shared cancellation event, but
-  cancellation is not yet represented as a typed transport message;
-- gRPC retry is bounded by the message deadline, but health RPCs, TLS/mTLS,
-  authentication and distributed controller cancellation are not implemented.
-
-Changes to process coordination require a multiprocessing smoke test, not only
-an import test. `TrainingController` explicitly constructs its manager, queues
-and processes from a `spawn` context; `src/main.py` also sets that method for
-other multiprocessing code. The CLI attempts to stop every configured server
-and always tears down the manager, including setup, training, stop and artifact
-failures. Controller and server shutdown paths perform a final bounded join
-after kill and raise if a child still remains alive.
-
-## Known implementation hazards
-
-- Feature extraction currently loads complete client datasets into memory.
-- Stacked feature metadata records valid frame counts; train-only mask-aware
-  normalization excludes padding and keeps normalized padded frames at zero.
-- Actor-disjoint splits expose actor/sample/class counts and reject a training
-  split missing either binary class. One-class test splits remain supported.
-- Client training currently shuffles without class-balanced sampling.
-- Dataset instances expose a bounded extraction report with discovered/loaded/
-  failed counts and failure reason types; failed paths are not persisted.
-- Checkpoint metadata does not include full configuration, seed, or optimizer
-  state.
-- gRPC is tested for local `spawn` processes but not container/network
-  deployment; TLS/mTLS, authentication and health RPCs are unimplemented.
-- Capture and segmentation modules are incomplete and are not part of the
-  supported training path.
-
-Most planned research infrastructure in `docs/dev_plan` is not implemented
-yet: there are no per-client Docker runtimes, standalone ClientLoadController,
-scheduler policy registry or heterogeneous-client simulator in the current
-runtime. The embedded MergeSFL planner supplies only its Algorithm 1 policy. A
-typed profile registry exposes versioned `smoke` and `unit` default profiles;
-the remaining named profiles are still planned. The mode matrix is executable
-through `python -m src.experiments.mode_matrix`: centralized uses one complete
-model and combined dataset view without channels, federated-only uses complete
-client classifiers, split/shared uses one shared server model,
-split/personalized owns one server model and optimizer per client, and SplitFed
-combines split training with client-partition FedAvg. The matrix derives only
-the roles and channels owned by each topology, validates every derived
-configuration and writes a pass/fail and wall-time summary. SplitFed evaluates
-the synchronized post-FedAvg encoder/server pair on aggregation rounds. The
-same aggregated encoder is then used to initialize the following round.
-
-Treat each of these as a separate issue or commit. Avoid bundling lifecycle,
-model correctness, data semantics, and packaging changes into one patch.
+with `uv run pytest`. An automated external-data/CUDA matrix and CI workflow
+are not present; report which checks actually ran for each change.
 
 ## Commit policy
 
@@ -546,5 +187,5 @@ git diff -- path/to/changed/files
 ```
 
 Stage only files belonging to the atomic change. Do not include downloaded
-corpora, generated logs, checkpoints, `.venv`, or unrelated user modifications.
-Do not amend or squash another change unless explicitly requested.
+corpora, generated logs, checkpoints or unrelated user modifications. Do not
+amend or squash another change without explicit authorization.
